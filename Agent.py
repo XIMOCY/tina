@@ -36,6 +36,7 @@ class Agent:
         self.messages.extend(
             self.Memory.returnMessages(self.LLM.context_length, memory_percent=0.2, tag=["用户信息","指令信息"], importance=3)
         )
+        self.messages_conter = len(self.messages)
         self.is_tool_call_permission = is_tool_call_permission
     
     def predict(self, input_text: str = None,
@@ -83,19 +84,18 @@ class Agent:
                 )
                 tool_call = result[1]
 
-    def readFile(self):
+    def readFile(self,path):
         """
         读取文件
         """
-        path = input("请输入文件路径：")
-        file_content = self.fileProcess.read_file()
+        file_content = self.fileProcess.read_file(file_path=path)
         if len(file_content) >= int(self.LLM.context_length*0.5):
             self.messages.append(
-                {"role": "file", "content": f"文件内容为，文件过大所以只阅读了一半上下文长度的文字,建议用户使用RAG：\n{file_content[0:int(self.LLM.context_length*0.5)]}"}
+                {"role": "system", "content": f"文件内容为，文件过大所以只阅读了一半上下文长度的文字,建议用户使用RAG：\n{file_content[0:int(self.LLM.context_length*0.5)]}"}
             )
         else:
             self.messages.append(
-                {"role": "file", "content": f"文件内容为：\n{file_content}"}
+                {"role": "system", "content": f"用户上传了文件，路径为：{path}，文件内容为：\n{file_content}"}
             )
         
         
@@ -104,8 +104,9 @@ class Agent:
         记忆消息
         """
         if message is None:
-            for message in self.messages:
+            for message in self.messages[self.messages_conter:]:
                 self.Memory.remember(self.LLM,message)
+            self.messages_conter = len(self.messages)
         else:
             self.Memory.remember(self.LLM,message)
 

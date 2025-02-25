@@ -32,11 +32,12 @@ class Memory:
 
         {"role":"谁","tag":"什么","content":"提取主要的内容，将无关描述去除","importance":1-5}
         role:分为 system,user,assistant。如果是系统信息，则填写system；如果是用户信息，则填写user；如果是助手信息，则填写assistant。
-        tag:描述信息的种类，种类有：用户信息，指令信息，聊天信息和其他信息。
+        tag:描述信息的种类，种类有：用户信息，指令信息，聊天信息，工具信息和其他信息。
         content:提取主要的内容，将无关描述去除。例如，对于“我是王出日，我是一名程序员”，content为“用户名叫王出日，是一名程序员”
         分数越高表示重要程度越高，被遗忘的概率越低。首先要明确是谁说的话，然后再输入内容，最后输入分数。具体内容如下：
         用户信息是和用户相关的信息，比如用户是谁，用户是做什么的，用户的喜好，用户的社交信息等。
         指令信息是指用户要求你做的事情，比如用户让你做角色扮演，让你做某件事情等。
+        工具信息是指你调用了什么工具，工具的执行结果，工具的使用方法等。
         聊天信息是指用户和机器人之间交流的消息，比如用户问你问题，机器人回答你问题，机器人提出建议等。
         其他信息是指上面的信息之外的信息。
         在给了标签之后，同一标签的信息再根据importance进行排序，同一标签内的importance越高，越容易被记忆。
@@ -64,16 +65,30 @@ class Memory:
                 format = "json",
                 json_format = '{"role":"","tag":"","content":"","importance":1-5}'
             )
+        result = self.json(result)
         result_dict = json.loads(result["content"])
         if self.is_valid_json(result_dict):
             time = datetime.datetime.now().strftime("%Y年-%m月-%d日 %H时:%M分")
             self.insertInSQLite(result_dict, time)
         else:
-            self.insertInSQLite({"role": "", "content": "", "main_content": "", "importance": 0}, time)
+            self.insertInSQLite({"role": "", "content": "", "content": "", "importance": 0}, time)
         self.conn.close()
         return result_dict
-
-
+    def json(self,result:str,LLM:type=None)->dict:
+        """
+        将字符串转换为字典
+        """
+        try:
+            result_dict = json.loads(result)
+        except:
+            result = LLM.predict(
+                input_text = result,
+                sys_prompt = "按照以下的格式修正数据：\n\n{'role':'','tag':'','content':'','importance':1-5}",
+                format = "json",
+                json_format = '{"role":"","tag":"","content":"","importance":1-5}'
+            )
+            result_dict = self.json(result)
+        return result_dict
     def insertInSQLite(self, result_dict, time):
         self.cursor.execute('''
             INSERT INTO logs(tag, time, role, content, importance)

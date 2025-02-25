@@ -38,7 +38,7 @@ class Tools:
                 },
                 {
                     "name": "shotdownSystem",
-                    "description": "关闭系统原理是直接调用shotdown命令，该命令会关闭系统，请再次询问用户是否确认关闭，再使用，请谨慎使用",
+                    "description": "该工具会关闭计算机",
                     "required_parameters": [],
                     "parameters": {},
                     "path": inspect.getfile(tina.tools.systemTools)

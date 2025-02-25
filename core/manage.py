@@ -23,10 +23,10 @@ class TinaFolderManager:
             os.makedirs(os.path.join(TinaFolderManager.file_dir, "cache"), exist_ok=True)
             os.makedirs(os.path.join(TinaFolderManager.file_dir, "segment"), exist_ok=True)
             os.makedirs(os.path.join(TinaFolderManager.file_dir, "messages"), exist_ok=True)
-            
-            with open(os.path.join(TinaFolderManager.file_dir, "segment", "segment.index"), "w") as f:
-                pass
-            with open(os.path.join(TinaFolderManager.file_dir, "memory", "memory.index"), "w") as f:
+            if not os.path.exists(os.path.join(TinaFolderManager.file_dir, "segment", "segment.index")):
+                with open(os.path.join(TinaFolderManager.file_dir, "segment", "segment.index"), "w") as f:
+                    pass
+            if not os.path.exists(os.path.join(TinaFolderManager.file_dir, "memory", "memory.index")):
                 pass
             with open(os.path.join(TinaFolderManager.file_dir, "messages", "messages.index"), "w") as f:
                 pass
