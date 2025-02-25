@@ -1,8 +1,8 @@
 import faiss
-from ..core.Embedding.embedding import Embedding
-from ..core.manage import TinaFolderManager
-from ..core.textSegments import TextSegments
-from ..core.processFiles import fileToTxt
+from .embedding import Embedding
+from ...core.manage import TinaFolderManager
+from ..textSegments import TextSegments
+from ..processFiles import fileToTxtByExten
 
 def docToVec(file_path,dimesion=768,n=500):
     """

@@ -14,10 +14,9 @@ import json
 import os
 import sqlite3
 import datetime
-from .LLM.tina import tina
 from .manage import TinaFolderManager
-from .textSegments import TextSegments
-from .processFiles import fileToTxtByExten
+from ..RAG.textSegments import TextSegments
+from ..RAG.processFiles import fileToTxtByExten
 
 
 class Memory:
@@ -25,31 +24,25 @@ class Memory:
         self.folder = TinaFolderManager.getMemory()
         self.conn = sqlite3.connect(os.path.join(self.folder, "memory.db"))
         self.cursor = self.conn.cursor()
-        self.cursor.execute('''
-        CREATE TABLE IF NOT EXISTS logs(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tag TEXT NOT NULL,
-            time TEXT NOT NULL,
-            role TEXT NOT NULL,
-            content TEXT NOT NULL,
-            importance INTEGER NOT NULL
-            )
-        '''
-        )
+        self.cursor.execute('''CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, tag TEXT, time TEXT, role TEXT, content TEXT, importance INTEGER)''')
+        self.conn.commit()
+        self.conn.close()
         self.prompt="""
         请按照以下格式和准则为记忆打分，从1-5分，1分最低，5分最高，返回数字即可：
 
         {"role":"谁","tag":"什么","content":"提取主要的内容，将无关描述去除","importance":1-5}
         role:分为 system,user,assistant。如果是系统信息，则填写system；如果是用户信息，则填写user；如果是助手信息，则填写assistant。
-        tag:描述信息的种类，种类有：个人信息，聊天信息，请求信息，指令信息
+        tag:描述信息的种类，种类有：用户信息，指令信息，聊天信息和其他信息。
         content:提取主要的内容，将无关描述去除。例如，对于“我是王出日，我是一名程序员”，content为“用户名叫王出日，是一名程序员”
         分数越高表示重要程度越高，被遗忘的概率越低。首先要明确是谁说的话，然后再输入内容，最后输入分数。具体内容如下：
-
-        与用户相关的信息（例如用户的个人信息、偏好等）：重要程度最高，得分为5。
-        描述工作类信息（例如工作职责、项目进度等）：重要程度较低，得分为2。
-        关于我的信息（例如我是谁、我的功能等）：重要程度比用户的信息低，得分为3。
-        5分的信息将会作为长期记忆，不会被遗忘，适用于用户的个人信息，他的喜好，他发出的命令等。
-        4分的信息将会被记录，使用用于用户提到的他的某些信息，他的社交和朋友信息等。
+        用户信息是和用户相关的信息，比如用户是谁，用户是做什么的，用户的喜好，用户的社交信息等。
+        指令信息是指用户要求你做的事情，比如用户让你做角色扮演，让你做某件事情等。
+        聊天信息是指用户和机器人之间交流的消息，比如用户问你问题，机器人回答你问题，机器人提出建议等。
+        其他信息是指上面的信息之外的信息。
+        在给了标签之后，同一标签的信息再根据importance进行排序，同一标签内的importance越高，越容易被记忆。
+        例如：我是王出日，我是一名大学生。这个消息被归类为用户信息，impotence为最高分5分
+        5分的信息将会作为长期记忆，不会被遗。
+        4分的信息将会被记录。
         3分的信息会被记录，但不会被优先遗忘。
         2分的信息比1分的信息更长久被记忆。
         1分的信息会在短期内被遗忘,适用于没什么用的信息，例如询问或者无意义的聊天。
@@ -61,6 +54,8 @@ class Memory:
         记忆用户信息
         importance: 1-5 重要程度
         """
+        self.conn = sqlite3.connect(os.path.join(self.folder, "memory.db"))
+        self.cursor = self.conn.cursor()
         msg_role = message["role"]
         msg_content = message["content"]
         result = LLM.predict(
@@ -75,6 +70,7 @@ class Memory:
             self.insertInSQLite(result_dict, time)
         else:
             self.insertInSQLite({"role": "", "content": "", "main_content": "", "importance": 0}, time)
+        self.conn.close()
         return result_dict
 
 
@@ -92,65 +88,37 @@ class Memory:
         Args:
             importance: 1-5 重要程度，在这里也叫遗忘指数，越高表示越重要，越低表示越不重要
         """
+        self.conn = sqlite3.connect(os.path.join(self.folder, "memory.db"))
+        self.cursor = self.conn.cursor()
         self.cursor.execute(
             '''DELETE FROM logs WHERE importance <=?''',
             (importence,)
         )
         self.conn.commit()
+        self.conn.close()
         
-    def recallByTime(self,time:str):
-        """
-        根据时间戳获取记忆信息
-        """
-        self.cursor.execute(
-            '''SELECT * FROM logs WHERE time =?''',
-            (time,)
-        )
-        result = self.cursor.fetchone()
-        if result:
-            message = {
-                "role": result[3],
-                "content": result[4]
-            }
-            return message
-        else:
-            return None
         
-    def recallByTag(self,tag:str):
+    def recallByTag(self,tag:list=["用户信息","指令信息"],importance:int=3):
         """
         根据tag获取记忆信息
         """
+        self.conn = sqlite3.connect(os.path.join(self.folder, "memory.db"))
+        self.cursor = self.conn.cursor()
         self.cursor.execute(
-            '''SELECT * FROM logs WHERE tag =?''',
-            (tag,)
+            '''SELECT * FROM logs WHERE tag IN ({}) AND importance >=?'''.format(",".join(["?"]*len(tag))),
+            tag+[importance]
         )
         result = self.cursor.fetchall()
         messages = []
         for row in result:
             message = {
                 "role": row[3],
-                "content": row[4]
+                "content": row[4],
+                "time": row[2]
             }
             messages.append(message)
         return messages
         
-    def recallByRole(self,role:str):
-        """
-        根据role获取记忆信息
-        """
-        self.cursor.execute(
-            '''SELECT * FROM logs WHERE role =?''',
-            (role,)
-        )
-        result = self.cursor.fetchall()
-        messages = []
-        for row in result:
-            message = {
-                "role": row[3],
-                "content": row[4]
-            }
-            messages.append(message)
-        return messages
         
     def recallByContent(self,content:str):
         """
@@ -188,24 +156,7 @@ class Memory:
             messages.append(message)
         return messages
         
-    def recallByAll(self,role:str,tag:str,content:str,importance:int):
-        """
-        根据所有条件获取记忆信息
-        """
-        self.cursor.execute(
-            '''SELECT * FROM logs WHERE role =? AND tag =? AND content LIKE ? AND importance =?''',
-            (role,tag,f"%{content}%",importance)
-        )
-        result = self.cursor.fetchall()
-        messages = []
-        for row in result:
-            message = {
-                "role": row[3],
-                "content": row[4]
-            }
-            messages.append(message)
-        return messages
-    def returnMessages(self)->list:
+    def returnMessages(self,length:int,memory_percent:float=0.2,tag:list=["用户信息","指令信息"],importance:int=3)->list:
         """
         读取memory.db中的所有信息
         返回以下的格式：
@@ -216,22 +167,21 @@ class Memory:
             }
         ]
         """
-        self.cursor.execute('''SELECT * FROM logs''')
-        result = self.cursor.fetchall()
-        messages = []
-        for row in result:
-            message = {
-                "role": row[3],
-                "content": row[2] + " " + row[4]
-            }
-            messages.append(message)
-        return messages
-        
-    def rememberImportantMessage(LLM:type,message:str) -> None:
-        """
-        记入重要信息，比如用户的个人信息、工作信息等
-        """
-        pass
+        messages = self.recallByTag(tag=tag,importance=importance)
+        memory_length = 0
+        for message in messages:
+            if messages == []:
+                memory_length = 0
+            else:
+                memory_length = len(message["role"])+len(message["content"])+len(message["time"])
+
+        if memory_length/length > memory_percent:
+            if importance == 5:
+                messages = self.returnMessages(length,memory_percent,tag=["用户信息"],importance=5)
+            messages = self.returnMessages(length,memory_percent,tag,importance=importance+1)
+        else:
+            return messages
+    
     def is_valid_json(self,json_obj:dict):
         if not isinstance(json_obj, dict):
             return False

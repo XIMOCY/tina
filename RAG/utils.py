@@ -11,7 +11,7 @@ __all__ = ['cleaning','segment']
 import re
 from typing import Union,Generator
 
-def cleaning(text: str) -> str:
+def cleaning(text: str,word:list=['\u3000','\xa0','\u2003','\u2002','\u2004','\u2005','\u2006','\u2007','\u2008','\u2009','\u200a','\u202f','\u205f','\u3000','\u2028','\u2029']) -> str:
     """
     清理文本，去除乱码、空格、换行符、制表符等，同时保留常用标点符号
     Args:

@@ -7,9 +7,9 @@ tina提供的查询文档工具，可以根据输入的文本进行向量检索�
 import os
 import numpy as np
 import faiss
-from tina.core.Embedding.embedding import Embedding
+from ..Embedding.embedding import Embedding
 from tina.core.manage import TinaFolderManager
-from tina.core.textSegments import TextSegments
+from tina.RAG.textSegments import TextSegments
 
 def query(query_text, n=10)->list:
     """

@@ -20,26 +20,41 @@ import docx
 import PyPDF2
 from typing import Union,Generator
 from .utils import cleaning, segment
+import urllib.request
 
 class FileProcess:
     """文件处理类"""
     def __init__(self):
         pass
-    def read_file(self,file_path:str)->str:
+    def read_file(self,file_path:str=None,file_url:str=None)->str:
         """通过文件路径自动判断文件类型并读取文件内容"""
-        file_suffix = os.path.splitext(file_path)[1]
-        if file_suffix == '.docx':
-            return docxToTxt(file_path,isClean=True)
-        # elif file_suffix == '.doc':
-        #     return docToTxt(file_path)
-        elif file_suffix == '.pdf':
-            return pdfToTxt(file_path,isClean=True)
-        elif file_suffix == '.txt':
-            return txtToTxt(file_path,isClean=True)
-        #出现其他的文件类型时，返回空列表
+        if file_path is not None:
+            file_suffix = os.path.splitext(file_path)[1]
+            if file_suffix == '.docx':
+                return docxToTxt(file_path,isClean=True,n=0)[0]
+            # elif file_suffix == '.doc':
+            #     return docToTxt(file_path)
+            elif file_suffix == '.pdf':
+                return pdfToTxt(file_path,isClean=True,n=0)[0]
+            elif file_suffix == '.txt':
+                return txtToTxt(file_path,isClean=True,n=0)[0]
+            #出现其他的文件类型时，返回空列表
+            else:
+                #哎嘿，该支持其他什么类型的文件呢
+                return [f"该文件类型暂不支持，格式为{file_suffix},告诉用户使用docx,pdf,txt文件"]
+        elif file_url is not None:
+            try:
+                response = urllib.request.urlopen(file_url)
+                content = response.read()
+                content = content.decode('utf-8')
+                return content
+            except Exception as e:
+                print(f"处理文件 {file_url} 时出错了：{e}")
+                raise
+        elif file_path is not None and file_url is not None:
+            raise ValueError("文件路径和文件url不能同时存在")
         else:
-            #哎嘿，该支持其他什么类型的文件呢
-            return [f"该文件类型暂不支持，格式为{file_suffix},告诉用户使用docx,pdf,txt文件"]
+            raise ValueError("文件路径和文件url不能同时为空")
     
 
 def process_document(content: str, isClean: bool, isSegments: bool, n: int,step:int = None, is_yield: bool = False) -> Union[Generator,list[str]]:
@@ -73,7 +88,7 @@ def pdfToTxt(pdf_file: str, isClean: bool = False, isSegments: bool = False, n: 
 
 
 def txtToTxt(txt_file: str, isClean: bool = False, isSegments: bool = False, n: int = 100, step: int = None, is_yield: bool = False) -> Union[Generator,list[str]]:
-    """对txt文件进行处理"""
+    """对txt文件进行处理""" 
     try:
         with open(txt_file, 'r', encoding='utf-8') as f:
             content = f.read().strip().split('\n')

@@ -2,12 +2,15 @@ import os
 import numpy as np
 from llama_cpp import Llama
 from typing import Union
+from ...core.manage import TinaFolderManager
 
-__dafult_model_path__ = os.path.join(os.path.dirname(__file__), "model","m3e_base.gguf")
 
 
 class Embedding:
-    def __init__(self, model_path: str = __dafult_model_path__, GPU_n: int = -1, log: bool = False):
+    def __init__(self, model_path: str = None, GPU_n: int = -1, log: bool = False):
+        if model_path is None:
+            model_path = TinaFolderManager.getEmbedingModel()
+
         self.embeddingModel = Llama(model_path=model_path, embedding=True, n_gpu_layers=GPU_n, verbose=log)
         
     def embedding(self, input_str: Union[str, list[str]]) -> np.ndarray:

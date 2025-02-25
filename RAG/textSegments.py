@@ -13,7 +13,7 @@
 import os
 import pickle
 import pathlib
-from .manage import TinaFolderManager
+from ..core.manage import TinaFolderManager
 from .processFiles import fileToTxtByExten 
 
 class TextSegments:

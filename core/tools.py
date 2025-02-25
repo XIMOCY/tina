@@ -8,10 +8,11 @@
 tools
 """
 import pickle
-
+import inspect
+import tina.RAG.query.query
+import tina.tools.systemTools
 class Tools:
-    def __init__(self):
-        # 初始化工具列表，添加NULL工具
+    def __init__(self,isSystemTools=False,isRAG = False):
         self.tools = [{
             "type": "function",
             "function": {
@@ -23,6 +24,55 @@ class Tools:
         self.tools_name_list = ["NULLTools"]
         self.tools_parameters_list = []
         self.tools_path = []
+        self.extendTools(isSystemTools, isRAG)
+
+    def extendTools(self, isSystemTools, isRAG):
+        if isSystemTools:
+            SystemTools = [
+                {
+                    "name": "getTime",
+                    "description": "获取当前时间",
+                    "required_parameters": [],
+                    "parameters": {},
+                    "path": inspect.getfile(tina.RAG.query.query)
+                },
+                {
+                    "name": "shotdownSystem",
+                    "description": "关闭系统原理是直接调用shotdown命令，该命令会关闭系统，请再次询问用户是否确认关闭，再使用，请谨慎使用",
+                    "required_parameters": [],
+                    "parameters": {},
+                    "path": inspect.getfile(tina.tools.systemTools)
+                },
+                {
+                    "name":"getSoftwareList",
+                    "description":"获取系统软件列表",
+                    "required_parameters":[],
+                    "parameters":{},
+                    "path":inspect.getfile(tina.tools.systemTools)
+                },
+                {
+                    "name":"getSystemInfo",
+                    "description":"获取系统信息",
+                    "required_parameters":[],
+                    "parameters":{},
+                    "path":inspect.getfile(tina.tools.systemTools)
+                }
+            ]
+            self.multiregister(SystemTools)
+        if isRAG:
+            RAGTools =[
+                            {
+                                "name": "query",
+                                "description": "在用户的文档里面查询相关内容，该工具直接和用户的文档相关联，当你想查询的时候直接调用就好了",
+                                "required_parameters": ["query_text"],
+                                "parameters": {
+                                "query_text": {"type": "str", "description": "要查询的文本"},
+                                "n": {"type": "int", "description": "返回的结果数量,默认为10"}
+                                },
+                            "path": inspect.getfile(tina.RAG.query.query)
+                            }
+                        ]
+            self.multiregister(RAGTools)
 
     def multiregister(self, tools: list):
         for tool in tools:

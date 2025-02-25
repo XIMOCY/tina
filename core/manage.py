@@ -33,6 +33,8 @@ class TinaFolderManager:
 
         except OSError as e:
             print(f"初始化失败: {e}")
+        
+        TinaFolderManager.embeding_model = ""
 
 
     @staticmethod
@@ -74,4 +76,12 @@ class TinaFolderManager:
         获取消息文件夹路径
         """
         return os.path.join(TinaFolderManager.file_dir, "messages")
+    @staticmethod
+    def setEmbedingModel(model_path: str):
+        TinaFolderManager.embeding_model = model_path
+    @staticmethod
+    def getEmbedingModel() -> str:
+        if TinaFolderManager.embeding_model == "":
+            raise ValueError("未指定embedding模型路径，请使用TinaFolderManager.setEmbedingModel设置embedding模型路径")
+        return TinaFolderManager.embeding_model
 

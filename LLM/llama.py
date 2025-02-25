@@ -16,7 +16,7 @@ from typing import Union,Generator
 from llama_cpp import Llama
 
 
-class tina:
+class llama:
     def __init__(self,
                  path:str=os.path.join(os.path.dirname(__file__),'model','qwen2.5-7b-instruct-q4_k_m.gguf'),
                  device:str='gpu',

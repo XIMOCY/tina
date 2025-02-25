@@ -12,11 +12,10 @@ Agent类，创建智能体的类
 ！！！注意：如果创建了工作文件夹，在用户之前没有删除数据的情况下，会自动加载之前的记忆信息，可以删除工作文件夹，或者使用forget方法清空记忆信息
 
 """
-import threading
 import datetime
 from typing import Union,Generator
 from .core.executor import AgentExecutor
-from .core.processFiles import FileProcess
+from .RAG.processFiles import FileProcess
 from .core.memory import Memory
 from .tools.systemTools import *
 from typing import Generator, Iterator, Any
@@ -35,7 +34,7 @@ class Agent:
         ]
         # 加载记忆信息
         self.messages.extend(
-            self.Memory.returnMessages()
+            self.Memory.returnMessages(self.LLM.context_length, memory_percent=0.2, tag=["用户信息","指令信息"], importance=3)
         )
         self.is_tool_call_permission = is_tool_call_permission
     
@@ -89,9 +88,18 @@ class Agent:
         读取文件
         """
         path = input("请输入文件路径：")
-        self.fileProcess.read_file()
+        file_content = self.fileProcess.read_file()
+        if len(file_content) >= int(self.LLM.context_length*0.5):
+            self.messages.append(
+                {"role": "file", "content": f"文件内容为，文件过大所以只阅读了一半上下文长度的文字,建议用户使用RAG：\n{file_content[0:int(self.LLM.context_length*0.5)]}"}
+            )
+        else:
+            self.messages.append(
+                {"role": "file", "content": f"文件内容为：\n{file_content}"}
+            )
         
-    def remeber(self,message:str = None)->None:
+        
+    def remember(self,message:str = None)->None:
         """
         记忆消息
         """
@@ -100,11 +108,7 @@ class Agent:
                 self.Memory.remember(self.LLM,message)
         else:
             self.Memory.remember(self.LLM,message)
-    def recall(self, time:str)->str:
-        """
-        回忆
-        """
-        self.Memory.recallByTime(time)    
+
     def forget(self,importence:int=1):
         """
         忘记之前的对话信息，与记忆模块的遗忘有区别
@@ -161,7 +165,7 @@ class Agent:
                             "content": f"工具调用结果：\n{result[0]}"
                         })
                     # 生成新的大模型响应
-                        yield from self.predict(" ")
+                        yield from self.predict(" ",stream=True)
                     else:
                         yield "工具调用执行失败"
                     return  # 结束当前生成器

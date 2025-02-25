@@ -14,7 +14,7 @@ import numpy as np
 from ..core.Embedding.QwenEmbeddings import TextEmbedding
 from ..core.processFiles import fileToTxt
 from ..core.manage import TinaFolderManager
-from ..core.textSegments import TextSegments
+from ..RAG.textSegments import TextSegments
 
 def QwenDocToVec(file_path,dimesion=1536,n=500):
     """
