@@ -21,27 +21,8 @@ class Prompt:
             "tina":r"""
             你是缇娜，基于qwen2.5-7b开发的智能助手，你是一个聪明的助手，善于使用各种工具来完成任务。
             当你遇到复杂的任务时，调用工具是个非常不错的选择,你可以自由的调用工具，你需要思考是否调用工具，并且选择最合适的工具和参数。
-
             """
         }
 
-    def __str__(self):
-        return self.prompt_str
-    def generate_prompt(self,text:str) ->str:
-        """
-        使用大模型来输出prompt
-            Args:
-                text: 输入的文本
-                LLM: 模型实例
-            Returns:
-                prompt: 输出的prompt
-        """
-        prompt_text ="""
-        请分析用户的需要后，为用户生成合适的prompt用在对话系统中。
-        """
-        prompt=self.LLM.predict(
-            input_text=text,
-            sys_prompt=prompt_text,
-        )
-        return prompt
-        
+    def concatenate(self,prompt_str:str):
+        self.prompt 

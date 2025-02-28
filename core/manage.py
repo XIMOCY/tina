@@ -22,20 +22,17 @@ class TinaFolderManager:
             os.makedirs(os.path.join(TinaFolderManager.file_dir, "memory"), exist_ok=True)
             os.makedirs(os.path.join(TinaFolderManager.file_dir, "cache"), exist_ok=True)
             os.makedirs(os.path.join(TinaFolderManager.file_dir, "segment"), exist_ok=True)
-            os.makedirs(os.path.join(TinaFolderManager.file_dir, "messages"), exist_ok=True)
+            os.makedirs(os.path.join(TinaFolderManager.file_dir,"document"),exist_ok=True)
             if not os.path.exists(os.path.join(TinaFolderManager.file_dir, "segment", "segment.index")):
                 with open(os.path.join(TinaFolderManager.file_dir, "segment", "segment.index"), "w") as f:
                     pass
             if not os.path.exists(os.path.join(TinaFolderManager.file_dir, "memory", "memory.index")):
-                pass
-            with open(os.path.join(TinaFolderManager.file_dir, "messages", "messages.index"), "w") as f:
                 pass
 
         except OSError as e:
             print(f"初始化失败: {e}")
         
         TinaFolderManager.embeding_model = ""
-
 
     @staticmethod
     def getCache() -> str:
@@ -64,24 +61,24 @@ class TinaFolderManager:
         获取分段文件的索引文件路径
         """
         return os.path.join(TinaFolderManager.file_dir, "segment", "segment.index")
+    
     @staticmethod
     def getSegment() -> str:
         """
         获取分段文件夹路径
         """
         return os.path.join(TinaFolderManager.file_dir, "segment")
-    @staticmethod
-    def getMessages() -> str:
-        """
-        获取消息文件夹路径
-        """
-        return os.path.join(TinaFolderManager.file_dir, "messages")
+    
     @staticmethod
     def setEmbedingModel(model_path: str):
         TinaFolderManager.embeding_model = model_path
+
+    @staticmethod
+    def getDocumentFolder()->str:
+        return os.path.join(TinaFolderManager.file_dir,"document")
+    
     @staticmethod
     def getEmbedingModel() -> str:
         if TinaFolderManager.embeding_model == "":
             raise ValueError("未指定embedding模型路径，请使用TinaFolderManager.setEmbedingModel设置embedding模型路径")
         return TinaFolderManager.embeding_model
-

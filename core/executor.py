@@ -49,7 +49,7 @@ class AgentExecutor:
         raise ValueError(f"Unsupported AST node: {node}")
     
     @staticmethod
-    def execute(tool_call: str, tools: type,is_permissions: bool = True) -> tuple[str, bool]:
+    def execute(tool_call: str, tools: type,is_permissions: bool = True,LLM:type = None) -> tuple[str, bool]:
         """
         执行工具调用
         如何使用：
@@ -67,21 +67,14 @@ class AgentExecutor:
         Returns:
             tuple[str, bool]: 元组，执行结果和是否成功
         """
-        result = tina_parser(tool_call, tools)
-        if not result[1]:
+        result = tina_parser(tool_call, tools,LLM=LLM)
+        if not result[2]:
             return result
-        if is_permissions:
-            AgentExecutor.is_safe(ast.parse(result[0]).body[0].value)
-        module = AgentExecutor.import_module(tools.getToolsPath(result[2]))
-        code_tree = ast.parse(result[0])
-        func_call = code_tree.body[0].value
-        if isinstance(func_call,ast.Call):
-            keyword_args = {kw.arg: AgentExecutor._extract_value(kw.value) for kw in func_call.keywords}
-        else:
-            keyword_args = {}
-        func = getattr(module, result[2])
-        if keyword_args:
-            result = func(**keyword_args)
+        module = AgentExecutor.import_module(tools.getToolsPath(result[0]))
+
+        func = getattr(module, result[0])
+        if result[1]:
+            result = func(**result[1])
         else:
             result = func()
         
@@ -90,6 +83,11 @@ class AgentExecutor:
             return result,True
         elif isinstance(result, list):
             result_str = "，".join(f"列表第{index+1}元素{value}" for index, value in enumerate(result))
+        elif isinstance(result,bool):
+            if result:
+                result_str = "True"
+            else:
+                result_str = "False"
         elif isinstance(result, dict):
             result_str = "，".join(f"字典的{key}键对应的值为{value}" for key, value in result.items())
         else:

@@ -1,7 +1,7 @@
 import re
 import json
             
-def tina_parser(text:str,tools:type,permission:bool = False)->tuple[str,bool,str]:
+def tina_parser(text:str,tools:type,LLM:type=None)->tuple[str,str,bool]:
     r"""
     因为llama_cpp的消息格式和chatGPT的消息格式不一样，
     无法直接根据字典值直接确定是否为工具调用，
@@ -14,30 +14,29 @@ def tina_parser(text:str,tools:type,permission:bool = False)->tuple[str,bool,str
         str: 返回执行字符串
     """
     _pattern = r'<tool_call>(.*?)</tool_call>'
-    match = re.findall(_pattern, text, re.DOTALL)
+    match = re.search(_pattern, text, re.DOTALL)
     if not match:
         return text,False,""
-    tool_call = json.loads(match[0][2:-2])
-    tool_name = tool_call['name']
-    tool_params = tool_call['arguments']
-    if not tools.checkTools(tool_name):
-        return {"type": "text", "content": "不存在该工具"},False,tool_name
-    else:
-        execute_statement_son = ""
-        for key,value in tool_params.items():
-            if tools.queryParameterType(tool_name,key) == "int" or tools.queryParameterType(tool_name,key) == "float" or tools.queryParameterType(tool_name,key) == "bool":
-                execute_statement_son += key + "=" + str(value) + ","
-            elif tools.queryParameterType(tool_name,key) == "str":
-                execute_statement_son += key + "='" + str(value) + "',"
-            else:
-                execute_statement_son = ""
-            
-        execute_statement = tool_name + "(" + execute_statement_son[:-1] + ")"
+    tool_call = json_parser(result=match[0],LLM=LLM)
+    if not tools.checkTools(tool_call['name']):
+        return tool_call["name"],tool_call["arguments"],False
+    return tool_call["name"],tool_call["arguments"],True
+
+def json_parser(result,LLM):
+    _pattern =  r'\{\s*"name":\s*"[^"]*",\s*"arguments":\s*\{[^{}]*\}\s*\}'
+    result = re.search(_pattern, result, re.DOTALL)[0]
+    result = result.replace("\n","\\n")
+    try:
+        tool_call = json.loads(rf"{result}")
+        return tool_call
+    except Exception as e:
+        result = LLM.predict(
+                input_text = result,
+                sys_prompt = "该json数据有问题，请修正"
+            )["content"]
+        json_parser(result=result,LLM=LLM)
         
-        return execute_statement,True,tool_name
+        return tool_call
+
+
     
-def json_parser(json_format:str)->tuple[dict,bool]:
-    """
-    解析出json格式的消息，并返回字典格式的消息
-    """
-    pass

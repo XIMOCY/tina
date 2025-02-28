@@ -1,7 +1,7 @@
-import os
 import numpy as np
 from llama_cpp import Llama
 from typing import Union
+
 from ...core.manage import TinaFolderManager
 
 

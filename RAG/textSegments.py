@@ -13,6 +13,8 @@
 import os
 import pickle
 import pathlib
+import shutil
+
 from ..core.manage import TinaFolderManager
 from .processFiles import fileToTxtByExten 
 
@@ -36,11 +38,12 @@ class TextSegments:
                 max_id = int(f.read())
             return max_id
         
-    def segments(self, n:int):
+    def segments(self, n:int,isCopyFileToTinaFolder:bool=False):
         """
         分段方法
         Args:
-            n:字数
+            n:每段的字数
+            isCopyFileToTinaFolder:是否将文件复制到Tina的文件夹中
         """
         for file in os.listdir(self.folder_path):
             text_list = fileToTxtByExten(
@@ -49,6 +52,9 @@ class TextSegments:
                 isSegments=True,
                 n=n
                 )
+            if isCopyFileToTinaFolder:
+                shutil.copy2(os.path.join(self.folder_path, file), TinaFolderManager.getDocumentFolder())
+
             #构建文件名，数字+文件名+内分段数，数字从0开始
             file_name = self.__getId() + '_' + file + '_' + str(len(text_list))+'.pkl'
             #保存分段结果

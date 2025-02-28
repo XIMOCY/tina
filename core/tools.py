@@ -63,7 +63,7 @@ class Tools:
             RAGTools =[
                             {
                                 "name": "query",
-                                "description": "在用户的文档里面查询相关内容，该工具直接和用户的文档相关联，当你想查询的时候直接调用就好了",
+                                "description": "使用该工具可以在用户的文档里面查询有关信息",
                                 "required_parameters": ["query_text"],
                                 "parameters": {
                                 "query_text": {"type": "str", "description": "要查询的文本"},
@@ -97,6 +97,7 @@ class Tools:
                     "参数名": {
                         "type": "参数类型",
                         "description": "参数描述"
+                        }
                     }
             path (str): 工具的路径，如果没有则为None
         Raises:

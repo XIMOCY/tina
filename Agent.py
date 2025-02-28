@@ -13,6 +13,7 @@ Agent类，创建智能体的类
 
 """
 import datetime
+
 from typing import Union,Generator
 from .core.executor import AgentExecutor
 from .RAG.processFiles import FileProcess
@@ -44,7 +45,7 @@ class Agent:
                  top_p: float = 0.9,
                  top_k: int = 0,
                  min_p: float = 0.0,
-                 stream: bool = False
+                 stream: bool = True
                  ) -> Union[str, Generator[str, None, None]]:
         """
             调用agent进行生成文本回复，默认流式输出
@@ -110,12 +111,14 @@ class Agent:
         else:
             self.Memory.remember(self.LLM,message)
 
-    def forget(self,importence:int=1):
+    def forget(self,importance:int=None):
         """
         忘记之前的对话信息，与记忆模块的遗忘有区别
         """ 
-        self.messages = []
-        self.Memory.forget(importence)
+        if importance is None:
+            self.messages = []
+        else:
+            self.Memory.forget(importance)
 
     def tag_parser(self, text_generator: Iterator[Any],tag="") -> Generator[str, None, None]:
         """
@@ -152,21 +155,25 @@ class Agent:
                             next_delta = next_chunk["choices"][0]["delta"]
                             next_content = next_delta.get("content", "")
                             tool_call += next_content
-                        except (StopIteration, KeyError, IndexError, TypeError):
-                            yield "错误: 工具调用不完整或消息格式不正确"
+                        except Exception as e:
+                            yield "错误: 工具调用不完整或消息格式不正确"+str(e)
                             in_tool_call = False
                             break
                     if not in_tool_call:
                         continue
                         # 执行工具调用
-                    result = AgentExecutor.execute(tool_call,self.Tools,is_permissions=self.is_tool_call_permission)
+                    yield "正在发生工具调用...\n"
+                    result = AgentExecutor.execute(tool_call,self.Tools,is_permissions=self.is_tool_call_permission,LLM=self.LLM)
                     if result[1]:  
-                        self.messages.append({
+                        self.messages.extend([{
+                            "role": "assistant",
+                            "content": f"{tool_call}"
+                        },{
                             "role": "system",
                             "content": f"工具调用结果：\n{result[0]}"
-                        })
+                        }])
                     # 生成新的大模型响应
-                        yield from self.predict(" ",stream=True)
+                        yield from self.predict(input_text=whole_content,stream=True)
                     else:
                         yield "工具调用执行失败"
                     return  # 结束当前生成器
