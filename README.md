@@ -15,6 +15,7 @@ tina是一个简单的基于大模型的工具调用智能体库，作为我在�
 这意味着以上的功能你都可以拆开来用，不一定是智能体，还可以是类似下面这样的工作流：\
 RAG->LLM->LLM...
 ### 7.依赖库少
+```
 大部分代码使用Python原生代码编写，需要下面的库\
 文件处理：\
 pypdf，Python-docx\
@@ -22,6 +23,7 @@ RAG:\
 numpy，faiss\
 大模型调用：\
 httpx(如果使用api调用)，llama.cpp(使用本地的gguf模型)
+```
 ```
 她也可以叫 llama-tool-call-agent，在一开始，她是一个本地使用llama.cpp部署模型和RAG的小工具
 ```
