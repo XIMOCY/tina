@@ -45,7 +45,4 @@ class Kimi():
             json_format=json_format,
             tools=tools
         )
-    
-    return result
-
-        
+        return result
