@@ -1,0 +1,1 @@
+python .\convert_hf_to_gguf.py D:\wangchuri\development\project\tina\tina-sauce----tcgai\model\Qwen2-VL-7B-Instruct --outtype q4_k_s --verbose --outfile qwen2-vl-7b-q4_k_s-instruct.gguf
