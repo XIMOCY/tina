@@ -34,7 +34,7 @@ class Tools:
                     "description": "获取当前时间",
                     "required_parameters": [],
                     "parameters": {},
-                    "path": inspect.getfile(tina.RAG.query.query)
+                    "path": inspect.getfile(tina.tools.systemTools)
                 },
                 {
                     "name": "shotdownSystem",
