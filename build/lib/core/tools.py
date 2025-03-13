@@ -24,9 +24,9 @@ class Tools:
         self.tools_name_list = ["NULLTools"]
         self.tools_parameters_list = []
         self.tools_path = []
-        self.__extendTools(isSystemTools, isRAG)
+        self.extendTools(isSystemTools, isRAG)
 
-    def __extendTools(self, isSystemTools, isRAG):
+    def extendTools(self, isSystemTools, isRAG):
         if isSystemTools:
             SystemTools = [
                 {

@@ -30,5 +30,4 @@ class Prompt:
         }
 
     def concatenate(self,prompt_str:str):
-        self.prompt += prompt_str
-        return self.prompt
+        self.prompt 

@@ -63,16 +63,16 @@ class Memory:
                 format = "json",
                 json_format = '{"role":"","tag":"","content":"","importance":1-5}'
             )
-        result_dict = self.__json(result["content"],LLM)
+        result_dict = self.json(result["content"],LLM)
         # result_dict = json.loads(result["content"])
         if self.is_valid_json(result_dict):
             time = datetime.datetime.now().strftime("%Y年-%m月-%d日 %H时:%M分")
-            self.__insertInQOLite(result_dict, time)
+            self.insertInSQLite(result_dict, time)
         else:
-            self.__insertInQOLite({"role": "", "content": "", "content": "", "importance": 0}, time)
+            self.insertInSQLite({"role": "", "content": "", "content": "", "importance": 0}, time)
         self.conn.close()
         return result_dict
-    def __json(self,result:str,LLM:type=None)->dict:
+    def json(self,result:str,LLM:type=None)->dict:
         """
         将字符串转换为字典
         """
@@ -88,7 +88,7 @@ class Memory:
             )
             result_dict = self.json(result)
         return result_dict
-    def __insertInQOLite(self, result_dict, time):
+    def insertInSQLite(self, result_dict, time):
         self.cursor.execute('''
             INSERT INTO logs(tag, time, role, content, importance)
             VALUES (?,?,?,?,?)
