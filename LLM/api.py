@@ -4,23 +4,25 @@ import os
 from typing import Union, Generator
 
 
-class Kimi():
-    def __init__(self, api_key: str = None, model: str = "qwen-plus",base_url:str ="https://dashscope.aliyuncs.com/compatible-mode/v1" ):
-        self.base_url = base_url
+class BaseAPI():
+    API_ENV_VAR_NAME = "API_KEY"  # 默认的API key环境变量名称
+    BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"  # 默认的base_url
+
+    def __init__(self, api_key: str = None, model: str = "qwen-plus", base_url: str = None):
         if api_key is None:
             try:
-                self.api_key = os.environ.get("DASHSCOPE_API_KEY")
-            except:
-                raise ValueError("API key并没有在环境变量‘DASHSCOPE_API_KEY’中找到，要么请你设置一下，要么输入api_key参数")
+                self.api_key = os.environ.get(self.API_ENV_VAR_NAME)
+            except KeyError:
+                print(f"API key并没有在环境变量‘{self.API_ENV_VAR_NAME}’中找到，要么请你设置一下，要么输入api_key参数")
         else:
-            print("我们建议你在环境变量中设置DASHSCOPE_API_KEY，不要输入api_key参数哦")
+            print(f"我们建议你在环境变量中设置{self.API_ENV_VAR_NAME}，不要输入api_key参数哦")
             self.api_key = api_key
-    
-        self.api_key = api_key
+        
+        self.base_url = base_url if base_url else self.BASE_URL
+        self._call = "API"
+        self.context_length = 32757
         self.model = model
         self.token = 0
-        self._call = "API"
-        self.context_length = 32000
 
     def predict(self,
                 input_text: str = None,
@@ -29,17 +31,22 @@ class Kimi():
                 temperature: float = 0.3,
                 top_p: float = 0.9,
                 stream: bool = False,
+                format:str = "text",
+                json_format:str = '{}',
                 tools: list = None) -> Union[dict, Generator[dict, None, None]]:
         if messages is None:
             messages = []
-            messages.append({"role":"system","content":sys_prompt})
+            messages.append({"role": "system", "content": sys_prompt})
             # 处理消息列表
             if input_text:
                 messages.append({"role": "user", "content": input_text})
-        
-
 
         # 请求参数
+        format_dict = {
+            'text': 'text',
+            'json': 'json_object'
+        }
+        format = format_dict[format]
         payload = {
             "model": self.model,
             "messages": messages,
@@ -68,7 +75,6 @@ class Kimi():
                 result["tool_calls"] = tool_calls
             
             return result
-
 
         def stream_generator():
             tool_calls_buffer = {}
@@ -122,7 +128,7 @@ class Kimi():
                                             current["function"]["arguments"] += func.get("arguments", "")
                             
                                     # 暂存当前状态
-                                    final_tool_calls = [v for k,v in sorted(tool_calls_buffer.items())]
+                                    final_tool_calls = [v for k, v in sorted(tool_calls_buffer.items())]
 
                         except json.JSONDecodeError:
                             continue
@@ -135,7 +141,5 @@ class Kimi():
                         "tool_calls": final_tool_calls,
                         "id": final_tool_calls[0]["id"] if final_tool_calls else ""
                     }
-
-
 
         return stream_generator()

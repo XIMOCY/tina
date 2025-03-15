@@ -6,7 +6,6 @@
 importance为重要程度，由大模型评分，越重要，分数越高，越不容易被忘记
 ！！！注意：
 该记忆模块可能更加像消息管理模块，因为它不对大模型内部进行处理，
-涉及更底层的东西，请在 tina.core.LLM.memory 查看
 内含：
 -memory类
 """
@@ -15,8 +14,7 @@ import os
 import sqlite3
 import datetime
 from .manage import TinaFolderManager
-from ..RAG.textSegments import TextSegments
-from ..RAG.processFiles import fileToTxtByExten
+
 
 
 class Memory:
@@ -35,7 +33,7 @@ class Memory:
         tag:描述信息的种类，种类有：用户信息，指令信息，聊天信息，工具信息和其他信息。
         content:提取主要的内容，将无关描述去除。例如，对于“我是王出日，我是一名程序员”，content为“用户名叫王出日，是一名程序员”
         分数越高表示重要程度越高，被遗忘的概率越低。首先要明确是谁说的话，然后再输入内容，最后输入分数。具体内容如下：
-        用户信息是和用户相关的信息，比如用户是谁，用户是做什么的，用户的喜好，用户的社交信息等。
+        用户信息是和用户相关的信息，比如用户是谁，用户的身份是什么，用户的喜好，用户的社交信息等，注意区分用户的名字和身份，比如我叫王出日表示我的名字是王出日和我是一名学生表示我是一位还在读书的学生。
         指令信息是指用户要求你做的事情，比如用户让你做角色扮演，让你做某件事情等。
         工具信息是指你调用了什么工具，工具的执行结果，工具的使用方法等。
         聊天信息是指用户和机器人之间交流的消息，比如用户问你问题，机器人回答你问题，机器人提出建议等。
@@ -65,21 +63,23 @@ class Memory:
                 format = "json",
                 json_format = '{"role":"","tag":"","content":"","importance":1-5}'
             )
-        result = self.json(result)
-        result_dict = json.loads(result["content"])
+        result_dict = self.__json(result["content"],LLM)
+        # result_dict = json.loads(result["content"])
         if self.is_valid_json(result_dict):
             time = datetime.datetime.now().strftime("%Y年-%m月-%d日 %H时:%M分")
-            self.insertInSQLite(result_dict, time)
+            self.__insertInQOLite(result_dict, time)
         else:
-            self.insertInSQLite({"role": "", "content": "", "content": "", "importance": 0}, time)
+            time = datetime.datetime.now().strftime("%Y年-%m月-%d日 %H时:%M分")
+            self.__insertInQOLite({"role": "", "tag": "", "content": "", "importance": 0}, time)
         self.conn.close()
         return result_dict
-    def json(self,result:str,LLM:type=None)->dict:
+    def __json(self,result:str,LLM:type=None)->dict:
         """
         将字符串转换为字典
         """
         try:
             result_dict = json.loads(result)
+            return result_dict
         except:
             result = LLM.predict(
                 input_text = result,
@@ -89,13 +89,16 @@ class Memory:
             )
             result_dict = self.json(result)
         return result_dict
-    def insertInSQLite(self, result_dict, time):
-        self.cursor.execute('''
-            INSERT INTO logs(tag, time, role, content, importance)
-            VALUES (?,?,?,?,?)
-            ''', (result_dict["tag"], time, result_dict["role"], result_dict["content"], result_dict["importance"])
-            )
-        self.conn.commit()
+    def __insertInQOLite(self, result_dict, time):
+        try:
+            self.cursor.execute('''
+                INSERT INTO logs(tag, time, role, content, importance)
+                VALUES (?,?,?,?,?)
+                ''', (result_dict["tag"], time, result_dict["role"], result_dict["content"], result_dict["importance"])
+                )
+            self.conn.commit()
+        except sqlite3.IntegrityError:
+            pass
     
     def forget(self,importence:int=1) -> None:
         """

@@ -49,7 +49,7 @@ class AgentExecutor:
         raise ValueError(f"Unsupported AST node: {node}")
     
     @staticmethod
-    def execute(tool_call: str, tools: type,is_permissions: bool = True,LLM:type = None) -> tuple[str, bool]:
+    def execute(tool_call: tuple[str, dict, bool], tools: type,is_permissions: bool = True,LLM:type = None) -> tuple[str, bool]:
         """
         执行工具调用
         如何使用：
@@ -67,14 +67,13 @@ class AgentExecutor:
         Returns:
             tuple[str, bool]: 元组，执行结果和是否成功
         """
-        result = tina_parser(tool_call, tools,LLM=LLM)
-        if not result[2]:
+        if not tool_call[2]:
             return result
-        module = AgentExecutor.import_module(tools.getToolsPath(result[0]))
+        module = AgentExecutor.import_module(tools.getToolsPath(name = tool_call[0]))
 
-        func = getattr(module, result[0])
-        if result[1]:
-            result = func(**result[1])
+        func = getattr(module, tool_call[0])
+        if tool_call[1]:
+            result = func(**tool_call[1])
         else:
             result = func()
         
