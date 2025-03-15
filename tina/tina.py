@@ -15,13 +15,14 @@ from tina.RAG.Embedding.docToVec import docToVec
 from tina.Agent import Agent
 
 class Tina:
-    def __init__(self, path:str = None, LLM=None, tools:list = None, stream:bool = True, timeout:int = 43200,embeding_model:str = None,isSystem:bool = False, isRAG:bool = False, is_tool_call_permission:bool=False):
+    def __init__(self, path:str = None, LLM=None, tools:type = None,toolsLib:str = None, stream:bool = True, timeout:int = 600,embeding_model:str = None,isSystem:bool = False, isRAG:bool = False, is_tool_call_permission:bool=False):
         """
         初始化你的控制台tina
         Args:
             path:tina储存记忆，消息和你上传的文件的路径
             LLM:语言模型，目前只支持llama
             tools:你自定义的工具
+            toolsLib:你自定义的工具库，python文件路径
             stream:是否实时输出结果
             isSystem:是否使用tina自带的系统工具
             isRAG:是否使用tina自带的RAG工具
@@ -38,6 +39,8 @@ class Tina:
         self.Tools = Tools(isSystemTools=isSystem, isRAG=isRAG)
         if tools is not None:
             self.Tools.multiregister(tools)
+        if toolsLib is not None:
+            self.Tools += Tools.loadToolsFromPyFile(toolsLib)
         self.stream = stream
         self.Prompt = Prompt()
         self.agent = Agent(LLM, self.Tools, self.Prompt, is_tool_call_permission)

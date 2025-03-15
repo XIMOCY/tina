@@ -1,0 +1,104 @@
+.Loadingblock {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  background-color: #e1e4eb;
+  margin: auto;
+  height: 30px;
+  width: 30px;
+  user-select: none;
+  overflow: hidden;
+  transform: translateX(0);
+  -webkit-transform: translateX(0);
+  -moz-transform: translateX(0);
+  -ms-transform: translateX(0);
+  -o-transform: translateX(0);
+  transition: all 0.5s ease-in-out;
+  z-index: 2;
+  -webkit-transition: all 0.5s ease-in-out;
+  -moz-transition: all 0.5s ease-in-out;
+  -ms-transition: all 0.5s ease-in-out;
+  -o-transition: all 0.5s ease-in-out;
+}
+
+.Loadingblock_mark {
+  content: "";
+  width: 30px;
+  height: 30px;
+  background-color: #fff;
+  opacity: 1;
+  position: absolute;
+  top: 0;
+  left: -200px;
+  right: 0;
+  bottom: 0;
+  margin: auto;
+  transition: all 0.5s ease-in-out;
+  -webkit-transition: all 0.5s ease-in-out;
+  -moz-transition: all 0.5s ease-in-out;
+  -ms-transition: all 0.5s ease-in-out;
+  -o-transition: all 0.5s ease-in-out;
+}
+
+.Loadingblock_animation {
+  animation: LoadingShake 3s infinite ease-in-out;
+  -webkit-animation: LoadingShake 3s infinite ease-in-out;
+}
+
+.Loadingblock_Ring {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid #000000;
+  user-select: none;
+  animation: LoadingShakeBefore 1.5s infinite ease-in-out;
+  -webkit-animation: LoadingShakeBefore 1.5s infinite ease-in-out;
+  z-index: 1;
+}
+
+@keyframes LoadingShake {
+  0% {
+    transform: rotate(50deg);
+    -webkit-transform: rotate(50deg);
+    -moz-transform: rotate(50deg);
+    -ms-transform: rotate(50deg);
+    -o-transform: rotate(50deg);
+  }
+  50% {
+    transform: rotate(-50deg);
+    -webkit-transform: rotate(-50deg);
+    -moz-transform: rotate(-50deg);
+    -ms-transform: rotate(-50deg);
+    -o-transform: rotate(-50deg);
+  }
+  100% {
+    transform: rotate(50deg);
+    -webkit-transform: rotate(50deg);
+    -moz-transform: rotate(50deg);
+    -ms-transform: rotate(50deg);
+    -o-transform: rotate(50deg);
+  }
+}
+
+@keyframes LoadingShakeBefore {
+  from {
+    width: 20px;
+    height: 20px;
+    opacity: 1;
+    border: 2px solid #000000;
+  }
+  to {
+    width: 1000px;
+    height: 1000px;
+    opacity: 0;
+    border: 2px solid #ccc;
+  }
+}

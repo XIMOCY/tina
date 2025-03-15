@@ -1,0 +1,181 @@
+@font-face {
+  font-family: "SourceHanSans-VF";
+  src: url("/static/fonts/SourceHanSans-VF.woff2");
+}
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: "SourceHanSans-VF", "Microsoft Yahei", serif;
+  transition: all 0.3s ease-in-out;
+  -webkit-transition: all 0.3s ease-in-out;
+  -moz-transition: all 0.3s ease-in-out;
+  -ms-transition: all 0.3s ease-in-out;
+  -o-transition: all 0.3s ease-in-out;
+}
+body {
+  width: 100vw;
+  height: 100vh;
+  display: fixed;
+  overflow: hidden;
+}
+.app {
+  width: 100vw;
+  height: 100vh;
+  position: relative;
+  overflow: hidden;
+  background-color: #e2e1e4;
+}
+.chatArea,
+.inputArea,
+footer {
+  position: absolute;
+  z-index: 2;
+}
+.chatArea {
+  z-index: 1;
+  width: 100vw;
+  height: calc(78vh - 1rem);
+  padding: 0 24vw 0 25vw;
+  overflow: hidden;
+  overflow-y: auto;
+}
+.chatArea::-webkit-scrollbar {
+  width: 0;
+}
+.chatList {
+  width: 100%;
+  height: auto;
+  padding: 20px;
+}
+.self,
+.robot {
+  width: 100%;
+  height: auto;
+  font-size: 0px;
+  margin: 10px 0;
+}
+.message,
+.head {
+  display: inline-block;
+  vertical-align: top;
+  font-size: 1rem;
+}
+.head {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+}
+.message {
+  width: calc(100% - 50px);
+  min-height: 50px;
+  padding: 0 10px 0 50px;
+  border-radius: 10px;
+  -webkit-border-radius: 10px;
+  -moz-border-radius: 10px;
+  -ms-border-radius: 10px;
+  -o-border-radius: 10px;
+  text-align: right;
+}
+.message > div {
+  width: auto;
+  max-width: 100%;
+  display: inline-block;
+  overflow: hidden;
+  text-align: left;
+  padding: calc(50px - 2rem) 20px;
+  background-color: #2d65f7;
+  color: #fff;
+  border-radius: 1rem;
+  letter-spacing: 0.1rem;
+  overflow-x: auto;
+}
+.robot .message {
+  text-align: left;
+  padding: 0 50px 0 10px;
+}
+.robot .message > div {
+  text-align: left;
+  background-color: #fff;
+  color: #000;
+}
+.inputArea {
+  top: auto;
+  bottom: calc(2vh + 0.8rem);
+  left: 0;
+  right: 0;
+  margin: auto;
+  height: 20vh;
+  width: 50vw;
+  background-color: #fff;
+  border-radius: 10px;
+  -webkit-border-radius: 10px;
+  -moz-border-radius: 10px;
+  -ms-border-radius: 10px;
+  -o-border-radius: 10px;
+  --pSize: 10px;
+  padding: var(--pSize);
+  box-shadow: rgba(0, 0, 0, 0.35) 0px 5px 15px;
+}
+.inputArea > textarea {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  font-size: 1.2rem;
+}
+.inputArea > button {
+  position: absolute;
+  top: auto;
+  bottom: var(--pSize);
+  left: auto;
+  right: calc(var(--pSize) + 10px);
+  margin: auto;
+  width: 50px;
+  height: 50px;
+  border: none;
+  border-radius: 50%;
+  -webkit-border-radius: 50%;
+  -moz-border-radius: 50%;
+  -ms-border-radius: 50%;
+  -o-border-radius: 50%;
+  background-color: #eee;
+}
+.inputArea > button > svg {
+  width: 60%;
+  height: auto;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: auto;
+}
+.inputArea > button > svg > path {
+  fill: #8a988e;
+}
+.has-text {
+  background-color: #356bfd !important;
+}
+.has-text > svg > path {
+  fill: #fff !important;
+}
+footer {
+  top: auto;
+  bottom: 1vh;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 0.8rem;
+  color: #8a988e;
+}
+
+@media only screen and (max-width: 768px) {
+  .chatArea {
+    padding: 0;
+  }
+  .inputArea {
+    width: 90vw;
+  }
+}

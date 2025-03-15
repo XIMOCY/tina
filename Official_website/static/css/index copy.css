@@ -1,0 +1,288 @@
+.XIMO_body {
+  width: 100%;
+  height: 100%;
+}
+nav {
+  width: 100vw;
+  height: 60px;
+  font-size: 0;
+  background-color: #a0a0a08a;
+}
+nav > div,
+nav > ul {
+  display: inline-block;
+  vertical-align: top;
+  height: 100%;
+  font-size: 20px;
+  list-style: none;
+}
+.Nav_Left {
+  width: 80px;
+  padding: 5px 0 0 30px;
+  text-align: center;
+}
+.Nav_Left img {
+  width: 50px;
+  height: 50px;
+}
+.Nav_Right {
+  width: calc(100vw - 80px);
+  text-align: right;
+  padding: 0 10px 0 0;
+}
+.Nav_Right li {
+  height: 100%;
+  display: inline-block;
+  position: relative;
+  padding: 5px 10px;
+}
+.Nav_Right li > button {
+  height: 50px;
+  width: 100px;
+  display: inline-block;
+  border: none;
+  background-color: transparent;
+  color: #fff;
+}
+.Nav_Right li > button::after {
+  content: "";
+  position: absolute;
+  top: auto;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  margin: auto;
+  height: 0.5vh;
+  width: 0;
+  background-color: #fff;
+  transition: all 0.3s ease-in-out;
+  -webkit-transition: all 0.3s ease-in-out;
+  -moz-transition: all 0.3s ease-in-out;
+  -ms-transition: all 0.3s ease-in-out;
+  -o-transition: all 0.3s ease-in-out;
+}
+.Nav_Right li > button:hover::after {
+  width: 80%;
+  background-color: #1163ff;
+}
+.Nav_Right li > button:hover {
+  color: #111;
+  font-weight: 800;
+}
+.Body_Content {
+  width: 100vw;
+  height: calc(100vh - 60px);
+  overflow: hidden;
+  overflow-y: auto;
+}
+.markdown-body {
+  padding: 20px;
+}
+.Content_Main {
+  width: 100vw;
+  height: calc(100vh - 60px);
+  background-image: url("../images/Tina.jpg");
+}
+.Main {
+  width: 100%;
+  height: 100%;
+  background-color: #a0a0a08a;
+  position: relative;
+}
+.Main_Box {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  margin: auto;
+  height: 50vh;
+  width: 80vw;
+  text-align: center;
+  display: grid;
+  grid-template-rows: 1fr 1fr 1fr 1fr;
+  grid-gap: 20px;
+  padding: 20px;
+}
+.Main_Box h1 {
+  font-size: 40px;
+  color: #fff;
+}
+.Main_Box h2 {
+  font-size: 60px;
+  color: #fff;
+}
+.Main_Box p {
+  font-size: 20px;
+  color: #fff;
+}
+/* From Uiverse.io by satyamchaudharydev */
+.DownloadArea {
+  --width: 300px;
+  --height: 50px;
+  --tooltip-height: 35px;
+  --tooltip-width: 200px;
+  --gap-between-tooltip-to-button: 18px;
+  --button-color: #1163ff;
+  --tooltip-color: #fff;
+  width: var(--width);
+  height: var(--height);
+  background: var(--button-color);
+  text-align: center;
+  border-radius: 0.45em;
+  /*font-family: "Arial";*/
+  transition: background 0.3s ease-in-out;
+  position: relative;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  /*top: 50%;*/
+  -moz-transition: background 0.3s ease-in-out;
+  -ms-transition: background 0.3s ease-in-out;
+  -o-transition: background 0.3s ease-in-out;
+  -webkit-transition: background 0.3s ease-in-out;
+}
+
+.DownloadArea::before {
+  position: absolute;
+  content: attr(data-tooltip);
+  width: var(--tooltip-width);
+  height: var(--tooltip-height);
+  background-color: var(--tooltip-color);
+  font-size: 0.9rem;
+  color: #111;
+  border-radius: 0.25em;
+  line-height: var(--tooltip-height);
+  bottom: calc(var(--height) + var(--gap-between-tooltip-to-button) + 10px);
+  left: calc(50% - var(--tooltip-width) / 2);
+}
+
+.DownloadArea::after {
+  position: absolute;
+  content: "";
+  width: 0;
+  height: 0;
+  border: 10px solid transparent;
+  border-top-color: var(--tooltip-color);
+  left: calc(50% - 10px);
+  bottom: calc(100% + var(--gap-between-tooltip-to-button) - 10px);
+}
+
+.DownloadArea::after,
+.DownloadArea::before {
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.5s;
+}
+
+.text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.DownloadArea-wrapper,
+.text,
+.icon {
+  overflow: hidden;
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  left: 0;
+  color: #fff;
+}
+
+.text {
+  top: 0;
+}
+
+.text,
+.icon {
+  transition: top 0.5s;
+}
+
+.icon {
+  color: #fff;
+  top: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon svg {
+  width: 24px;
+  height: 24px;
+}
+
+.DownloadArea:hover {
+  background: #6c18ff;
+}
+
+.DownloadArea:hover .text {
+  top: -100%;
+}
+
+.DownloadArea:hover .icon {
+  top: 0;
+}
+
+.DownloadArea:hover:before,
+.DownloadArea:hover:after {
+  opacity: 1;
+  visibility: visible;
+}
+
+.DownloadArea:hover:after {
+  bottom: calc(var(--height) + var(--gap-between-tooltip-to-button) - 20px);
+}
+
+.DownloadArea:hover:before {
+  bottom: calc(var(--height) + var(--gap-between-tooltip-to-button));
+}
+
+footer {
+  /* background-color: #a0a0a08a; */
+  height: 30px;
+  width: 100%;
+  font-size: 15px;
+  color: #fff;
+  /* display: flex;
+  justify-content: center;
+  align-items: center;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0; */
+}
+div.mermaid {
+  text-align: center;
+  padding: 0;
+}
+svg[id^="m"][width][viewBox] {
+  width: 80%;
+  height: auto;
+  overflow: auto;
+}
+
+@media screen and (max-width: 768px) {
+  .Main_Box {
+    width: 100vw;
+    height: 70vh;
+    grid-gap: 10px;
+    padding: 10px;
+  }
+  .Nav_Right li {
+    padding: 5px 0;
+  }
+  .Nav_Right li > button {
+    width: 60px;
+  }
+  .Nav_Left {
+    width: 60px;
+    padding: 5px 0 0 10px;
+  }
+  .Nav_Right {
+    width: calc(100vw - 60px);
+    padding: 0 10px 0 0;
+  }
+}

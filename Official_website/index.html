@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="zh_CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XIMOCY - Official Website</title>
+    <link rel="icon" href="./static/images/logo/Infinite_Project.png">
+    <link rel="stylesheet" href="./static/css/base.css">
+    <link rel="stylesheet" href="./static/css/Loading.css">
+    <link rel="stylesheet" href="./static/css/animate/animate.min.css">
+    <link rel="stylesheet" href="./static/css/index.css">
+
+<body onload="Action()">
+    <div class="Loadingblock_Ring"></div>
+    <div class="Loadingblock Loadingblock_animation">
+        <div class="Loadingblock_mark"></div>
+    </div>
+    <div class="XIMO_Body HEEDEN">
+        <h1 class="Tina animate__animated">Tina</h1>
+        <div class="Tina_Console animate__animated">
+            <div class="Console_box">
+                <p>(・∀・) tina by QiQi in 🌟 XIMO
+                    <br><br>
+                    😊 欢迎使用tina，你可以输入#help来查看帮助<br>
+                    🤔 退出对话："#exit"<br>
+                    📤 文件上传："#file"<br>
+                    <br>
+                    😀 当出现"tina正在记忆信息时..."请不要打断
+                    <br>
+                    <br>
+                </p>
+                <div class="Tina_Console_Input"><span>( • ̀ω•́ ) >>>User:</span><input type="text"
+                        onblur="InputTimerControl(false)" onfocus="InputTimerControl(true)"></div>
+                <div class="Tina_Console_Output"></div>
+            </div>
+        </div>
+        <footer>
+            <div class="Upline"></div>
+            <div class="FooterMain animate__animated">
+                <div class="FooterMain_Left"><img src="./static/images/logo/logo.png" alt="Logo"></div>
+                <ul class="FooterMain_Right">
+                    <li><button>Github</button></li>
+                    <li><button>Gitee</button></li>
+                    <li><button>构建文档</button></li>
+                    <li><button>说明文档</button></li>
+                </ul>
+            </div>
+        </footer>
+    </div>
+</body>
+<script>
+    let InputTimer;
+    function InputTimerControl(status) {
+        if (status) {
+            clearInterval(InputTimer);
+        } else {
+            InputTimer = setInterval(() => {
+                const Tina_Console_Input = document.querySelectorAll(".Tina_Console_Input input");
+                const To = Tina_Console_Input[Tina_Console_Input.length - 1];
+                To.value += "_";
+                setTimeout(() => {
+                    To.value = To.value.replace("_", "");
+                }, 500);
+            }, 1000);
+        }
+    }
+    function Action() {
+        const Loadingblock = document.querySelector(".Loadingblock .Loadingblock_mark");
+        const Loadingblock_Ring = document.querySelector(".Loadingblock_Ring");
+        const Upline = document.querySelector(".Upline");
+        const XIMO_Body = document.querySelector(".XIMO_Body");
+        const Tina_Console = document.querySelector(".Tina_Console");
+        const FooterMain = document.querySelector(".FooterMain");
+        Loadingblock_Ring.remove();
+        Loadingblock.style.left = "0";
+        setTimeout(() => {
+            XIMO_Body.classList.remove("HEEDEN");
+            Tina_Console.classList.add("animate__fadeInDown");
+            FooterMain.classList.add("animate__fadeInUp");
+            Upline.style.width = "100%";
+            document.querySelector(".Loadingblock").style.opacity = "0";
+            InputTimerControl(false);
+        }, 400);
+        setTimeout(() => {
+            document.querySelector(".Loadingblock").remove();
+        }, 1000);
+    }
+</script>
+
+</html>

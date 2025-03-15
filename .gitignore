@@ -1,0 +1,8 @@
+__pycache__
+*.pyc
+*.ipynb
+testDataDir/
+*.zip
+dist/
+build/
+*.egg-info/
