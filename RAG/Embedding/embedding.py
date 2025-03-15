@@ -1,5 +1,5 @@
 import numpy as np
-from llama_cpp import Llama
+
 from typing import Union
 
 from ...core.manage import TinaFolderManager
@@ -8,6 +8,7 @@ from ...core.manage import TinaFolderManager
 
 class Embedding:
     def __init__(self, model_path: str = None, GPU_n: int = -1, log: bool = False):
+        from llama_cpp import Llama
         if model_path is None:
             model_path = TinaFolderManager.getEmbedingModel()
 

@@ -31,6 +31,8 @@ class BaseAPI():
                 temperature: float = 0.3,
                 top_p: float = 0.9,
                 stream: bool = False,
+                format:str = "text",
+                json_format:str = '{}',
                 tools: list = None) -> Union[dict, Generator[dict, None, None]]:
         if messages is None:
             messages = []
@@ -40,6 +42,11 @@ class BaseAPI():
                 messages.append({"role": "user", "content": input_text})
 
         # 请求参数
+        format_dict = {
+            'text': 'text',
+            'json': 'json_object'
+        }
+        format = format_dict[format]
         payload = {
             "model": self.model,
             "messages": messages,

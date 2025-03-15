@@ -32,6 +32,7 @@ class Agent:
         self.messages.extend(
             self.Memory.returnMessages(self.LLM.context_length, memory_percent=0.2, tag=["用户信息", "指令信息"], importance=3)
         )
+        self.messages.append({"role": "system", "content": "这条消息之前的内容是你和用户的聊天记忆，他们发生在过去的对话中，用于你了解用户会做什么。"})
         self.messages_conter = len(self.messages)
         self.is_tool_call_permission = is_tool_call_permission
 
@@ -236,13 +237,14 @@ class Agent_API(Agent):
                     tool_call = result[1]
 
     def parser(self, generator):
-
+        whole_content = ""
         tool_result = ('',False)
         for chunk in generator:
             if chunk["content"] is None:
                 chunk["content"] = ""
                 self.messages.append(chunk)
                 yield chunk["content"]
+                whole_content += chunk["content"]
             elif "tool_calls" in chunk and chunk["id"] != '': 
                 temp = chunk.copy()  # 使用copy避免修改原始数据
                 temp["tool_calls"][0]["id"] = temp["id"]
@@ -251,9 +253,12 @@ class Agent_API(Agent):
                 yield f"\n正在发生工具调用...\n工具名：{temp['tool_calls'][0]['function']['name']}\n"
                 try:
                     args = json.loads(chunk["tool_calls"][0]["function"]["arguments"])
+                    if args is None:
+                        yield "工具参数为空"
+                        yield from self.predict(input_text="工具参数为空，请重新输入，你之前输入的内容为：\n"+whole_content,stream=True)
                 except json.JSONDecodeError:
                     yield "工具参数解析失败"
-                    continue
+                    yield from self.predict(input_text="工具解析失败，请重新输入，你之前输入的内容为：\n"+whole_content,stream=True)
                     
                 tool_call = (chunk["tool_calls"][0]["function"]["name"], args, True)
                 tool_result = AgentExecutor.execute(tool_call=tool_call,tools=self.Tools)
@@ -263,7 +268,7 @@ class Agent_API(Agent):
                     # 添加工具结果到消息历史
                     self.messages.append({"role":"tool","content":f"工具调用结果：\n{tool_result[0]}"})
                     # 递归调用并立即返回所有生成内容
-                    yield from self.predict(input_text=None,stream=True)
+                    yield from self.predict(input_text=whole_content,stream=True)
             else:
                 yield chunk["content"]
 

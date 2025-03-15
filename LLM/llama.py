@@ -13,7 +13,7 @@ qwen模型网址：https://github.com/QwenLM/Qwenhttps://github.com/QwenLM/Qwen
 """
 import os
 from typing import Union,Generator
-from llama_cpp import Llama
+
 
 
 class llama:
@@ -33,6 +33,7 @@ class llama:
             GPU_n: 指定需要负载到GPU的模型层数，-1表示全部层负载到GPU的（不清楚模型内部实现不要动，在使用GPU是默认为-1）
             verbose: 是否打印日志，默认不打印
         """
+        from llama_cpp import Llama
         self.context_length = context_length
         self._call = "LOCAL"
         

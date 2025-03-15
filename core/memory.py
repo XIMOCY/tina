@@ -69,7 +69,8 @@ class Memory:
             time = datetime.datetime.now().strftime("%Y年-%m月-%d日 %H时:%M分")
             self.__insertInQOLite(result_dict, time)
         else:
-            self.__insertInQOLite({"role": "", "content": "", "content": "", "importance": 0}, time)
+            time = datetime.datetime.now().strftime("%Y年-%m月-%d日 %H时:%M分")
+            self.__insertInQOLite({"role": "", "tag": "", "content": "", "importance": 0}, time)
         self.conn.close()
         return result_dict
     def __json(self,result:str,LLM:type=None)->dict:
@@ -89,12 +90,15 @@ class Memory:
             result_dict = self.json(result)
         return result_dict
     def __insertInQOLite(self, result_dict, time):
-        self.cursor.execute('''
-            INSERT INTO logs(tag, time, role, content, importance)
-            VALUES (?,?,?,?,?)
-            ''', (result_dict["tag"], time, result_dict["role"], result_dict["content"], result_dict["importance"])
-            )
-        self.conn.commit()
+        try:
+            self.cursor.execute('''
+                INSERT INTO logs(tag, time, role, content, importance)
+                VALUES (?,?,?,?,?)
+                ''', (result_dict["tag"], time, result_dict["role"], result_dict["content"], result_dict["importance"])
+                )
+            self.conn.commit()
+        except sqlite3.IntegrityError:
+            pass
     
     def forget(self,importence:int=1) -> None:
         """

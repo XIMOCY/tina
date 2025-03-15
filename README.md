@@ -1,5 +1,44 @@
+# 如何安装tina
+## 使用wheel文件
+目前没有放在PyPi上，想要安装请在发行版里面下载对应的wheel，然后发在想要安装的环境中，输入下面的指令
+```bash
+pip install tina[下载的完整的名字]
+```
+## 源代码
+tina需要以下依赖：
+```
+diskcache==5.6.3
+faiss-cpu==1.9.0.post1
+Jinja2==3.1.5
+lxml==5.3.0
+MarkupSafe==3.0.2
+numpy==2.2.1
+packaging==24.2
+PyPDF2==3.0.1
+python-docx==1.1.2
+如果使用API方式使用大模型
+httpx
+如果使用本地方式
+llama-cpp-python
+```
+```bash
+cd [源代码文件夹]
+pip install -r requirements.txt
+```
+如果你需要本地使用大模型
+```bash
+pip install llama-cpp-python
+```
 # tina是什么?
-tina是一个简单的基于大模型的工具调用智能体库，作为我在大二时候一个Python与大模型应用的练习项目，她包含以下内容：
+tina是一个简单的基于大模型的工具调用智能体库，作为我在大二时候一个Python与大模型应用的练习项目，有部分代码是AI参与，我来修改完成的，代码目前的质量不高，可以骂轻点么，维护期长请原谅，目前还要读书，，，
+
+一开始是自己想实现一个本地的知识库，后面发现大模型原来可以调用工具，，，
+
+`注意：tina只包含了少量基本工具和对应的RAG查询工具，不包括其他工具，只是说，我可以让你方便的给大模型部署工具，你更多需要考虑工具怎么实现`
+
+比如你写了一个函数，使用Tools类的方法就可以将工具信息提交之后，设置一个智能体就可以使用了，具体请看下面的吧
+
+她包含以下内容：
 
 ### 1.简单的调用大模型
 只需要实例化一个大模型对象，即可通过设定方法的参数即可；
@@ -14,29 +53,23 @@ tina是一个简单的基于大模型的工具调用智能体库，作为我在�
 ### 6.模块化设计
 这意味着以上的功能你都可以拆开来用，不一定是智能体，还可以是类似下面这样的工作流：\
 RAG->LLM->LLM...
-### 7.依赖库少
-```
-大部分代码使用Python原生代码编写，需要下面的库\
-文件处理：\
-pypdf，Python-docx\
-RAG:\
-numpy，faiss\
-大模型调用：\
-httpx(如果使用api调用)，llama.cpp(使用本地的gguf模型)
-```
-```
+
 她也可以叫 llama-tool-call-agent，在一开始，她是一个本地使用llama.cpp部署模型和RAG的小工具
-```
+
 # 一.从一个tina开始接触
 tina中的Tina是一个在控制台实现的Agent,用到了tina里面的所有功能（可能？）
 ```python
 from tina import Tina
 from tina.LLM.llama import llama
 #Tina需要一个LLM来驱动
-#这里的模型是本地的，api可以参考后面的实例化一个大模型
+#本地模型如下
 llm = llama(
     path="[模型路径]",
     context_length=10000#根据你的模型来
+)
+#API如下，这里拿Qwen做演示
+llm = Qwen(
+    api_key =""#或者设置环境变量
 )
 my_tina = Tina(
     path="[Tina会在运行的时候产生文件，选择一个文件夹路径来保存]",
@@ -68,6 +101,239 @@ Tina是利用了tina库的基础功能来构建的一个软件，基于Python\
 本质也是工具调用，但是我给你们提供了便捷的方法，在Tina中指定isSystemTool为True和isRAG为True，
 就可以使用tina自带的系统工具和RAG接口，由大模型自己调用\
 RAG功能需要向量化模型，参考后面的RAG与向量化
+# 我的实现
+你可以参考一下我的用法
+```python
+#wcrtools在后面
+from tina import Tina
+from tina.LLM.Qwen import Qwen
+tools=[
+    {
+        "name":"outputToMarkdown",
+        "description":"使用该工具可以将输出导出到md文件中",
+        "required_parameters":["name","content"],
+        "parameters":{
+            "name":{"type":"str","description":"文件名，不需要带后缀名"},
+            "content":{"type":"str","description":"文件内容"}
+        },
+        "path":"D:/development/project/TCG/outputToMarkdown.py"
+    },
+    {
+        "name":"smile",
+        "description":"如果你感觉开心的话调用它可以微笑哦",
+        "required_parameters":[],
+        "parameters":{},
+        "path":"D:/development/project/TCG/action.py"
+    },
+    {
+        "name":"angry",
+        "description":"如果你感觉不开心可以生气一下",
+        "required_parameters":[],
+        "parameters":{},
+        "path":"D:/development/project/TCG/action.py"
+    },
+    {
+        "name":"sad",
+        "description":"如果你感觉很难过可以哭一会儿",
+        "required_parameters":[],
+        "parameters":{},
+        "path":"D:/development/project/TCG/action.py"
+    },
+    {
+        "name":"shy",
+        "description":"如果你感觉害羞会脸红",
+        "required_parameters":[],
+        "parameters":{},
+        "path":"D:/development/project/TCG/action.py"
+    }
+]
+llm = Qwen()
+my_tina = Tina(path='d:/',
+                LLM=llm,
+                embeding_model="C:/model/m3e_base.gguf",
+                tools=tools,
+                toolsLib=r"D:\development\project\TCG\wcrtools.py",
+                isSystem=True,
+                isRAG=True,
+                is_tool_call_permission=False
+)
+my_tina.run()
+```
+wcrtools 不一定好用哦
+```python
+import webbrowser
+import requests
+from bs4 import BeautifulSoup
+import requests
+import os
+import subprocess
+import threading
+
+def writeCode(filename, code):
+    """
+    将代码写入文件并返回文件路径，如果文件已存在，则覆盖原文件
+    Args:
+        filename: 文件名
+        code: 代码内容
+    """
+    path = os.path.join(os.getcwd(), filename)
+    with open(filename, 'w', encoding='utf-8') as f:
+        f.write(code)
+    return path
+
+def readCode(filename):
+    """
+    读取文件内容,仅限于当前目录下的文件
+    Args:
+        filename: 文件名
+    """
+    path = os.path.join(os.getcwd(), filename)
+    with open(filename, 'r') as f:
+        code = f.read()
+    return code
+
+def deleteCode(filename):
+    """
+    删除文件
+    Args:
+        filename: 文件名
+    """
+    path = os.path.join(os.getcwd(), filename)
+    os.remove(path)
+    return path
+
+
+def runCode(filename):
+    """
+    运行代码，并在命令行中显示输出结果,仅限于当前目录下的文件
+    Args:
+        filename: 文件名
+    """
+    path = os.path.join(os.getcwd(), filename)
+    try:
+        args = ['python', path]
+        p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = p.communicate()
+        if out:
+            print(out.decode('utf-8'))
+            return out.decode('utf-8')
+        if err:
+            print(err.decode('utf-8'))
+            return err.decode('utf-8')
+    except Exception as e:
+        print(str(e))
+        return str(e)
+def runCodeNotOpenTerminal(code):
+    """
+    运行代码，并在命令行中显示输出结果,不打开新的命令行窗口
+    Args:
+        code: 代码内容
+    """
+    try:
+        eval_thread = threading.Thread(target=eval, args=(code,))
+        eval_thread.start()
+        result = eval_thread.join()
+        return result
+    except Exception as e:
+        return str(e)
+
+def openBzhan():
+    """
+    帮助用户快速打开Bilibili网页来摸鱼
+    """
+    webbrowser.open("https://www.bilibili.com/")
+    print("Bilibili opened")
+    return "Bilibili opened!"
+
+def openBrowserSearch(text):
+    """
+    帮助用户快速在浏览器中搜索指定内容，不会打开浏览器，搜索结果用户看不到，请你总结或者挑选合适的结果，使用openURL()函数打开网址
+    Args:
+        text: 搜索内容
+    Returns:
+        输出搜索结果
+    """
+    # 发送搜索请求
+    search_url = f"https://www.bing.com/search?q={text}"
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    response = requests.get(search_url, headers=headers)
+    
+    # 解析搜索结果
+    soup = BeautifulSoup(response.text, 'html.parser')
+    results = []
+
+    # 提取标题和链接 (根据Bing实际结构调整选择器)
+    for item in soup.select('li.b_algo h2 a'):
+        title = item.get_text()
+        url = item.get('href')
+        content = getURLContent(url)
+        if content == -1:
+            results.append(f"{title}\n{url}\n请求失败")
+        elif content == -2:
+            results.append(f"{title}\n{url}\n解析失败")
+        else:
+            results.append(f"{title}\n{url}\n{content}")
+    
+    output = "帮你搜索了：\n" + "\n\n".join(results)
+    return output
+def openURL(url):
+    """
+    帮助用户快速打开指定网址
+    Args:
+        url: 网址
+    Returns:
+        输出打开结果
+    """
+    webbrowser.open(url)
+    print(f"{url} opened")
+    return f"{url} opened!"
+
+
+def getURLContent(url):
+    """
+    根据URL获取网页主要内容
+    Args:
+        url: 网址
+    Returns:
+        网页主要内容, 若失败返回-1或-2
+    """
+    try:
+        # 设置请求头模拟浏览器访问
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        # 发送HTTP请求
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()  # 检查请求状态
+        
+        # 解析HTML内容
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # 尝试多种常见内容标签提取
+        for tag in ['article', 'div.main-content', 'section', 'div.content']:
+            elements = soup.select(tag)
+            if elements:
+                return "\n\n".join([e.get_text(strip=True) for e in elements])
+        
+        # 备用方案：提取段落组合
+        paragraphs = soup.find_all('p')
+        if paragraphs:
+            return "\n".join([p.get_text(strip=True) for p in paragraphs])
+            
+        return "未找到明确的内容区域"
+        
+    except requests.exceptions.RequestException:
+        return -1  # 网络请求失败，返回错误码-1
+    except Exception:
+        return -2  # 其他处理异常，返回错误码-2
+
+
+
+
+
+
+```
 # 二.实例化一个大模型
 模型可以使用本地或者Api的形式的调用，本地使用llama.cpp的GGUF格式的模型，Api使用openai格式兼容的模型
 ## 1.本地的调用：
@@ -124,7 +390,7 @@ qwen = Qwen(
 ```
 当你实例化时，Qwen内会从环境变量里面通过QWEN_API_KEY来获取你的api key
 剩下的方法和本地使用模型的一致\
-目前有Qwen，DeepSeek，Kimi
+目前有Qwen，DeepSeek
 # 三.工具注册
 ## 先实例化Tools类
 ```python 
@@ -203,6 +469,12 @@ SystemTools = [
 
 tools.multiregister(SystemTools)
 ```
+从py文件载入工具
+```python
+from tina.core.tools import Tools
+tools = Tools.loadToolsFromPyFile([Py文件路径])#这是一个静态方法，返回一个Tools实例
+```
+
 工具类负责工具的管理，它有方法来获取工具的名字，路径，和参数验证，但是一般用不到，这些方法会在智能体和智能体执行器里面被使用
 # 四.设置一个智能体
 tina里面的智能体和大模型的区别在于
