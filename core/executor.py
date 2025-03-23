@@ -68,7 +68,7 @@ class AgentExecutor:
             tuple[str, bool]: 元组，执行结果和是否成功
         """
         if not tool_call[2]:
-            return result
+            return tool_call
         module = AgentExecutor.import_module(tools.getToolsPath(name = tool_call[0]))
 
         func = getattr(module, tool_call[0])

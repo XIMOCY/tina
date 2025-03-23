@@ -18,14 +18,19 @@ def tina_parser(text:str,tools:type,LLM:type=None)->tuple[str,str,bool]:
     if not match:
         return text,False,""
     tool_call = json_parser(result=match[0],LLM=LLM)
+    if tool_call is None:
+        return text,{},False
     if not tools.checkTools(tool_call['name']):
         return tool_call["name"],tool_call["arguments"],False
     return tool_call["name"],tool_call["arguments"],True
 
 def json_parser(result,LLM):
     _pattern =  r'\{\s*"name":\s*"[^"]*",\s*"arguments":\s*\{[^{}]*\}\s*\}'
-    result = re.search(_pattern, result, re.DOTALL)[0]
-    result = result.replace("\n","\\n")
+    try: 
+        result = re.search(_pattern, result, re.DOTALL)[0]
+        result = result.replace("\n","\\n")
+    except:
+        return None
     try:
         tool_call = json.loads(rf"{result}")
         return tool_call

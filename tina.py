@@ -15,7 +15,7 @@ from tina.RAG.Embedding.docToVec import docToVec
 from tina.Agent import Agent
 
 class Tina:
-    def __init__(self, path:str = None, LLM=None, tools:type = None,toolsLib:str = None, stream:bool = True, timeout:int = 600,embeding_model:str = None,isSystem:bool = False, isRAG:bool = False, is_tool_call_permission:bool=False):
+    def __init__(self, path:str = None, LLM=None, tools:type = None,toolsLib:str = None, stream:bool = True, timeout:int = 6000,embeding_model:str = None,isSystem:bool = False, isRAG:bool = False, is_tool_call_permission:bool=False):
         """
         初始化你的控制台tina
         Args:

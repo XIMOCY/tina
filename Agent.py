@@ -18,7 +18,7 @@ class Agent:
         else:
             raise ValueError("LLM 调用方式错误，如果是API调用，设置LLM._call = 'API'，如果是本地调用，设置LLM._call = 'LOCAL'")
 
-    def __init__(self, LLM: type, tools: type, prompt: type, is_tool_call_permission: bool = True):
+    def __init__(self, LLM: type, tools: type, prompt: type,Hearing:type=None,Sight:type=None, is_tool_call_permission: bool = True):
         self.LLM = LLM
         self.Tools = tools
         self.Prompt = prompt
@@ -159,6 +159,7 @@ class Agent:
                         # 执行工具调用
                     yield "正在发生工具调用...\n"
                     tool_call = tina_parser(tool_call, self.Tools, self.LLM)
+                    yield f"\n正在执行工具：{tool_call[0]}，参数为：{tool_call[1]}"
                     result = AgentExecutor.execute(tool_call, self.Tools, is_permissions=self.is_tool_call_permission, LLM=self.LLM)
                     if result[1]:
                         self.messages.extend([{
@@ -322,8 +323,9 @@ class Agent_LOCAL(Agent):
                     if not in_tool_call:
                         continue
                         # 执行工具调用
-                    yield "正在发生工具调用...\n"
+                    yield "正在发生工具调用..."
                     tool_call = tina_parser(tool_call, self.Tools, self.LLM)
+                    yield f"\n正在执行工具：{tool_call[0]}\n"
                     result = AgentExecutor.execute(tool_call, self.Tools, is_permissions=self.is_tool_call_permission, LLM=self.LLM)
                     if result[1]:
                         self.messages.extend([{
