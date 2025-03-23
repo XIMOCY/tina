@@ -6,3 +6,5 @@ testDataDir/
 dist/
 build/
 *.egg-info/
+setup.py
+.pypirc
