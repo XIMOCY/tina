@@ -8,7 +8,7 @@ class BaseAPI():
     API_ENV_VAR_NAME = "API_KEY"  # 默认的API key环境变量名称
     BASE_URL = ""  # 默认的base_url
 
-    def __init__(self,  model: str ,api_key: str = None, base_url: str = None):
+    def __init__(self, model: str,api_key: str = None, base_url: str = None):
         if api_key is None:
             try:
                 self.api_key = os.environ.get(self.API_ENV_VAR_NAME)
@@ -178,8 +178,7 @@ class BaseAPI_multimodal(BaseAPI):
         
         # 自动构建消息逻辑
         if messages is None:
-            # messages = [{"role": "system", "content": sys_prompt}]
-            messages = []
+            messages = [{"role": "system", "content": sys_prompt}]
 
             # 构建多模态消息
             user_content = []
@@ -204,7 +203,6 @@ class BaseAPI_multimodal(BaseAPI):
             "top_p": top_p,
             "stream": stream,
             "tools": tools,
-            # "extra_body":{"translation_options": { "source_lang": "auto","target_lang": "Persian"}}
         }
 
         headers = {

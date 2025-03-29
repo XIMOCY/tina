@@ -8,6 +8,7 @@ import threading
 import os
 import time
 import random
+import json
 from tina.core.manage import TinaFolderManager
 from tina.core.prompt import Prompt
 from tina.core.tools import Tools
@@ -175,12 +176,18 @@ class Tina:
     def chat(self, user_input):
         self.isChat = True
         result = self.agent.predict(input_text=user_input,stream=self.stream)
+        content = ""
         if self.stream:
             print("\n(・∀・) >>>tina:")
             for chunk in result:
+                content += chunk
                 print(chunk, end="", flush=True)
         else:
             print(result["content"])
+        with open("datasets.jsonl", "a", encoding="utf-8") as f:
+            message = {"role":"assistant","response":content,"input":user_input}
+            json.dump(message, f, ensure_ascii=False)
+            f.write('\n')  # 添加换行符
         self.isChat = False
 
     def show_remember_animation(self):

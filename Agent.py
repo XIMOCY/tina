@@ -10,10 +10,14 @@ from .core.parser import tina_parser
 
 
 class Agent:
-    def __new__(cls, LLM: type, tools: type, prompt: type, is_tool_call_permission: bool = True):
+    def __new__(cls, LLM: type, tools: type, prompt: type=None, is_tool_call_permission: bool = True):
         if LLM._call == "API":
+            if prompt is None:
+                return object.__new__(Agent_API_tools)
             return object.__new__(Agent_API)
         elif LLM._call == "LOCAL":
+            if prompt is None:
+                return object.__new__(Agent_LOCAL_tools)
             return object.__new__(Agent_LOCAL)
         else:
             raise ValueError("LLM 调用方式错误，如果是API调用，设置LLM._call = 'API'，如果是本地调用，设置LLM._call = 'LOCAL'")
@@ -46,9 +50,12 @@ class Agent:
         """
         调用agent进行生成文本回复，默认流式输出
         """
-        self.messages.append(
+        if input_text is not None:
+            self.messages.append(
             {"role": "user", "content": input_text}
-        )
+            )
+        else:
+            pass
         if stream:
             llm_result = self.LLM.predict(
                 messages=self.messages,
@@ -243,10 +250,9 @@ class Agent_API(Agent):
         for chunk in generator:
             if chunk["content"] is None:
                 chunk["content"] = ""
-                self.messages.append(chunk)
                 yield chunk["content"]
-                whole_content += chunk["content"]
             elif "tool_calls" in chunk and chunk["id"] != '': 
+                self.messages.append({"role":"assistant","content":whole_content})
                 temp = chunk.copy()  # 使用copy避免修改原始数据
                 temp["tool_calls"][0]["id"] = temp["id"]
                 temp.pop("id")
@@ -269,8 +275,9 @@ class Agent_API(Agent):
                     # 添加工具结果到消息历史
                     self.messages.append({"role":"tool","content":f"工具调用结果：\n{tool_result[0]}"})
                     # 递归调用并立即返回所有生成内容
-                    yield from self.predict(input_text=whole_content,stream=True)
+                    yield from self.predict(input_text=None,stream=True)
             else:
+                whole_content += chunk["content"]
                 yield chunk["content"]
 
             

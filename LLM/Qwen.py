@@ -5,5 +5,5 @@ class Qwen(BaseAPI):
     BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"  # 重写base_url
 
     def __init__(self, api_key: str = None, model: str = "qwen-plus", base_url: str = None):
-        super().__init__(api_key, model, base_url)
+        super().__init__(api_key=api_key, model=model, base_url=base_url)
         self.__call = "API"
