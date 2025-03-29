@@ -1,8 +1,6 @@
 class Prompt:
-    def __init__(self,prompt_str:str = None):
-        self.prompt_str = prompt_str
-        self.LLM = None
-        self.prompt={
+    def __init__(self,type:str="default_agent"):
+        self.prompt_dict={
             "default_agent":r"""
             你是一个人工智能助手，我们为你提供很多个工具，你可以调用他们来完成你的任务！
             当用户的描述过于简单的时候，可以查找有没有相应的工具可以使用,如果没有就进一步询问用户
@@ -31,6 +29,7 @@ class Prompt:
             加油tina！
             """
         }
+        self.prompt = self.prompt_dict[type]
 
     def concatenate(self,prompt_str:str):
         self.prompt += prompt_str

@@ -12,6 +12,12 @@ class TinaFolderManager:
     管理tina文件夹
     """
     @staticmethod
+    def getStatus() -> bool:
+        """
+        获取tina文件夹是否存在
+        """
+        return os.path.exists(TinaFolderManager.file_dir)
+    @staticmethod
     def init(base_dir: str = os.path.dirname(__file__)):
         """
         初始化tina文件夹

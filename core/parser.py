@@ -16,7 +16,7 @@ def tina_parser(text:str,tools:type,LLM:type=None)->tuple[str,str,bool]:
     _pattern = r'<tool_call>(.*?)</tool_call>'
     match = re.search(_pattern, text, re.DOTALL)
     if not match:
-        return text,False,""
+        return text,"",False
     tool_call = json_parser(result=match[0],LLM=LLM)
     if tool_call is None:
         return text,{},False

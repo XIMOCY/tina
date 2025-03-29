@@ -9,8 +9,6 @@ tools
 """
 import pickle
 import inspect
-import tina.RAG.query.query
-import tina.tools.systemTools
 import tina.tools.NULLTools
 class Tools:
     def __add__(self, other):
@@ -51,6 +49,7 @@ class Tools:
         self.__extendTools(isSystemTools, isRAG)
 
     def __extendTools(self, isSystemTools, isRAG):
+        import tina.tools.systemTools
         if isSystemTools:
             SystemTools = [
                 {
@@ -84,6 +83,7 @@ class Tools:
             ]
             self.multiregister(SystemTools)
         if isRAG:
+            import tina.RAG.query.query
             RAGTools =[
                             {
                                 "name": "query",

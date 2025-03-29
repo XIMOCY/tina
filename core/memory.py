@@ -19,6 +19,8 @@ from .manage import TinaFolderManager
 
 class Memory:
     def __init__(self):
+        if TinaFolderManager.getStatus() == False:
+            TinaFolderManager.init(os.getcwd())
         self.folder = TinaFolderManager.getMemory()
         self.conn = sqlite3.connect(os.path.join(self.folder, "memory.db"))
         self.cursor = self.conn.cursor()

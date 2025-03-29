@@ -1,44 +1,46 @@
 import datetime
 import json
-import time
 from typing import Union, Generator, Iterator, Any
 from .core.executor import AgentExecutor
 from .RAG.processFiles import FileProcess
 from .core.memory import Memory
 from .tools.systemTools import *
 from .core.parser import tina_parser 
+from .core.prompt import Prompt
 
+prompt = Prompt(type="tina")
 
 class Agent:
-    def __new__(cls, LLM: type, tools: type, prompt: type=None, is_tool_call_permission: bool = True):
+    def __new__(cls, LLM: type, tools: type, prompt: type=None, isMemory: bool = False):
         if LLM._call == "API":
-            if prompt is None:
-                return object.__new__(Agent_API_tools)
             return object.__new__(Agent_API)
         elif LLM._call == "LOCAL":
-            if prompt is None:
-                return object.__new__(Agent_LOCAL_tools)
             return object.__new__(Agent_LOCAL)
         else:
             raise ValueError("LLM 调用方式错误，如果是API调用，设置LLM._call = 'API'，如果是本地调用，设置LLM._call = 'LOCAL'")
 
-    def __init__(self, LLM: type, tools: type, prompt: type,Hearing:type=None,Sight:type=None, is_tool_call_permission: bool = True):
+    def __init__(self, LLM: type, tools: type,sys_prompt:str=None,isMemory:bool = False):
         self.LLM = LLM
         self.Tools = tools
         self.Prompt = prompt
-        self.Memory = Memory()
-        self.fileProcess = FileProcess()
-        self.messages = [
-            {"role": "system", "content": self.Prompt.prompt["tina"]},
-            {"role": "system", "content": f"这次运行的开始数据有：你的最大上下文{self.LLM.context_length},时间为{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"}
-        ]
-        # 加载记忆信息
-        self.messages.extend(
+        if sys_prompt is not None:
+            self.messages = [
+                {"role": "system", "content": sys_prompt},
+                {"role": "system", "content": f"这次运行的开始数据有：你的最大上下文{self.LLM.context_length},时间为{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"}
+            ]
+        else:
+            self.messages = [
+                {"role": "system", "content": self.Prompt.prompt},
+                {"role": "system", "content": f"这次运行的开始数据有：你的最大上下文{self.LLM.context_length},时间为{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"}
+            ]
+        if isMemory:
+            self.Memory = Memory()
+            self.messages.extend(
             self.Memory.returnMessages(self.LLM.context_length, memory_percent=0.2, tag=["用户信息", "指令信息"], importance=3)
         )
-        self.messages.append({"role": "system", "content": "这条消息之前的内容是你和用户的聊天记忆，他们发生在过去的对话中，用于你了解用户会做什么。"})
+            self.messages.append({"role": "system", "content": "这条消息之前的内容是你和用户的聊天记忆，他们发生在过去的对话中，用于你了解用户会做什么。"})
+        # 加载记忆信息
         self.messages_conter = len(self.messages)
-        self.is_tool_call_permission = is_tool_call_permission
 
     def predict(self, input_text: str = None,
                 temperature: float = 0.5,
@@ -69,7 +71,7 @@ class Agent:
             return self.tag_parser(text_generator=llm_result, tag="<tool_call>")
         else:
             tool_call = False
-            while tool_call == False:
+            while True:
                 llm_result = self.LLM.predict(
                     messages=self.messages,
                     temperature=temperature,
@@ -79,14 +81,19 @@ class Agent:
                     min_p=min_p,
                     stream=stream
                 )
-                result = AgentExecutor.execute(llm_result["content"], self.Tools, is_permissions=self.is_tool_call_permission)
-                if not result[1]:
-                    return result[0]
-
-                self.messages.append(
-                    {"role": "assistant", "content": "工具的执行结果为：\n" + result[0]}
-                )
-                tool_call = result[1]
+                parser_result = tina_parser(llm_result["content"], self.Tools, self.LLM)
+                tool_call = parser_result[2]
+                if tool_call == False:
+                    self.messages.append(
+                        llm_result
+                    )
+                    return llm_result 
+                else:
+                    result = AgentExecutor.execute(parser_result, self.Tools)
+                    self.messages.append(
+                        {"role": "tool", "content": "工具的执行结果为：\n" + result[0]}
+                    )
+                    continue
 
     def readFile(self, path):
         """
@@ -167,7 +174,7 @@ class Agent:
                     yield "正在发生工具调用...\n"
                     tool_call = tina_parser(tool_call, self.Tools, self.LLM)
                     yield f"\n正在执行工具：{tool_call[0]}，参数为：{tool_call[1]}"
-                    result = AgentExecutor.execute(tool_call, self.Tools, is_permissions=self.is_tool_call_permission, LLM=self.LLM)
+                    result = AgentExecutor.execute(tool_call, self.Tools, LLM=self.LLM)
                     if result[1]:
                         self.messages.extend([{
                             "role": "assistant",
@@ -197,8 +204,8 @@ class Agent:
 
 
 class Agent_API(Agent):
-    def __init__(self, LLM: type, tools: type, prompt: type, is_tool_call_permission: bool = True):
-        super().__init__(LLM, tools, prompt, is_tool_call_permission)
+    def __init__(self, LLM: type, tools: type, sys_prompt:str=None,isMemory:bool = False):
+        super().__init__(LLM=LLM, tools=tools, sys_prompt=sys_prompt, isMemory=isMemory)
         self.tool_calls:list = []
     def predict(self, input_text: str = None,
                 temperature: float = 0.5,
@@ -225,7 +232,7 @@ class Agent_API(Agent):
             return self.parser(llm_result)
         else:
             tool_call = False
-            while tool_call == False:
+            while True:
                 llm_result = self.LLM.predict(
                     messages=self.messages,
                     temperature=temperature,
@@ -235,7 +242,7 @@ class Agent_API(Agent):
                 )
                 if "tool_calls" in llm_result.keys():
                     tool_call = (llm_result["tool_calls"][0]["function"]["name"],json.loads(llm_result["tool_calls"][0]["function"]["arguments"]),True)
-                    result = AgentExecutor.execute(tool_call, self.Tools, is_permissions=self.is_tool_call_permission)
+                    result = AgentExecutor.execute(tool_call, self.Tools)
                     if not result[1]:
                         return result[0]
 
@@ -243,6 +250,14 @@ class Agent_API(Agent):
                         {"role": "assistant", "content": "工具的执行结果为：\n" + result[0]}
                     )
                     tool_call = result[1]
+                if tool_call == False:
+                    
+                    self.messages.append(
+                        llm_result
+                    )
+                    return llm_result 
+                else:
+                    continue
 
     def parser(self, generator):
         whole_content = ""
@@ -285,8 +300,8 @@ class Agent_API(Agent):
 
 
 class Agent_LOCAL(Agent):
-    def __init__(self, LLM: type, tools: type, prompt: type, is_tool_call_permission: bool = True):
-        super().__init__(LLM, tools, prompt, is_tool_call_permission)
+    def __init__(self, LLM: type, tools: type, isMemory:bool = False):
+        super().__init__(LLM, tools, prompt, isMemory=isMemory)
 
     def tag_parser(self, text_generator: Iterator[Any], tag="") -> Generator[str, None, None]:
         """
@@ -333,7 +348,7 @@ class Agent_LOCAL(Agent):
                     yield "正在发生工具调用..."
                     tool_call = tina_parser(tool_call, self.Tools, self.LLM)
                     yield f"\n正在执行工具：{tool_call[0]}\n"
-                    result = AgentExecutor.execute(tool_call, self.Tools, is_permissions=self.is_tool_call_permission, LLM=self.LLM)
+                    result = AgentExecutor.execute(tool_call, self.Tools, LLM=self.LLM)
                     if result[1]:
                         self.messages.extend([{
                             "role": "assistant",
