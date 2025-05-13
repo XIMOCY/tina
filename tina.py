@@ -9,10 +9,10 @@ import os
 import time
 import random
 import json
-from tina.core.manage import TinaFolderManager
-from tina.core.prompt import Prompt
-from tina.core.tools import Tools
-from tina.RAG.Embedding.docToVec import docToVec
+from .core.manage import TinaFolderManager
+from .core.prompt import Prompt
+from .core.tools import Tools
+from .RAG.Embedding.docToVec import docToVec
 from .Agent import Agent
 
 class Tina:
@@ -111,7 +111,7 @@ class Tina:
 
     def remembeing(self,timeout=None):
         while True:
-            if self.isChat is False and self.isRemember is False and self.isExit is False:
+            if self.isChat is False and self.isRemember is False:
                 if timeout is None:
                     time.sleep(self.timeout)
                 else:

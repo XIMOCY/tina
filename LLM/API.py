@@ -8,12 +8,12 @@ class BaseAPI():
     API_ENV_VAR_NAME = "API_KEY"  # 默认的API key环境变量名称
     BASE_URL = ""  # 默认的base_url
 
-    def __init__(self, model: str,api_key: str = None, base_url: str = None):
+    def __init__(self, model: str,api_key: str = None, base_url: str = None,type = "base"):
         if api_key is None:
             try:
                 self.api_key = os.environ.get(self.API_ENV_VAR_NAME)
             except KeyError:
-                print(f"API key并没有在环境变量‘{self.API_ENV_VAR_NAME}’中找到，要么请你设置一下，要么输入api_key参数")
+                print(f"API key并没有在环境变量'{self.API_ENV_VAR_NAME}'中找到，要么请你设置一下，要么输入api_key参数")
         else:
             print(f"我们建议你在环境变量中设置{self.API_ENV_VAR_NAME}，不要输入api_key参数哦")
             self.api_key = api_key
@@ -35,6 +35,18 @@ class BaseAPI():
                 format:str = "text",
                 json_format:str = '{}',
                 tools: list = None) -> Union[dict, Generator[dict, None, None]]:
+        """
+        Args:
+            input_text: 用户输入的文本
+            sys_prompt: 系统提示
+            messages: 历史消息列表
+            temperature: 随机性
+            top_p: 置信度
+            stream: 是否流式请求
+            format: 返回格式，text或json
+            json_format: json格式
+            tools: 工具列表
+        """
         if messages is None:
             messages = []
             messages.append({"role": "system", "content": sys_prompt})
@@ -64,7 +76,7 @@ class BaseAPI():
 
         # **非流式请求**
         if not stream:
-            response = httpx.post(f"{self.base_url}/chat/completions", json=payload, headers=headers, timeout=30)
+            response = httpx.post(f"{self.base_url}", json=payload, headers=headers, timeout=180)
             response_data = response.json()
             self.token += response_data.get("usage", {}).get("total_tokens", 0)
             
@@ -80,9 +92,17 @@ class BaseAPI():
         def stream_generator():
             tool_calls_buffer = {}
             final_tool_calls = None
-            received_ids = {}  # 用于保存每个index首次收到的ID
+            received_ids = {}  # 
+            self.isReasoning = False
+            tool_name_sent = set()  # 记录已经发送过名称的工具索引
     
-            with httpx.stream("POST", f"{self.base_url}/chat/completions", json=payload, headers=headers, timeout=60) as response:
+            with httpx.stream("POST", f"{self.base_url}", json=payload, headers=headers, timeout=60) as response:
+                try:
+                    if response.status_code != 200:
+                        raise Exception(f"请求失败了，状态码：{response.status_code}")
+                except Exception as e:
+                    rep = response.read()
+                    yield {"role":"assistant", "content": str(e) + f"\n{rep.decode('utf-8')}"}
                 for line in response.iter_lines():
                     line = line.strip()
                     if line.startswith("data: "):
@@ -95,6 +115,9 @@ class BaseAPI():
                                 # 处理普通内容
                                 if "content" in delta:
                                     result["content"] = delta["content"]
+                                    yield result
+                                if "reasoning_content" in delta:
+                                    result["reasoning_content"] = delta["reasoning_content"]
                                     yield result
 
                                 # 处理工具调用
@@ -124,6 +147,16 @@ class BaseAPI():
                                         if tool_call.get("function"):
                                             func = tool_call["function"]
                                             current["function"]["name"] = func.get("name") or current["function"].get("name", "")
+                                            
+                                            # 如果这是第一次接收到工具名称且未发送过，立即发送工具名称
+                                            if current["function"].get("name") and index not in tool_name_sent:
+                                                tool_name_sent.add(index)
+                                                yield {
+                                                    "role": "assistant",
+                                                    "content": "",
+                                                    "tool_name": current["function"]["name"]
+                                                }
+                                            
                                             if func.get("arguments") is None:
                                                 continue
                                             current["function"]["arguments"] += func.get("arguments", "")
@@ -144,6 +177,7 @@ class BaseAPI():
                     }
 
         return stream_generator()
+
     
 class BaseAPI_multimodal(BaseAPI):
     API_ENV_VAR_NAME = ""  # 覆盖环境变量名
@@ -211,7 +245,7 @@ class BaseAPI_multimodal(BaseAPI):
         }
 
         if not stream:
-            response = httpx.post(f"{self.base_url}/chat/completions", json=payload, headers=headers, timeout=timeout)
+            response = httpx.post(f"{self.base_url}", json=payload, headers=headers, timeout=timeout)
             response_data = response.json()
             self.token += response_data.get("usage", {}).get("total_tokens", 0)
             result = {"role": "assistant", "content": response_data["choices"][0]["message"]["content"]}
@@ -223,8 +257,11 @@ class BaseAPI_multimodal(BaseAPI):
             tool_calls_buffer = {}
             final_tool_calls = None
             received_ids = {}  # 用于保存每个index首次收到的ID
+            tool_name_sent = set()  # 记录已经发送过名称的工具索引
     
-            with httpx.stream("POST", f"{self.base_url}/chat/completions", json=payload, headers=headers, timeout=timeout) as response:
+            with httpx.stream("POST", f"{self.base_url}", json=payload, headers=headers, timeout=timeout) as response:
+                if response.status_code != 200:
+                    raise Exception(f"请求失败了，状态码：{response.status_code}")
                 for line in response.iter_lines():
                     line = line.strip()
                     if line.startswith("data: "):
@@ -266,6 +303,16 @@ class BaseAPI_multimodal(BaseAPI):
                                         if tool_call.get("function"):
                                             func = tool_call["function"]
                                             current["function"]["name"] = func.get("name") or current["function"].get("name", "")
+                                            
+                                            # 如果这是第一次接收到工具名称且未发送过，立即发送工具名称
+                                            if current["function"].get("name") and index not in tool_name_sent:
+                                                tool_name_sent.add(index)
+                                                yield {
+                                                    "role": "assistant",
+                                                    "content": "",
+                                                    "tool_name": current["function"]["name"]
+                                                }
+                                            
                                             if func.get("arguments") is None:
                                                 continue
                                             current["function"]["arguments"] += func.get("arguments", "")
@@ -275,5 +322,14 @@ class BaseAPI_multimodal(BaseAPI):
 
                         except json.JSONDecodeError:
                             continue
+                
+                # 流结束时处理最终工具调用
+                if final_tool_calls:
+                    yield {
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": final_tool_calls,
+                        "id": final_tool_calls[0]["id"] if final_tool_calls else ""
+                    }
         
         return stream_generator()

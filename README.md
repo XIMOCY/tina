@@ -1,8 +1,7 @@
 # 如何安装tina
-## 使用wheel文件
-目前没有放在PyPi上，想要安装请在发行版里面下载对应的wheel，然后发在想要安装的环境中，输入下面的指令
+
 ```bash
-pip install tina[下载的完整的名字]
+pip install tina-python
 ```
 ## 源代码
 tina需要以下依赖：
