@@ -7,7 +7,7 @@ class MCPToolExecutor:
     """
     
     @staticmethod
-    def execute_mcp_tool(tool_name: str, args: Dict[str, Any], mcp_client: MCPClient) -> tuple:
+    def execute_mcp_tool(tool_name: str, args: Dict[str, Any], mcp_client: MCPClient,max_input = None) -> tuple:
         """
         执行MCP工具调用
         
@@ -32,6 +32,7 @@ class MCPToolExecutor:
             result = mcp_client.callTool(actual_tool_name, args, server_id)
             
             if result["success"]:
+                result_str = result.get("content", "") if max_input is None else result.get("content", "")[:max_input-500]
                 return result["content"], True
             else:
                 return f"工具调用失败: {result.get('error', '未知错误')}", False

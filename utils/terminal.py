@@ -14,7 +14,7 @@ def terminal(command):
     """
 
     # 新增：获取当前模块所在目录
-    module_dir = os.path.dirname(os.path.abspath(__file__))
+    module_dir = os.getcwd()
 
     def _stream_reader(pipe, queue):
         try:

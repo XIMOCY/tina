@@ -6,17 +6,18 @@ pip install tina-python
 ## 源代码
 tina需要以下依赖：
 ```
+使用RAG
 diskcache==5.6.3
 faiss-cpu==1.9.0.post1
-Jinja2==3.1.5
 lxml==5.3.0
 MarkupSafe==3.0.2
 numpy==2.2.1
 packaging==24.2
 PyPDF2==3.0.1
 python-docx==1.1.2
-如果使用API方式使用大模型
+仅仅只是调用个大模型或者agent
 httpx
+Jinja2
 如果使用本地方式
 llama-cpp-python
 ```
@@ -29,8 +30,90 @@ pip install -r requirements.txt
 pip install llama-cpp-python
 ```
 # tina是什么?
-tina是一个简单的基于大模型的工具调用智能体库，作为我在大二时候一个Python与大模型应用的练习项目，有部分代码是AI参与，我来修改完成的，代码目前的质量不高，可以骂轻点么，维护期长请原谅，目前还要读书，，，
+tina是一个简单的基于大模型的工具调用智能体库，
 
+一开始使用的OpenAI SDK，后面想要扩展功能的时候使用了LangChain 发现我想要的功能介于这两种之间
+有的时候也许我只想要调用一个大模型获得一个输出，用不着其他的很多功能，而且使用方式不是很符合我的直觉，所以我自己用httpx自己封装了一个简单的库
+
+你可以用它来做一个快速的大模型应用的原型验证，
+```python
+#简单的调用大模型来翻译一个句子
+from tina.LLM import BaseAPI
+
+llm = BaseAPI(
+    api_key="填写你自己的api",
+    base_url="你选择的API提供商",
+    model="模型名称"
+)
+result = llm.predict(
+    input_text = "帮我翻译一下这句话：Hello tina",
+    sys_prompt = "你是一位专业的翻译家...",
+)
+print(result)
+```
+```python
+#尝试一下大模型调用工具的能力
+from tina import Agent,Tools
+from tina.LLM import BaseAPI
+tools = Tools()
+llm = BaseAPI(
+    api_key="填写你自己的api",
+    base_url="你选择的API提供商",
+    model="模型名称"
+)
+agent = Agent(
+    LLM = llm,
+    tools = tools,
+)
+
+result = agent.predict(
+    input_text = "现在几点了",
+)
+
+for i in result:
+    print(i,end="")
+
+```
+```python
+# 尝试一下MCP
+# 魔塔的MCP广场 https://www.modelscope.cn/mcp
+from tina import Agent,Tools,MCPClient
+from tina.LLM import BaseAPI
+from tina.MCP import MCPClient
+
+bing_search_mcp = {
+  "mcpServers": {
+    "fetch": {
+      "type": "sse",
+      "url": "https://mcp.api-inference.modelscope.cn/sse/xxxxxxxxxxxx"
+    }
+  }
+}
+# 实例化一个MCP服务器并且添加一个服务
+MCP = MCPClient()
+MCP.addServer(
+    server_id="bing_search",#这个是自己取的id
+    config=bing_search_mcp["mcpServers"]["fetch"]
+)
+
+llm = BaseAPI(
+    api_key="填写你自己的api",
+    base_url="你选择的API提供商",
+    model="模型名称"
+)
+tools = Tools()
+
+agent = Agent(
+    LLM=llm,
+    tools=tools,
+    MCP=MCP
+)# MCP的工具会被大模型主动的调用
+result = agent.predict(
+    input_text= "查询一下苹果公司",
+)
+for i in result:
+    print(i,end="")
+```
 一开始是自己想实现一个本地的知识库，后面发现大模型原来可以调用工具，，，
 
 `注意：tina只包含了少量基本工具和对应的RAG查询工具，不包括其他工具，只是说，我可以让你方便的给大模型部署工具，你更多需要考虑工具怎么实现`
@@ -97,7 +180,7 @@ Tina是利用了tina库的基础功能来构建的一个软件，基于Python\
 2.**工具调用**：\
 在实例化my_tina时指定Tina的tools参数，tools是一个列表，符合工具调用的JSON \
 3.**操作计算机和RAG**\
-本质也是工具调用，但是我给你们提供了便捷的方法，在Tina中指定isSystemTool为True和isRAG为True，
+本质也是工具调用，但是我给你们提供了便捷的方法，在Tina中指定isSystemTool为True和useRAG为True，
 就可以使用tina自带的系统工具和RAG接口，由大模型自己调用\
 RAG功能需要向量化模型，参考后面的RAG与向量化
 # 我的实现
@@ -153,186 +236,12 @@ my_tina = Tina(path='d:/',
                 tools=tools,
                 toolsLib=r"D:\development\project\TCG\wcrtools.py",
                 isSystem=True,
-                isRAG=True,
+                useRAG=True,
                 is_tool_call_permission=False
 )
 my_tina.run()
 ```
-wcrtools 不一定好用哦
-```python
-import webbrowser
-import requests
-from bs4 import BeautifulSoup
-import requests
-import os
-import subprocess
-import threading
 
-def writeCode(filename, code):
-    """
-    将代码写入文件并返回文件路径，如果文件已存在，则覆盖原文件
-    Args:
-        filename: 文件名
-        code: 代码内容
-    """
-    path = os.path.join(os.getcwd(), filename)
-    with open(filename, 'w', encoding='utf-8') as f:
-        f.write(code)
-    return path
-
-def readCode(filename):
-    """
-    读取文件内容,仅限于当前目录下的文件
-    Args:
-        filename: 文件名
-    """
-    path = os.path.join(os.getcwd(), filename)
-    with open(filename, 'r') as f:
-        code = f.read()
-    return code
-
-def deleteCode(filename):
-    """
-    删除文件
-    Args:
-        filename: 文件名
-    """
-    path = os.path.join(os.getcwd(), filename)
-    os.remove(path)
-    return path
-
-
-def runCode(filename):
-    """
-    运行代码，并在命令行中显示输出结果,仅限于当前目录下的文件
-    Args:
-        filename: 文件名
-    """
-    path = os.path.join(os.getcwd(), filename)
-    try:
-        args = ['python', path]
-        p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, err = p.communicate()
-        if out:
-            print(out.decode('utf-8'))
-            return out.decode('utf-8')
-        if err:
-            print(err.decode('utf-8'))
-            return err.decode('utf-8')
-    except Exception as e:
-        print(str(e))
-        return str(e)
-def runCodeNotOpenTerminal(code):
-    """
-    运行代码，并在命令行中显示输出结果,不打开新的命令行窗口
-    Args:
-        code: 代码内容
-    """
-    try:
-        eval_thread = threading.Thread(target=eval, args=(code,))
-        eval_thread.start()
-        result = eval_thread.join()
-        return result
-    except Exception as e:
-        return str(e)
-
-def openBzhan():
-    """
-    帮助用户快速打开Bilibili网页来摸鱼
-    """
-    webbrowser.open("https://www.bilibili.com/")
-    print("Bilibili opened")
-    return "Bilibili opened!"
-
-def openBrowserSearch(text):
-    """
-    帮助用户快速在浏览器中搜索指定内容，不会打开浏览器，搜索结果用户看不到，请你总结或者挑选合适的结果，使用openURL()函数打开网址
-    Args:
-        text: 搜索内容
-    Returns:
-        输出搜索结果
-    """
-    # 发送搜索请求
-    search_url = f"https://www.bing.com/search?q={text}"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    response = requests.get(search_url, headers=headers)
-    
-    # 解析搜索结果
-    soup = BeautifulSoup(response.text, 'html.parser')
-    results = []
-
-    # 提取标题和链接 (根据Bing实际结构调整选择器)
-    for item in soup.select('li.b_algo h2 a'):
-        title = item.get_text()
-        url = item.get('href')
-        content = getURLContent(url)
-        if content == -1:
-            results.append(f"{title}\n{url}\n请求失败")
-        elif content == -2:
-            results.append(f"{title}\n{url}\n解析失败")
-        else:
-            results.append(f"{title}\n{url}\n{content}")
-    
-    output = "帮你搜索了：\n" + "\n\n".join(results)
-    return output
-def openURL(url):
-    """
-    帮助用户快速打开指定网址
-    Args:
-        url: 网址
-    Returns:
-        输出打开结果
-    """
-    webbrowser.open(url)
-    print(f"{url} opened")
-    return f"{url} opened!"
-
-
-def getURLContent(url):
-    """
-    根据URL获取网页主要内容
-    Args:
-        url: 网址
-    Returns:
-        网页主要内容, 若失败返回-1或-2
-    """
-    try:
-        # 设置请求头模拟浏览器访问
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        
-        # 发送HTTP请求
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()  # 检查请求状态
-        
-        # 解析HTML内容
-        soup = BeautifulSoup(response.text, 'html.parser')
-        
-        # 尝试多种常见内容标签提取
-        for tag in ['article', 'div.main-content', 'section', 'div.content']:
-            elements = soup.select(tag)
-            if elements:
-                return "\n\n".join([e.get_text(strip=True) for e in elements])
-        
-        # 备用方案：提取段落组合
-        paragraphs = soup.find_all('p')
-        if paragraphs:
-            return "\n".join([p.get_text(strip=True) for p in paragraphs])
-            
-        return "未找到明确的内容区域"
-        
-    except requests.exceptions.RequestException:
-        return -1  # 网络请求失败，返回错误码-1
-    except Exception:
-        return -2  # 其他处理异常，返回错误码-2
-
-
-
-
-
-
-```
 # 二.实例化一个大模型
 模型可以使用本地或者Api的形式的调用，本地使用llama.cpp的GGUF格式的模型，Api使用openai格式兼容的模型
 ## 1.本地的调用：
@@ -512,7 +421,7 @@ agent = Agent(
 ```python
 tools = Tools(
     isSystemTool=True,#启用系统工具
-    isRAG=True,#启用RAG的接口
+    useRAG=True,#启用RAG的接口
 )
 ```
 虽然我叫作智能体，但是目前还是和RL中的智能体有区别，目前她还无法感知环境，不过我已经在environment.py里面做好了多智能体和环境感知的准备

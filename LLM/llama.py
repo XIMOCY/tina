@@ -6,9 +6,8 @@
 将llama-cpp-python封装为需要的接口
 llama.cpp Github地址：https://github.com/ggerganov/llama.cpphttps://github.com/ggerganov/llama.cpp
 llama-cpp-python Github地址：https://github.com/abetlen/llama-cpp-python
-tina类基于llama-cpp-python实现
+llama类基于llama-cpp-python实现
 使用更简单的语言描述让开发者更快的上手
-tina是基于开源的qwen2.5-7b模型微调而来
 qwen模型网址：https://github.com/QwenLM/Qwenhttps://github.com/QwenLM/Qwen
 """
 import os

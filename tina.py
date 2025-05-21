@@ -9,14 +9,13 @@ import os
 import time
 import random
 import json
-from .core.manage import TinaFolderManager
-from .core.prompt import Prompt
-from .core.tools import Tools
-from .RAG.Embedding.docToVec import docToVec
-from .Agent import Agent
+from .agent.core.manage import TinaFolderManager
+from .agent.core.prompt import Prompt
+from .agent.core.tools import Tools
+from .agent.Agent import Agent
 
 class Tina:
-    def __init__(self, path:str = None, LLM=None, tools:type = None,toolsLib:str = None, stream:bool = True, timeout:int = 6000,embeding_model:str = None,isSystem:bool = False, isRAG:bool = False, is_tool_call_permission:bool=False):
+    def __init__(self, path:str = None, LLM=None, tools:type = None,toolsLib:str = None, stream:bool = True, timeout:int = 6000,embeding_model:str = None,isSystem:bool = False, useRAG:bool = False, is_tool_call_permission:bool=False):
         """
         初始化你的控制台tina
         Args:
@@ -26,18 +25,18 @@ class Tina:
             toolsLib:你自定义的工具库，python文件路径
             stream:是否实时输出结果
             isSystem:是否使用tina自带的系统工具
-            isRAG:是否使用tina自带的RAG工具
+            useRAG:是否使用tina自带的RAG工具
             is_tool_call_permission:是否允许工具对系统做出危险操作
         """
         if path is None:
             path = os.path.dirname(__file__)
         if LLM is None:
             raise NotImplementedError("Tina现在还不支持自动加载模型呢，请实例化一个LLM后交给我吧")
-        if isRAG is True and embeding_model is None:
+        if useRAG is True and embeding_model is None:
             raise ValueError("如果没有向量模型的话，tina没法使用RAG功能哦，使用参数embeding_model指定向量模型路径吧")
         TinaFolderManager.init(path)
         TinaFolderManager.setEmbedingModel(embeding_model)
-        self.Tools = Tools(isSystemTools=isSystem, isRAG=isRAG)
+        self.Tools = Tools(useSystemTools=isSystem, useRAG=useRAG)
         if tools is not None:
             self.Tools.multiregister(tools)
         if toolsLib is not None:
@@ -46,7 +45,7 @@ class Tina:
         self.Prompt = Prompt()
         self.agent = Agent(LLM, self.Tools,isMemory=True)
         self.timeout = timeout
-        self.isRAG = isRAG
+        self.useRAG = useRAG
         self.fileUpload = False
         self.isChat = False
         self.isRemember = False
@@ -80,17 +79,17 @@ class Tina:
                 elif user_input == "#clear":
                     self.clear() 
                 elif user_input == "#rag":
-                    if self.isRAG is True:
+                    if self.useRAG is True:
                         self.rag()
                 elif user_input.startswith("#rag -isCopy="):
-                    if self.isRAG is True:
+                    if self.useRAG is True:
                         isCopy = user_input.split("=")[1]
                         if isCopy.lower() == "true":
                             self.rag(isCopy=True)
                         else:
                             self.rag()
                     else:
-                        print("你没有开启RAG功能，在实例化的时候添加参数isRAG=True再来试试？")
+                        print("你没有开启RAG功能，在实例化的时候添加参数useRAG=True再来试试？")
                 else:
 
                     self.chat(user_input)
@@ -161,7 +160,7 @@ class Tina:
         print("timeout: tina记忆的超时时间，默认是600秒，如果用户一直不说话，tina会在这段时间后开始记忆")
         print("embeding_model: 向量模型路径，如果开启RAG功能，tina需要使用向量模型来建立文档库，你需要指定向量模型的路径")
         print("isSystem: 是否使用tina自带的系统工具，如果是True，tina会自动加载系统工具，你可以在这里添加你自己的系统工具")
-        print("isRAG: 是否使用tina自带的RAG工具，如果是True，tina会自动加载RAG工具，你可以在这里添加你自己的RAG工具")
+        print("useRAG: 是否使用tina自带的RAG工具，如果是True，tina会自动加载RAG工具，你可以在这里添加你自己的RAG工具")
 
     def clear(self):
         self.show_start()

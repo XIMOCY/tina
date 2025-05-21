@@ -1,7 +1,7 @@
 """
 编写者：王出日
 日期：2024，12，13
-版本 0.1.0
+版本：0.4.2
 功能：Agent的工具执行器
 通过导入AgentExecutor类，可以调用Agent的工具执行器，该类包含一个parser参数，该参数为解析工具调用的函数，默认为tina_parser函数。
 通过传入Tools对象来动态导入工具类，并调用该类的方法。
@@ -14,7 +14,6 @@ from executor import AgentExecutor
 
 
 """
-import ast
 import importlib.util
 from .parser import tina_parser
 from .tools import Tools
@@ -26,7 +25,7 @@ class AgentExecutor:
         """
         self.parser = parser    
     @staticmethod
-    def execute(tool_call: tuple[str, dict, bool], tools: type,LLM:type = None) -> tuple[str, bool]:
+    def execute(tool_call: tuple[str, dict, bool], tools: type,LLM:type = None,max_input=None) -> tuple[str, bool]:
         """
         执行工具调用
         如何使用：
@@ -46,28 +45,27 @@ class AgentExecutor:
         """
         if not tool_call[2]:
             return tool_call
-        module = AgentExecutor.import_module(tools.getToolsPath(name = tool_call[0]))
-
-        func = getattr(module, tool_call[0])
-        if tool_call[1]:
-            result = func(**tool_call[1])
-        else:
-            result = func()
+        try:
+            module = AgentExecutor.import_module(tools.getToolsPath(name = tool_call[0]))
+            func = getattr(module, tool_call[0])
+            if hasattr(func,"_original"):
+                func = func._original
+            if tool_call[1]:
+                result = func(**tool_call[1])
+            else:
+                result = func()
+        # 获取并调用post_handler（如果有的话）
+            post_handler = tools.getPostHandler(tool_call[0])
+            if post_handler:
+                result = post_handler(result)
+        except Exception as e:
+            return f"执行工具失败,原因：{str(e)}",False
         
-        #参数判断
+        #参数判断，之前会做处理，现在发现没必要了，所以删掉了
         if isinstance(result,str):
             return result,True
-        elif isinstance(result, list):
-            result_str = "，".join(f"列表第{index+1}元素{value}" for index, value in enumerate(result))
-        elif isinstance(result,bool):
-            if result:
-                result_str = "True"
-            else:
-                result_str = "False"
-        elif isinstance(result, dict):
-            result_str = "，".join(f"字典的{key}键对应的值为{value}" for key, value in result.items())
         else:
-            result_str = str(result)
+            result_str = str(result) if max_input is None else result[:max_input-500]
         return result_str,True
 
     @staticmethod   

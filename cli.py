@@ -1,9 +1,7 @@
 import argparse
 from tina.tina import Tina
 from tina.LLM import llama
-import tempfile
-import os
-import shutil
+
 
 def main():
     parser = argparse.ArgumentParser(description='tina 命令行工具')

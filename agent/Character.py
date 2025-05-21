@@ -2,7 +2,7 @@ import random
 import json
 from typing import Generator
 from .Agent import Agent
-from .core.memory import Memory
+
 from .core.manage import TinaFolderManager
 
 play_prompt_template = "你是一位专业的演员，你需要扮演的角色是{personality}，年龄是{age}，性别为{gender}。请按照他或者她的语气说话，不需要添加心理活动和人物动作，注意一位演员的修养，说话的时候严禁过长的台词，因为不符合现实，一次对话最好只说一件事，你需要完美的做到符合这位角色的行为和言行，不需要过于夸张的表现，恰到好处即可，就像日常的对话一样自然"
@@ -24,6 +24,7 @@ class Character():
                   ):
         self.name = name
         self.folder = folder
+        self.LLM = LLM
         self.age = age if age else random.randint(18,60)
         self.gender = gender if gender else random.choice(['male','female'])
         if isMemory:
@@ -32,7 +33,6 @@ class Character():
             self.personality = personality
             if enable_llm_optimization:
                 self.optimize_personality()
-        self.LLM = LLM
         self.agent = Agent(LLM=LLM,tools=tools,sys_prompt=play_prompt_template.format(personality=personality,age=self.age,gender=self.gender))
         
     @classmethod
