@@ -3,16 +3,85 @@ import sys
 import datetime
 import platform
 import subprocess
-import threading
 import time
-from queue import Queue
 
 def getTime() -> str:
     """获取当前系统时间"""
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+def makeDir(path: str) -> None:
+    """
+    创建目录
+    Args:
+        path: 目录路径
+    Returns:
+        目录绝对路径
+    """
+    if not os.path.exists(path):
+        os.makedirs(path)
+    return os.path.abspath(path)
+def listDir(path:str):
+    """
+    列出目录下的文件
+    Args:
+        path: 目录路径
+    Returns:
+        目录下的文件列表
+    """
+    if not os.path.exists(path):
+        return []
+    return os.listdir(path)
+def getPath(path: str) -> str:
+    """
+    获取一个文件或者文件夹的绝对路径
+    Args:
+        path: 文件或者文件夹路径
+    Returns:
+        文件或者文件夹的绝对路径
+    """
+    return os.path.abspath(path)
+def makeFile(path: str) -> None:
+    """
+    创建一个空文件
+    Args:
+        path: 文件路径
+    Returns:
+        文件绝对路径
+    """
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("")
+    return os.path.abspath(path)
+
+def readFile(path: str) -> str:
+    """
+    读取文件内容
+    Args:
+        path: 文件路径
+    Returns:
+        文件内容
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
     
+def writeFile(path: str, content: str) -> None:
+    """
+    写入文件内容，如果文件不存在会自动创建，但是不存在的父文件夹无法创建
+    Args:
+        path: 文件路径
+        content: 文件内容
+    Returns:
+        文件绝对路径
+    
+    """
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+    return os.path.abspath(path)
+
 def shotdownSystem() -> None:
-    """关机（Windows/Linux）"""
+    """
+    关机（Windows/Linux）
+    Returns:
+        None
+    """
     sure = input("确定关机吗？（Y/n)")
     if sure.lower() == "y":
         if platform.system() == "Windows":
@@ -31,104 +100,6 @@ def getSystemInfo() -> str:
     else:
         return os.popen("uname -a && lsb_release -a 2>/dev/null").read()
 
-def getSoftwareList() -> list:
-    """
-    获取已安装软件列表
-    Returns:
-        软件名称列表
-    """
-    if platform.system() == "Windows":
-        import winreg
-        reg_key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall")
-        software_list = []
-        try:
-            i = 0
-            while True:
-                sub_key_name = winreg.EnumKey(reg_key, i)
-                sub_key = winreg.OpenKey(reg_key, sub_key_name)
-                try:
-                    software_name = winreg.QueryValueEx(sub_key, "DisplayName")[0]
-                    software_list.append(software_name)
-                except FileNotFoundError:
-                    pass
-                finally:
-                    winreg.CloseKey(sub_key)
-                i += 1
-        except OSError:
-            pass
-        finally:
-            winreg.CloseKey(reg_key)
-        return software_list
-    else:
-        # Linux常见软件包管理器
-        if os.path.exists("/usr/bin/dpkg"):
-            return os.popen("dpkg -l | awk '{print $2}'").read().splitlines()
-        elif os.path.exists("/usr/bin/rpm"):
-            return os.popen("rpm -qa").read().splitlines()
-        else:
-            return []
-
-def startSoftware(name: str) -> str:
-    """
-    启动指定软件（Windows/Linux）
-    Args:
-        name: 软件名或可执行文件名
-    Returns:
-        启动结果
-    """
-    try:
-        if platform.system() == "Windows":
-            os.startfile(name)
-        else:
-            subprocess.Popen([name])
-        return f"{name} 启动成功"
-    except Exception as e:
-        return f"{name} 启动失败: {e}"
-
-def openFile(path: str) -> str:
-    """
-    打开文件或文件夹（Windows/Linux）
-    Args:
-        path: 文件或文件夹路径
-    Returns:
-        打开结果
-    """
-    try:
-        if platform.system() == "Windows":
-            os.startfile(path)
-        elif platform.system() == "Darwin":
-            subprocess.Popen(["open", path])
-        else:
-            subprocess.Popen(["xdg-open", path])
-        return f"{path} 已打开"
-    except Exception as e:
-        return f"打开失败: {e}"
-
-def getProcessList() -> list:
-    """
-    获取当前进程列表
-    Returns:
-        进程信息列表
-    """
-    if platform.system() == "Windows":
-        return os.popen('tasklist').read().splitlines()
-    else:
-        return os.popen('ps aux').read().splitlines()
-
-def killProcess(pid: int) -> str:
-    """
-    杀死指定进程
-    Args:
-        pid: 进程ID
-    Returns:
-        操作结果
-    """
-    try:
-        os.kill(pid, 9)
-        return f"进程 {pid} 已被杀死"
-    except Exception as e:
-        return f"杀死进程失败: {e}"
-
 def getEnv(var: str) -> str:
     """
     获取环境变量
@@ -138,17 +109,6 @@ def getEnv(var: str) -> str:
         环境变量值
     """
     return os.environ.get(var, "")
-
-def getDiskInfo() -> str:
-    """
-    获取磁盘信息
-    Returns:
-        磁盘信息字符串
-    """
-    if platform.system() == "Windows":
-        return os.popen("wmic logicaldisk get size,freespace,caption").read()
-    else:
-        return os.popen("df -h").read()
 
 def delay(seconds: int, why: str = "延迟响应") -> str:
     """
@@ -170,11 +130,27 @@ def terminal(command: str) -> str:
     Returns:
         指令输出
     """
-    process = subprocess.Popen(
-        command, shell=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        universal_newlines=True
-    )
-    output, _ = process.communicate()
-    return output
+    if platform.system() == "Windows":
+        try:
+            process = subprocess.Popen(
+                 ["powershell", "-Command", command],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                universal_newlines=True
+            )
+            output, _ = process.communicate()
+            return output
+        except UnicodeDecodeError:
+            output = output.decode("gbk").encode("utf-8",errors="replace").decode("utf-8")
+
+        return output
+    else:
+        process = subprocess.Popen(
+            command, shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            encoding="utf-8"
+        )
+        output, _ = process.communicate()
+        return output

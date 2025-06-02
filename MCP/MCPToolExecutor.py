@@ -1,4 +1,5 @@
 from .Client import MCPClient
+from ..agent.core.tools import Tools
 from typing import Dict, Any
 class MCPToolExecutor:
     """
@@ -7,7 +8,7 @@ class MCPToolExecutor:
     """
     
     @staticmethod
-    def execute_mcp_tool(tool_name: str, args: Dict[str, Any], mcp_client: MCPClient,max_input = None) -> tuple:
+    def execute_mcp_tool(tool_name: str, args: Dict[str, Any],tools: Tools, mcp_client: MCPClient) -> tuple:
         """
         执行MCP工具调用
         
@@ -30,9 +31,11 @@ class MCPToolExecutor:
             
             # 调用MCP工具
             result = mcp_client.callTool(actual_tool_name, args, server_id)
-            
+            # 如果有后处理器，则调用后处理器
+            if tools.getPostHandler(tool_name):
+                result = tools.getPostHandler(tool_name)(result)
             if result["success"]:
-                result_str = result.get("content", "") if max_input is None else result.get("content", "")[:max_input-500]
+                result_str = result.get("content", "") 
                 return result["content"], True
             else:
                 return f"工具调用失败: {result.get('error', '未知错误')}", False

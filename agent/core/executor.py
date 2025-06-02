@@ -17,15 +17,11 @@ from executor import AgentExecutor
 import importlib.util
 from .parser import tina_parser
 from .tools import Tools
+import threading
 
-class AgentExecutor:
-    def __init__(self, parser: callable = tina_parser):
-        """
-        Agent的工具执行器
-        """
-        self.parser = parser    
+class AgentExecutor:  
     @staticmethod
-    def execute(tool_call: tuple[str, dict, bool], tools: type,LLM:type = None,max_input=None) -> tuple[str, bool]:
+    def execute(tool_call: tuple[str, dict, bool], tools: type) -> tuple[str, bool]:
         """
         执行工具调用
         如何使用：
@@ -37,39 +33,56 @@ class AgentExecutor:
         result, success = AgentExecutor.execute(tool_call, tools, is_permissions)
         其中，success为是否使用了工具调用，True表示成功，False表示失败。
         Args:
-            tool_call (str): 字符串,内含解析器会解析的工具调用
+            tool_call (tuple[str, dict, bool]): 元组,内含解析器会解析的工具调用
             tools (type): 工具类，用于内部调用检测工具是否存在和参数验证
-            is_permissions (bool, optional): 对执行字符串进行安全验证，默认是True.
         Returns:
             tuple[str, bool]: 元组，执行结果和是否成功
         """
         if not tool_call[2]:
             return tool_call
         try:
-            module = AgentExecutor.import_module(tools.getToolsPath(name = tool_call[0]))
+            module = AgentExecutor.import_module(tools.getToolsPath(name=tool_call[0]))
             func = getattr(module, tool_call[0])
-            if hasattr(func,"_original"):
+            result_cont = None  # 使用None初始化更清晰
+            exception = []
+            exception_lock = threading.Lock()
+
+            if hasattr(func, "_original"):
                 func = func._original
-            if tool_call[1]:
-                result = func(**tool_call[1])
+
+            def run_func():
+                nonlocal result_cont
+                try:
+                    if tool_call[1]:
+                        result = func(**tool_call[1])
+                    else:
+                        result = func()
+                    result_cont = result  # 统一赋值结果
+                except Exception as e:
+                    with exception_lock:
+                        exception.append(e)
+
+            run_func_t = threading.Thread(target=run_func)
+            run_func_t.start()
+            run_func_t.join(timeout=30)
+
+            if run_func_t.is_alive():
+                with exception_lock:
+                    exception.append(TimeoutError("Execution timed out after 30 seconds"))
+                result_cont = "Execution timed out"
+
+            if exception:
+                return f"Error: {str(exception[0])}", True
             else:
-                result = func()
-        # 获取并调用post_handler（如果有的话）
-            post_handler = tools.getPostHandler(tool_call[0])
-            if post_handler:
-                result = post_handler(result)
+                if tools.getPostHandler(tool_call[0]):
+                    result_cont = tools.getPostHandler(tool_call[0])(result_cont)
+                return str(result_cont),True
+
         except Exception as e:
-            return f"执行工具失败,原因：{str(e)}",False
-        
-        #参数判断，之前会做处理，现在发现没必要了，所以删掉了
-        if isinstance(result,str):
-            return result,True
-        else:
-            result_str = str(result) if max_input is None else result[:max_input-500]
-        return result_str,True
+            return f"Error: {str(e)}", True
 
     @staticmethod   
-    def import_module(module_path:str):
+    def import_module(module_path: str):
         """
         动态导入工具类
         给了路径，就可以导入

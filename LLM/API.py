@@ -45,17 +45,7 @@ class BaseAPI():
         if not self.model:
             raise ValueError(f"模型名称并没有在环境变量'MODEL_NAME'和{os.path.join(env_path, ".env")}中找到，要么请你设置一下，要么输入model参数")
         
-        # if api_key is None:
-        #     try:
-        #         self.api_key = get_env(self.API_ENV_VAR_NAME)
-        #     except KeyError:
-        #         raise ValueError(f"API key并没有在环境变量'{self.API_ENV_VAR_NAME}'和{os.path.join(env_path, ".env")}中找到，要么请你设置一下，要么输入api_key参数")
-        # else:
-        #     print(f"我们建议你在环境变量中设置{self.API_ENV_VAR_NAME}，不要输入api_key参数哦")
-        #     self.api_key = api_key
-        
         self.MAX_INPUT = get_env("MAX_INPUT") if not get_env("MAX_INPUT") is None else 8000
-
 
         self.token = 0
         self.token_list=[]
@@ -75,7 +65,8 @@ class BaseAPI():
                 stream: bool = False,
                 format:str = "text",
                 json_format:str = '{}',
-                tools: list = None) -> Union[dict, Generator[dict, None, None]]:
+                tools: list = None,
+                **kwargs) -> Union[dict, Generator[dict, None, None]]:
         """
         调用大语言模型执行预测任务，支 持单次对话和多轮对话模式
 
@@ -133,9 +124,11 @@ class BaseAPI():
             "messages": messages,
             "temperature": temperature,
             "top_p": top_p,
-            "stream": stream,
-            "tools": tools
+            "stream": stream
         }
+        if tools:
+            payload["tools"] = tools
+        payload.update(kwargs)
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -153,7 +146,7 @@ class BaseAPI():
             # 如果包含工具调用，添加 tool_calls
             if "tool_calls" in response_data["choices"][0]["message"]:
                 tool_calls = response_data["choices"][0]["message"].get("tool_calls",[])
-                # 修改为需要的格式，开发者可以直接将这个工具使用追加到消息列表
+                # 修改为需要的格式，开发者可以**直接**将这个工具使用追加到消息列表
                 tool_calls = {
                     "id":tool_calls[0]["id"],
                     "function":tool_calls[0]["function"],
@@ -161,7 +154,7 @@ class BaseAPI():
                 if tool_calls:
                     result["tool_calls"] = tool_calls
             return result
-
+        # 本来想挪到其他文件里面去的，但是发现这里用到了BaseAPI的属性，所以就放在这里了
         def stream_generator():
             tool_calls_buffer = {}
             final_tool_calls = None
@@ -190,7 +183,7 @@ class BaseAPI():
                                     if content:  # 只有当内容非空时才发送
                                         yield {"role": "assistant", "content": content}
                                 
-                                # 处理推理模型的内容
+                                # 处理推理模型的内容，只有存在推理内容时才发送，同时防止出现空值，我只会在有值的情况下发送
                                 if "reasoning_content" in delta:
                                     reasoning_content = delta.get("reasoning_content", "")
                                     if reasoning_content:  # 累积推理内容
@@ -215,7 +208,7 @@ class BaseAPI():
                                         if tool_call.get("id") and index not in received_ids:
                                             received_ids[index] = tool_call["id"]
                                 
-                                        # 更新字段（保留首次ID）
+                                        # 更新字段（保留首次ID，这里是因为我在debug的时候发现流式的回复总是截取不到ID所以搞了个缓冲区来保存）
                                         current = tool_calls_buffer[index]
                                         current["id"] = received_ids.get(index, "")
                                         current["type"] = tool_call.get("type") or current["type"]
@@ -309,8 +302,9 @@ class BaseAPI_multimodal(BaseAPI):
             "temperature": temperature,
             "top_p": top_p,
             "stream": stream,
-            "tools": tools,
         }
+        if tools:
+            payload["tools"] = tools
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",

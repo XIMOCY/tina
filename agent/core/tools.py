@@ -25,7 +25,7 @@ class Tools:
             nonlocal name, description, required_parameters, parameters, path
             doc = func.__doc__ or ""
             param_desc, return_desc = parse_docstring(doc)
-            # 自动推导
+
             if name is None:
                 name = func.__name__
             if description is None:
@@ -64,7 +64,6 @@ class Tools:
         # 创建新实例
         combined = Tools()
     
-        # 使用集合记录已存在的工具名称（排除NULLTools）
         existing_names = set()
     
         # 合并工具列表（过滤NULLTools并自动去重）
@@ -86,10 +85,6 @@ class Tools:
                     combined_tools.append(t)
                     existing_names.add(name)
     
-        # 恢复NULLTools作为首个元素（使用当前实例的NULLTools）
-        if self.tools and self.tools[0]["function"]["name"] == "NULLTools":
-            combined_tools.insert(0, self.tools[0])
-    
         combined.tools = combined_tools
     
         # 合并其他属性
@@ -99,7 +94,7 @@ class Tools:
 
         return combined
     
-    def __init__(self,useSystemTools=False,useRAG = False,useTerminal=False,setGoal=False):
+    def __init__(self,useSystemTools=False,useTerminal=False,setGoal=False):
         """
         使用此类来管理你的工具，可以注册、查询、调用等功能
         可以使用一些自带的工具来调试
@@ -109,7 +104,8 @@ class Tools:
             useTerminal (bool, optional): 是否使用终端工具.默认为False.
             setGoal (bool, optional): 是否使用目标工具.默认为False.
         """
-        self.tools = []
+        self.tools = [] # 工具的JSON Schema
+        self.tool = {} # 工具名称对应的函数
         self.tools_name_list = []
         self.tools_parameters_list = []
         self.tools_path = {}
@@ -160,17 +156,17 @@ class Tools:
                     "path":inspect.getfile(tina.utils.systemTools)
                 },
                 {
-                    "name":"startSoftware",
-                    "description":"启动一个软件",
-                    "required_parameters":["name"],
+                    "name":"makeDir",
+                    "description":"创建一个文件夹，返回该文件夹的路径",
+                    "required_parameters":["path"],
                     "parameters":{
-                        "name": {"type": "str", "description": "软件名称"}
+                        "path": {"type": "str", "description": "文件夹路径"}
                     },
                     "path":inspect.getfile(tina.utils.systemTools)
                 },
                 {
-                    "name":"openFile",
-                    "description":"打开一个文件",
+                    "name":"makeFile",
+                    "description":"新建一个文件，返回该文件的路径，注意带上文件扩展名",
                     "required_parameters":["path"],
                     "parameters":{
                         "path": {"type": "str", "description": "文件路径"}
@@ -178,18 +174,21 @@ class Tools:
                     "path":inspect.getfile(tina.utils.systemTools)
                 },
                 {
-                    "name":"getProcessList",
-                    "description":"获取进程列表",
-                    "required_parameters":[],
-                    "parameters":{},
+                    "name":"readFile",
+                    "description":"读取文件内容",
+                    "required_parameters":['path'],
+                    "parameters":{
+                        "path": {"type": "str", "description": "文件路径"}
+                    },
                     "path":inspect.getfile(tina.utils.systemTools)
                 },
                 {
-                    "name":"killProcess",
-                    "description":"结束一个进程",
-                    "required_parameters":["pid"],
+                    "name":"writeFile",
+                    "description":"写入或者覆盖文件内容，如果文件不存在会自动创建，你可以用它来输出各种文件",
+                    "required_parameters":["path","content"],
                     "parameters":{
-                        "pid": {"type": "int", "description": "进程ID"}
+                        "path": {"type": "int", "description": "文件路径"},
+                        "content": {"type": "str", "description": "文件内容"}
                     },
                     "path":inspect.getfile(tina.utils.systemTools)
                 },
@@ -208,6 +207,24 @@ class Tools:
                     "required_parameters":[],
                     "parameters":{},
                     "path":inspect.getfile(tina.utils.systemTools)
+                },
+                {
+                    "name":"listDir",
+                    "description":"列出文件夹下的文件和文件夹",
+                    "required_parameters":["path"],
+                    "parameters":{
+                        "path": {"type": "str", "description": "文件夹路径"}
+                    },
+                    "path":inspect.getfile(tina.utils.systemTools)
+                },
+                {
+                    "name":"getPath",
+                    "description":"获取文件的绝对路径",
+                    "required_parameters":["path"],
+                    "parameters":{
+                        "path": {"type": "str", "description": "文件或文件夹路径"}
+                    },
+                    "path":inspect.getfile(tina.utils.systemTools)
                 }
             ]
             self.multiregister(SystemTools)
@@ -217,7 +234,7 @@ class Tools:
             terminalTools =[
                 {
                     "name":"terminal",
-                    "description":"向终端发送一个指令",
+                    "description":"向终端发送一个指令，在windows下使用的是powershell，在linux下使用的是bash",
                     "required_parameters":["command"],
                     "parameters":{
                         "command": {"type": "str", "description": "要发送的指令"}
@@ -381,7 +398,7 @@ class Tools:
         
         return decorator
 
-    def registerTool(self, name, description, required_parameters, parameters, path, post_handler:callable=None, tools:list=None):
+    def registerTool(self, name, description, required_parameters, parameters, path, post_handler:callable=None):
         # 原有的注册逻辑
         if name in self.tools_name_list:
             self.unregister(name)
@@ -466,8 +483,7 @@ class Tools:
             Tools实例（包含文件中所有函数的工具信息）
         """
         import ast
-        import re
-    
+        
         def parse_docstring(doc: str) -> dict:
             params = {}
             if not doc:
@@ -576,12 +592,3 @@ def parse_docstring(doc):
         if in_returns and line:
             return_desc += line + " "
     return param_desc, return_desc.strip()
-
-if __name__ == "__main__":
-    tools = Tools()
-    tools.register("test", "测试工具", ["a", "b"], {"c": {"type": "int", "description": "参数c的描述"}})
-    print(tools.tools)
-    print(tools.tools_name_list)
-    print(tools.tools_parameters_list)
-    #查询工具参数
-    print(tools.queryParameterType("test","c")) 
