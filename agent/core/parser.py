@@ -1,7 +1,7 @@
 import re
 import json
             
-def tina_parser(text:str,tools:type,LLM:type=None)->tuple[str,str,bool]:
+def local_model_llama_cpp_parser(text:str,tools:type,LLM:type=None)->tuple[str,str,bool]:
     r"""
     因为llama_cpp的消息格式和chatGPT的消息格式不一样，
     无法直接根据字典值直接确定是否为工具调用，

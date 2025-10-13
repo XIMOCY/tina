@@ -175,7 +175,36 @@ class MCPClient:
             bool: 移除是否成功
         """
         return self.closeServer(server_id)
-    
+    def setPostHandler(self,called_function:callable,post_handler: callable) -> None:
+        """
+        设置一个函数，用于在每次请求后调用
+        Args:
+            fun: 函数，接受一个参数，参数为请求记录
+        Returns:
+            None
+        """
+        if not callable(called_function):
+            raise ValueError("called_function必须是一个可调用的函数")
+        if not callable(post_handler):
+            raise ValueError("post_handler必须是一个可调用的函数")
+        original_function = called_function
+
+        def wrapped_function(*args, **kwargs):
+            result = original_function(*args, **kwargs)
+            try:
+                post_handler(result)
+            except Exception as e:
+                print(f"Post handler error: {e}")
+            return result
+
+        # 替换原函数
+        if hasattr(original_function, '__self__') and original_function.__self__ is not None:
+            # 方法
+            setattr(original_function.__self__, original_function.__name__, wrapped_function)
+        else:
+            # 普通函数
+            globals()[original_function.__name__] = wrapped_function
+
     def getTools(self, server_id: Optional[str] = None, max_retries=2, timeout=30) -> List[Dict[str, Any]]:
         """
         获取服务端提供的工具（同步版本）
@@ -294,7 +323,6 @@ class MCPClient:
             mcp_tools = self.getTools()
             
             if not mcp_tools:
-                print("没有获取到MCP工具，返回空的Tools实例")
                 return tina_tools
                 
             # 转换MCP工具为tina工具格式
@@ -316,15 +344,14 @@ class MCPClient:
                     }
                 
                 # 注册工具到tina的Tools实例
-                tina_tools.register(
+                tina_tools.registerNotWithFunction(
                     name=f"mcp_{server_id}_{name}",
                     description=f"[MCP:{server_id}] {description}",
                     required_parameters=required_parameters,
                     parameters=parameters,
-                    path=f"mcp://{server_id}/{name}"
                 )
             
-            print(f"成功转换了 {len(mcp_tools)} 个MCP工具到tina工具")
+
         except Exception as e:
             print(f"转换MCP工具时出错: {e}")
         

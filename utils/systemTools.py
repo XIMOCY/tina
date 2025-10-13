@@ -4,6 +4,7 @@ import datetime
 import platform
 import subprocess
 import time
+import pathspec
 
 def getTime() -> str:
     """获取当前系统时间"""
@@ -19,17 +20,73 @@ def makeDir(path: str) -> None:
     if not os.path.exists(path):
         os.makedirs(path)
     return os.path.abspath(path)
-def listDir(path:str):
+
+def format_size(size_bytes: int) -> str:
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if size_bytes < 1024:
+            return f"{size_bytes:.1f}{unit}"
+        size_bytes /= 1024
+    return f"{size_bytes:.1f}PB"
+
+def format_mtime(path: str) -> str:
+    try:
+        timestamp = os.path.getmtime(path)
+        return time.strftime("%Y-%m-%d %H:%M", time.localtime(timestamp))
+    except:
+        return "未知时间"
+
+def load_gitignore(base_path: str):
     """
-    列出目录下的文件
-    Args:
-        path: 目录路径
-    Returns:
-        目录下的文件列表
+    从 .gitignore 文件中加载忽略规则
+    """
+    gitignore_path = os.path.join(base_path, ".gitignore")
+    if not os.path.isfile(gitignore_path):
+        return None
+
+    with open(gitignore_path, "r", encoding="utf-8") as f:
+        lines = f.read().splitlines()
+        spec = pathspec.PathSpec.from_lines("gitwildmatch", lines)
+        return spec
+
+def listDir(path: str, prefix: str = "", max_depth: int = -1, current_depth: int = 0, spec=None, root_path=None):
+    """
+    打印树状目录结构，支持大小、时间、深度限制、.gitignore忽略规则
     """
     if not os.path.exists(path):
-        return []
-    return os.listdir(path)
+        print(f"❌ 路径不存在：{path}")
+        return
+
+    if root_path is None:
+        root_path = path  # 初始根目录记录下来
+        spec = load_gitignore(path)  # 初始加载 .gitignore
+
+    entries = sorted(os.listdir(path))
+    for index, entry in enumerate(entries):
+        full_path = os.path.join(path, entry)
+        rel_path = os.path.relpath(full_path, root_path)  # 相对于根路径的路径
+        is_last = index == len(entries) - 1
+        connector = "└── " if is_last else "├── "
+        sub_prefix = "    " if is_last else "│   "
+
+        # 检查是否被 .gitignore 忽略
+        if spec and spec.match_file(rel_path):
+            continue
+
+        mtime_str = format_mtime(full_path)
+
+        if os.path.isdir(full_path):
+            print(f"{prefix}{connector}📁 {entry}/   ({mtime_str})")
+            if max_depth == -1 or current_depth < max_depth:
+                listDir(full_path, prefix + sub_prefix, max_depth, current_depth + 1, spec, root_path)
+        else:
+            try:
+                size = os.path.getsize(full_path)
+                size_str = format_size(size)
+            except:
+                size_str = "未知大小"
+            print(f"{prefix}{connector}📄 {entry}   ({size_str}, {mtime_str})")
+
+
 def getPath(path: str) -> str:
     """
     获取一个文件或者文件夹的绝对路径
@@ -39,30 +96,27 @@ def getPath(path: str) -> str:
         文件或者文件夹的绝对路径
     """
     return os.path.abspath(path)
-def makeFile(path: str) -> None:
-    """
-    创建一个空文件
-    Args:
-        path: 文件路径
-    Returns:
-        文件绝对路径
-    """
-    with open(path, "w", encoding="utf-8") as f:
-        f.write("")
-    return os.path.abspath(path)
 
-def readFile(path: str) -> str:
+def readCode(path: str,start:int=0,end:int = 2000) -> str:
     """
     读取文件内容
     Args:
         path: 文件路径
+        start: 起始位置（默认0）
+        end: 结束位置（默认2000）
     Returns:
         文件内容
     """
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return content[start:end]
+    except FileNotFoundError:
+        return f"文件不存在：{path}"
+    except UnicodeDecodeError:
+        return f"无法解码文件：{path}，请检查文件编码格式"
     
-def writeFile(path: str, content: str) -> None:
+def writeCode(path: str, content: str) -> None:
     """
     写入文件内容，如果文件不存在会自动创建，但是不存在的父文件夹无法创建
     Args:

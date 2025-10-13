@@ -1,4 +1,4 @@
-from .api import BaseAPI
+from .BaseAPI import BaseAPI
 
 class Qwen(BaseAPI):
     # API_ENV_VAR_NAME = "DASHSCOPE_API_KEY"  # 重写API key环境变量名称

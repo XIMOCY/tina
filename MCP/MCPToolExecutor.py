@@ -31,12 +31,14 @@ class MCPToolExecutor:
             
             # 调用MCP工具
             result = mcp_client.callTool(actual_tool_name, args, server_id)
-            # 如果有后处理器，则调用后处理器
-            if tools.getPostHandler(tool_name):
-                result = tools.getPostHandler(tool_name)(result)
+
             if result["success"]:
-                result_str = result.get("content", "") 
-                return result["content"], True
+                tool_result = ""
+                for text_content in result["content"]:
+                    if text_content.type == "text":
+                        tool_result += text_content.text
+                    
+                return tool_result, True
             else:
                 return f"工具调用失败: {result.get('error', '未知错误')}", False
         

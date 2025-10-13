@@ -59,7 +59,7 @@ class Character():
     def changeName(self,name:str):
         self.name = name
         del self.agent
-        self.agent = Agent(LLM=self.LLM,tools=self.agent.Tools,sys_prompt=play_prompt_template.format(personality=self.personality,age=self.age,gender=self.gender))
+        self.agent = Agent(LLM=self.LLM,tools=self.agent.tools,sys_prompt=play_prompt_template.format(personality=self.personality,age=self.age,gender=self.gender))
     def optimize_personality(self):
         """
         优化角色性格

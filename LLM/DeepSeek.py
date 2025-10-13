@@ -1,4 +1,4 @@
-from .api import BaseAPI
+from .BaseAPI import BaseAPI
 
 class DeepSeek(BaseAPI):
     # API_ENV_VAR_NAME = "DEEPSEEK_API_KEY"  # 重写API key环境变量名称

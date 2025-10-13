@@ -1,4 +1,4 @@
-from .api import BaseAPI_multimodal
+from .BaseAPI import BaseAPI_multimodal
 
 class QwenVL(BaseAPI_multimodal):
     # API_ENV_VAR_NAME = "DASHSCOPE_API_KEY"
