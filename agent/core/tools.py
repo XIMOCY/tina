@@ -7,12 +7,8 @@
 Tools类：用于管理大模型的工具，包括注册、查询、调用等功能
 """
 import inspect
-import threading
-import time
-import io
 from .executor import ToolsExecutor
-from typing import get_type_hints, get_origin, get_args
-from contextlib import redirect_stdout, redirect_stderr
+from typing import Any, Dict, List, get_type_hints, get_origin, get_args
 from ...utils.doc_parser import parse_docstring
 from ...core.error import ToolNotFound,ToolsAddError,PostHandlerTypeError
 
@@ -24,7 +20,7 @@ class Tools:
     def add_tools(self, tools: "Tools") -> None:
         self += tools
     def addTools(self, tools: "Tools") -> None:
-        return self.add_tools(tools)
+        self.add_tools(tools)
     def __add__(self, other):
         if not isinstance(other, Tools):
             raise ToolsAddError()
@@ -60,8 +56,8 @@ class Tools:
         for tool_dict in self.tools:
             tool_name = tool_dict["function"]["name"]
             result += f"  {tool_name}\n"
-            result += f"    说明: {tool_dict["function"]['description']}\n"
-            result += f"    参数: {tool_dict["function"]['parameters']}\n"
+            result += f"    说明: {tool_dict['function']['description']}\n"
+            result += f"    参数: {tool_dict['function']['parameters']}\n"
             result += f"    ─\n"
         return result
     def __init__(self,useSystemTools=False,useTerminal=False,tools_executor:ToolsExecutor=ToolsExecutor(True)):
@@ -78,166 +74,11 @@ class Tools:
         self.tools_name_list = [] # 工具名称列表
         self.tools_parameters_list = [] # 工具参数列表
         self.post_handler = {}
-        
-        # 工具线程管理相关
-        self.running_threads = {} 
-        self.thread_counter = 0    # 线程计数器
-        self.thread_lock = threading.Lock()  # 线程安全锁
-        self.thread_tools_registered = False  # 标记线程管理工具是否已注册
-        
-        self.__extendTools(useSystemTools,useTerminal)
+        self.tools_executor = tools_executor
 
-    def __add_thread_management_tools(self):
-        """动态添加线程管理工具（仅在需要时调用）"""
-        # 防止重复注册
-        if self.thread_tools_registered:
-            return
-            
-        self.thread_tools_registered = True
-        
-        def list_running_threads():
-            """
-            获取当前正在运行的工具线程列表
-            Returns:
-                str: 格式化的线程信息
-            """
-            if not self.running_threads:
-                return "🔍 当前没有正在运行的工具线程"
-            
-            result = "🔍 正在运行的工具线程:\n"
-            current_time = time.time()
-            
-            with self.thread_lock:
-                for thread_id, thread_info in self.running_threads.items():
-                    runtime = current_time - thread_info["start_time"]
-                    status = "运行中" if thread_info["thread"].is_alive() else "已完成"
-                    result += f"线程ID: {thread_id}\n"
-                    result += f"工具名: {thread_info['name']}\n"
-                    result += f"运行时间: {runtime:.1f}秒\n"
-                    result += f"状态: {status}\n"
-            
-            return result
-            
-        def kill_thread(thread_id: int):
-            """
-            强制终止指定的工具线程
-            Args:
-                thread_id (int): 线程ID
-            Returns:
-                str: 操作结果
-            """
-            if thread_id not in self.running_threads:
-                return f"线程ID {thread_id} 不存在"
-            
-            with self.thread_lock:
-                thread_info = self.running_threads[thread_id]
-                thread = thread_info["thread"]
-                
-                if not thread.is_alive():
-                    del self.running_threads[thread_id]
-                    return f"线程ID {thread_id} 已经结束，已从记录中移除"
-                
+        self._extendTools(useSystemTools,useTerminal)
 
-                try:
-                    # 标记线程需要停止（需要工具内部配合检查这个标志）
-                    thread_info["should_stop"] = True
-                    
-                    # 等待短时间看线程是否自己停止
-                    thread.join(timeout=2)
-                    
-                    if thread.is_alive():
-                        # 线程仍在运行，从记录中移除但线程可能继续运行
-                        del self.running_threads[thread_id]
-                        return f"线程ID {thread_id} 收到停止信号" \
-                               f"工具名: {thread_info['name']}\n" \
- 
-                    else:
-                        del self.running_threads[thread_id]
-                        return f"线程ID {thread_id} 已成功停止"
-                        
-                except Exception as e:
-                    return f"停止线程ID {thread_id} 时发生错误: {str(e)}"
-                    
-        def get_thread_output(thread_id: int):
-            """
-            获取指定线程的最新输出
-            Args:
-                thread_id (int): 线程ID
-            Returns:
-                str: 线程的当前输出
-            """
-            if thread_id not in self.running_threads:
-                return f"线程ID {thread_id} 不存在"
-                
-            thread_info = self.running_threads[thread_id]
-            current_time = time.time()
-            runtime = current_time - thread_info["start_time"]
-            
-            try:
-                output = thread_info["output"].getvalue()
-                status = "运行中" if thread_info["thread"].is_alive() else "已完成"
-                
-                result = f"线程ID {thread_id} 输出信息:\n"
-                result += f"工具名: {thread_info['name']}\n"
-                result += f"运行时间: {runtime:.1f}秒\n"
-                result += f"状态: {status}\n"
-                result += f"{'='*50}\n"
-                result += f"输出内容:\n{output}\n"
-                result += f"{'='*50}"
-                
-                # 如果线程已完成，从记录中移除
-                if not thread_info["thread"].is_alive():
-                    with self.thread_lock:
-                        if thread_id in self.running_threads:
-                            del self.running_threads[thread_id]
-                
-                return result
-                
-            except Exception as e:
-                return f"获取线程ID {thread_id} 输出时发生错误: {str(e)}"
-                
-        def cleanup_finished_threads():
-            """
-            清理已完成的线程记录
-            Returns:
-                str: 清理结果
-            """
-            cleaned_count = 0
-            
-            with self.thread_lock:
-                finished_threads = []
-                for thread_id, thread_info in self.running_threads.items():
-                    if not thread_info["thread"].is_alive():
-                        finished_threads.append(thread_id)
-                
-                for thread_id in finished_threads:
-                    del self.running_threads[thread_id]
-                    cleaned_count += 1
-            
-            return f"已清理 {cleaned_count} 个已完成的线程记录"
-        
-        # 注册线程管理工具
-        self.registerTool(list_running_threads, "获取当前正在运行的工具线程列表")
-        self.registerTool(kill_thread, "强制终止指定的工具线程")
-        self.registerTool(get_thread_output, "获取指定线程的最新输出")
-        self.registerTool(cleanup_finished_threads, "清理已完成的线程记录")
-        
-    def __auto_cleanup_threads(self):
-        """自动清理已完成的线程（内部方法）"""
-        try:
-            with self.thread_lock:
-                finished_threads = []
-                for thread_id, thread_info in self.running_threads.items():
-                    if not thread_info["thread"].is_alive():
-                        finished_threads.append(thread_id)
-                
-                for thread_id in finished_threads:
-                    del self.running_threads[thread_id]
-        except Exception:
-            # 静默处理清理错误，不影响主程序
-            pass
-    
-    def __check_post_handler_compatibility(self, tool: callable, post_handler: callable, tool_name: str):
+    def _check_post_handler_compatibility(self, tool: callable, post_handler: callable, tool_name: str):
         """
         检查工具返回类型和后处理器参数类型的兼容性
         
@@ -287,17 +128,17 @@ class Tools:
             if not self._is_type_compatible(tool_return_type, first_param_type):
                 raise PostHandlerTypeError(
                     tool_name,
-                    self.__format_type_name(first_param_type),
-                    self.__format_type_name(tool_return_type),
-                    f"工具返回 {self.__format_type_name(tool_return_type)}，但后处理器期望 {self.__format_type_name(first_param_type)}"
+                    self._format_type_name(first_param_type),
+                    self._format_type_name(tool_return_type),
+                    f"工具返回 {self._format_type_name(tool_return_type)}，但后处理器期望 {self._format_type_name(first_param_type)}"
                 )
                 
         except PostHandlerTypeError:
             # 重新抛出我们的自定义错误
             raise PostHandlerTypeError(
                 tool_name,
-                self.__format_type_name(first_param_type) if first_param_type else "无参数",
-                self.__format_type_name(tool_return_type) if tool_return_type else "无返回值",
+                self._format_type_name(first_param_type) if first_param_type else "无参数",
+                self._format_type_name(tool_return_type) if tool_return_type else "无返回值",
                 "后处理器参数类型与工具返回类型不兼容"
             )
         except Exception as e:
@@ -343,7 +184,7 @@ class Tools:
         
         return False
     
-    def __format_type_name(self, type_hint) -> str:
+    def _format_type_name(self, type_hint) -> str:
         """
         格式化类型名称用于显示
         
@@ -363,9 +204,9 @@ class Tools:
         # 处理复杂类型（如Union、List等）
         return str(type_hint).replace('typing.', '')
 
-    def __extendTools(self, useSystemTools:bool=False,useTerminal:bool=False,setGoal:bool=False):
+    def _extendTools(self, useSystemTools:bool=False,useTerminal:bool=False,setGoal:bool=False):
         if useSystemTools:
-            from tina.utils.systemTools import getTime,getSystemInfo,shotdownSystem,listDir,getPath,makeDir,readCode,writeCode,getEnv,delay,terminal
+            from ...utils.system_tools import getTime,shotdownSystem,listDir,getPath,makeDir,readCode,writeCode,delay
             SystemTools = [
                 {
                     "tool":getTime,
@@ -374,10 +215,6 @@ class Tools:
                 {
                     "tool":shotdownSystem,
                     "description": "该工具会关闭计算机",
-                },
-                {
-                    "tool":getSystemInfo,
-                    "description":"获取系统信息",
                 },
                 {
                     "tool":delay,
@@ -396,10 +233,6 @@ class Tools:
                     "description":"写入或者覆盖文件内容，如果文件不存在会自动创建，你可以用它来输出各种文件",
                 },
                 {
-                    "tool":getEnv,
-                    "description":"获取环境变量",
-                },
-                {
                     "tool":listDir,
                     "description":"列出文件夹下的文件和文件夹",
                 },
@@ -411,7 +244,7 @@ class Tools:
             self.multiregister(SystemTools)
             
         if useTerminal:
-            from tina.utils.systemTools import terminal
+            from ...utils.system_tools import terminal
             terminalTools =[
                 {
                     "tool": terminal,
@@ -532,7 +365,7 @@ class Tools:
         if name in self.tools_name_list:
             return
         
-        self.__check_post_handler_compatibility(tool, post_handler, name)
+        self._check_post_handler_compatibility(tool, post_handler, name)
         
         properties = {}
         self.tool[name] = tool
@@ -565,14 +398,33 @@ class Tools:
 
     def __get_parameters(self, name, parameters, required_parameters, p_doc, properties):
         for p_name,p in parameters.items():
-            properties.update({p_name:{"type":str(p.annotation.__name__) if p.annotation != inspect.Parameter.empty else "str","description":p_doc[0].get(p_name,"")}})
-        parameters ={
+            # 使用TypeMapper来处理参数类型
+            from ...utils.type_mapper import TypeMapper
+            param_type = p.annotation if p.annotation != inspect.Parameter.empty else str
+            json_schema = TypeMapper.map_type(param_type)
+            properties.update({
+                p_name: {
+                    "type": json_schema["type"], 
+                    "description": p_doc[0].get(p_name,"")
+                }
+            })
+        parameters = {
             "type": "object",
             "required": required_parameters,
             "properties": properties
         }
         
         return parameters
+    
+    def getToolsForLLM(self) -> list:
+        """
+        获取适用于大语言模型的工具格式列表
+        
+        Returns:
+            list: 大语言模型可用的工具列表，符合OpenAI工具调用格式
+        """
+        from ...utils.type_mapper import convert_tools_for_llm
+        return convert_tools_for_llm(self)
     
     def getPostHandler(self,name:str)->callable:
         """
@@ -584,7 +436,7 @@ class Tools:
             return None  
         return self.tool.get(name,None)
     
-    def execute(self,tname:str,timeout:int=60,*args,**kwargs)->any:
+    def execute(self,_tool_calls,_tools)->any:
         """
         执行工具
         Args:
@@ -595,127 +447,29 @@ class Tools:
         Returns:
             any: 工具返回值
         """
-        if tname not in self.tools_name_list:
-            return f"工具执行失败: 工具 '{tname}' 不存在。请检查工具名称是否正确或是否已注册。"
-        
-        tool = self.getTool(tname)
-        if tool is None:
-            return f"工具执行失败: 工具 '{tname}' 无法获取。可能是内部错误，请联系开发者。"
-        
-        # 每次执行工具前自动清理已完成的线程
-        self.__auto_cleanup_threads()
+        self.check_tool_in_tools(_tool_calls)
+            
+        _tool_result = self.tools_executor.execute(
+            _tool_calls,
+            _tools
+        )
+        return _tool_result
 
-        if self.thread_tools_registered and tname in ['list_running_threads', 'kill_thread', 'get_thread_output', 'cleanup_finished_threads']:
-            try:
-                result = tool(*args, **kwargs)
-                post_handler = self.post_handler.get(tname, None)
-                if post_handler is not None:
-                    try:
-                        result = post_handler(result)
-                    except Exception as e:
-                        return f"线程管理工具 '{tname}' 的后处理器执行失败: {str(e)}\n" \
-                               f"请检查后处理器的参数类型是否与工具输出类型匹配\n" \
-                               f"工具原始输出: {result}"
-                return str(result)
-            except Exception as e:
-                return f"线程管理工具 '{tname}' 执行失败: {str(e)}"
+    def check_tool_in_tools(self, _tool_calls):
+        for _tool_call in _tool_calls:
+            _tool_name = _tool_call["function"]["name"]
+            if _tool_name not in self.tools_name_list:
+                raise ToolNotFound(_tool_name)
+            _tool = self.getTool(_tool_name)
+            if _tool is None:
+                raise ToolNotFound(_tool_name)
+    async def aexecute(self,_tool_calls,_tools)->any:
+        """
+        工具执行的异步方法
+        """
+        self.check_tool_in_tools(_tool_calls)
+        return await self.tools_executor.aexecute(_tool_calls,_tools)
         
-        # 为工具执行创建输出捕获
-        output_buffer = io.StringIO()
-        tool_result = None
-        exception_occurred = None
-        
-        # 生成线程ID
-        with self.thread_lock:
-            self.thread_counter += 1
-            thread_id = self.thread_counter
-        
-        def func(*args, **kwargs):
-            nonlocal tool_result, exception_occurred
-            try:
-                # 重定向标准输出和错误输出到缓冲区
-                with redirect_stdout(output_buffer), redirect_stderr(output_buffer):
-                    tool_result = tool(*args, **kwargs)
-                    if tool_result is not None:
-                        output_buffer.write(f"\n[返回值]: {tool_result}")
-            except Exception as e:
-                exception_occurred = e
-                output_buffer.write(f"\n[错误]: {str(e)}")
-                tool_result = f"工具执行失败: {str(e)}"
-        
-        try:
-            tool_thread = threading.Thread(target=func, args=args, kwargs=kwargs)
-            tool_thread.daemon = True  # 设置为守护线程
-            
-            # 记录线程信息
-            with self.thread_lock:
-                self.running_threads[thread_id] = {
-                    "thread": tool_thread,
-                    "name": tname,
-                    "output": output_buffer,
-                    "start_time": time.time(),
-                    "should_stop": False  # 停止标志
-                }
-            
-            tool_thread.start()
-            tool_thread.join(timeout=timeout)
-            
-            if tool_thread.is_alive():
-                current_output = output_buffer.getvalue()
-                runtime = time.time() - self.running_threads[thread_id]["start_time"]
-                
-                # 如果超时时间达到60秒，动态注册线程管理工具
-                if timeout >= 60:
-                    self.__add_thread_management_tools()
-                    thread_management_hint = f"工具执行时间较长\n" \
-                                           f"- list_running_threads(): 查看所有运行中的线程\n" \
-                                           f"- get_thread_output({thread_id}): 获取线程最新输出\n" \
-                                           f"- kill_thread({thread_id}): 强制停止线程\n" \
-                                           f"- cleanup_finished_threads(): 清理已完成的线程"
-                else:
-                    thread_management_hint = f"该线程仍在后台运行，如需管理请使用更长的超时时间（≥60秒）"
-                
-                return f"工具执行超时（{timeout}秒），线程ID {thread_id} 仍在后台运行\n" \
-                       f"工具名: {tname}\n" \
-                       f"运行时间: {runtime:.1f}秒\n" \
-                       f"当前输出:\n{current_output}\n\n" \
-                       f"{thread_management_hint}"
-            else:
-                # 线程正常结束，清理记录
-                with self.thread_lock:
-                    if thread_id in self.running_threads:
-                        del self.running_threads[thread_id]
-                
-        except Exception as e:
-            # 清理线程记录
-            with self.thread_lock:
-                if thread_id in self.running_threads:
-                    del self.running_threads[thread_id]
-            return f"工具执行失败: {str(e)}"
-        
-        if exception_occurred:
-            return str(tool_result)
-        
-        full_output = output_buffer.getvalue()
-        
-        # 确定最终结果
-        result = tool_result if tool_result is not None else full_output
-        
-        # 应用后处理器（仅在成功时）
-        post_handler = self.post_handler.get(tname, None)
-        if post_handler is not None:
-            try:
-                result = post_handler(result)
-            except Exception as e:
-                return f"工具 '{tname}' 的后处理器执行失败: {str(e)}\n" \
-                       f"请检查后处理器的参数类型是否与工具输出类型匹配\n" \
-                       f"工具原始输出: {result}"
-        
-        if full_output.strip() and str(result) != full_output.strip():
-            return f"{full_output}\n[最终结果]: {result}"
-        
-        return str(result)
-    
     def checkTools(self,name:str)->bool:
         """
         检查工具是否存在
@@ -729,41 +483,21 @@ class Tools:
     def getTools(self,enable:bool=True)->list:
         """返回工具"""
         return self.tools
-    
-    def should_stop_thread(self, thread_id: int) -> bool:
-        """
-        检查指定线程是否应该停止（供工具内部使用）
-        Args:
-            thread_id (int): 线程ID
-        Returns:
-            bool: 是否应该停止
-        """
-        if thread_id in self.running_threads:
-            return self.running_threads[thread_id].get("should_stop", False)
-        return False
-    
-    def get_running_thread_count(self) -> int:
-        """
-        获取当前运行中的线程数量
-        Returns:
-            int: 运行中的线程数量
-        """
-        with self.thread_lock:
-            alive_count = 0
-            for thread_info in self.running_threads.values():
-                if thread_info["thread"].is_alive():
-                    alive_count += 1
-            return alive_count
-    
-    def register_thread_management_tools(self) -> str:
-        """
-        手动注册线程管理工具
-        Returns:
-            str: 注册结果
-        """
-        if self.thread_tools_registered:
-            return "线程管理工具已经注册"
-        
-        self.__add_thread_management_tools()
-        return "线程管理工具已成功注册:\n- list_running_threads()\n- get_thread_output(thread_id)\n- kill_thread(thread_id)\n- cleanup_finished_threads()"
 
+def convert_tools_for_llm(tools_instance: Tools) -> List[Dict[str, Any]]:
+    """
+    将 Tools 实例转换为适配大语言模型（如 OpenAI 格式）的工具列表。
+    
+    Args:
+        tools_instance (Tools): 工具管理器实例
+    
+    Returns:
+        List[Dict[str, Any]]: 兼容 LLM 工具调用格式的工具列表
+    """
+    return [
+        {
+            "type": tool_dict["type"],
+            "function": tool_dict["function"]
+        }
+        for tool_dict in tools_instance.tools
+    ]

@@ -20,10 +20,7 @@ mcp-python
 cd [源代码文件夹]
 pip install -r requirements.txt
 ```
-如果你需要本地使用大模型,目前不建议通过下面的使用本地大模型
-```bash
-pip install llama-cpp-python
-```
+
 - [介绍](#tina是什么)
 - [快速开始](#一从一个tina开始接触)
 # tina是什么?
@@ -150,50 +147,8 @@ my_tina.run()
 她可以回答关于tina框架的问题，同时也是一个比较全能的智能体
 
 # 二.实例化一个大模型
-模型可以使用本地或者Api的形式的调用，本地使用llama.cpp的GGUF格式的模型，Api使用openai格式兼容的模型
-## 1.本地的调用：
-在tina.LLM.llama查看
-本质是将llama-cpp-python封装成我需要的格式
-看看下面的示例：
-```python
-from tina.LLM.llama import llama
-#为了不和Llama冲突，首字母没有大写
-llm = llama(
-    path:str=#"gguf模型路径",
-    context_length:int=#模型的最大上下文,
-    device:str = #"设备，有CPU和GPU",
-    GPU_n:int = #指定需要负载到GPU的模型层数，-1表示全部层负载到GPU的（不清楚模型内部实现不要动，在使用GPU是默认为-1）,
-    verbose:bool=#打印llama.cpp读取模型时的日志
-)
-```
-使用上面的代码即可初始化你的本地模型，只需要将GGUF模型路径赋值给path变量。
-### llm.predict()方法使用
-```python
-llm.predict()#使用该方法可以让大模型产生输出，参数可以通过调用查看
-
-```
-##### 一般用法如下
-```python
-#result返回一个字典
-result = llm.predict(
-    input_text="你好？",
-    #sys_prompt = "你是一个人工智能助手",
-)
-print(result)
-#输出：{"role":"assi",""content":"你好，我是。。。"}，可以通过result["content"]获得内容
-```
-##### 流式输出如下
-```python
-#指定stream为True，这个时候result为生成器
-result = llm.predict(
-    input_text="你好？",
-    #sys_prompt = "你是一个人工智能助手",
-    stream=True
-)
-for chunk in result:
-    print(chunk,end="")
-#输出：你好.....
-```
+## 1.本地模型使用
+在0.5.0版本暂时移除了本地模型的使用
 ## 2.api调用
 输出解释：
 ```
@@ -236,7 +191,63 @@ qwen = Qwen(
     #env_path = ""#如果你的.env路径不在当前当前终端目录下，可以自行设计
 )
 ```
+### predict 和 generate 方法
+两者的功能是一致的，只是方法名不同  
 
+调用大语言模型执行预测任务，支持单次对话和多轮对话模式
+```       
+此方法作为统一入口，根据stream参数自动调用对应的专用方法：
+- stream=False: 调用 predictNoStream()
+- stream=True: 调用 predictStream()
+
+Args:
+    input_text (str, optional): 用户输入文本. 默认为 None.
+    sys_prompt (str, optional): 系统提示词. 默认为 "你的工作非常的出色！".
+    messages (list, optional): 历史对话消息列表. 格式为:
+        [{"role": "system", "content": "..."}, 
+        {"role": "user", "content": "..."}, 
+        {"role": "assistant", "content": "..."}]. 默认为 None.
+    temperature (float, optional): 生成文本的随机性参数 (0.0-1.0). 默认 1.0.
+    top_p (float, optional): 核采样参数 (0.0-1.0). 默认 0.9.
+    top_k (int, optional): Top-K采样参数，限制候选词汇数量. 
+        注意：不是所有模型都支持，不支持时会自动忽略. 默认 None.
+    min_p (float, optional): Min-P采样参数，设置最小概率阈值. 
+        注意：较新的采样方法，老模型可能不支持. 默认 None.
+    max_tokens (int, optional): 最大生成token数量. 默认 None.
+    presence_penalty (float, optional): 存在惩罚参数 (-2.0到2.0). 默认 None.
+    frequency_penalty (float, optional): 频率惩罚参数 (-2.0到2.0). 默认 None.
+    stream (bool, optional): 是否启用流式响应. 默认 False.
+    format (str, optional): 返回格式类型，"text"或"json". 默认 "text".
+    json_format (str, optional): JSON格式模板. 默认空字符串.
+    tools (list, optional): 工具调用列表. 格式为:
+        [{"name": "...", "description": "...", "parameters": {...}}]. 默认 None.
+    timeout (int, optional): 请求超时时间(秒). 默认 180.
+Returns:
+    Union[dict, Generator[dict, None, None]]:
+    - 非流式模式返回字典格式：
+        {"role": "assistant", "content": "...", "tool_calls": [...]}
+    - 流式模式返回生成器，逐块返回响应内容和/或工具调用信息
+
+Raises:
+    APIRequestFailed: 当API调用失败时抛出异常
+
+Examples:
+    ### 单次对话模式
+    >>> predict(input_text="你好")
+    {"role": "assistant", "content": "你好！有什么可以帮助你的吗？"}
+
+    ### 多轮对话模式
+    >>> messages = [{"role": "user", "content": "北京天气如何？"}]
+    >>> predict(messages=messages, tools=[weather_tool])
+    {"role": "assistant", "content": "", "tool_calls": [{"name": "get_weather", "arguments": {"location": "北京"}}]}
+            
+    ### 流式响应
+    >>> for chunk in predict(input_text="讲个故事", stream=True):
+    ...     print(chunk)
+            
+    ### 使用高级采样参数
+    >>> result = predict(input_text="创意写作", top_k=50, min_p=0.1, max_tokens=1000)
+```
 # 三.工具注册
 目前的工具仅支持py代码，可以通过mcp来扩展工具或者自己写工具执行器来完成任务
 ## 先实例化Tools类

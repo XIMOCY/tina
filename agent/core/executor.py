@@ -15,8 +15,12 @@ from executor import AgentExecutor
 import io
 from contextlib import redirect_stdout, redirect_stderr
 import threading
-from .tools import Tools
 import time
+import json
+import asyncio
+import inspect
+
+
 class ToolsExecutor:
     """
     工具执行器
@@ -28,22 +32,101 @@ class ToolsExecutor:
         self.thread_counter = 0    # 线程计数器
         self.thread_lock = threading.Lock()  # 线程安全锁
         self.thread_tools_registered = False  # 标记线程管理工具是否已注册
-    def execute(self,_tool_name,_tool:callable,_post_handler:callable,_tools:Tools,timeout=60,*args,**kwargs):
+    def execute(self,_tool_calls:list[dict],_tools,timeout=60,**kwargs):
+        """
+        执行工具调用
+        """
+        _tool_calls_result = []
+        _tool_calls.sort(key=lambda x: x['index'])
+        for tool_call in _tool_calls:
+            _tool_name = tool_call["function"]["name"]
+            _tool_args = json.loads(tool_call["function"]["arguments"])
+            _tool_id = tool_call["id"]
+            _tool = _tools.getTool(name=_tool_name)
+            _post_handler = _tools.getPostHandler(name=_tool_name)
+
+            try:
+                result = self._execute(_tool_name,_tool_args,_tool,_post_handler,_tools,timeout=timeout)
+                _tool_calls_result.append(self._tool_call_result(result,_tool_id,_tool_name))
+            except Exception as e:
+                _tool_calls_result.append(self._tool_call_result(str(e),_tool_id,_tool_name))
+
+
+        return _tool_calls_result
+    
+    async def aexecute(self,_tool_calls,_tools,timeout=60,**kwargs)->any:
+        _tool_calls_result = []
+        _tool_calls.sort(key=lambda x: x['index'])
+        for tool_call in _tool_calls:
+            _tool_name = tool_call["function"]["name"]
+            _tool_args = json.loads(tool_call["function"]["arguments"])
+            _tool_id = tool_call["id"]
+            _tool = _tools.getTool(name=_tool_name)
+            _post_handler = _tools.getPostHandler(name=_tool_name)
+
+            # 根据工具类型选择执行方式：
+            # - 异步工具：直接在当前事件循环中 await 执行
+            # - 同步工具：复用现有线程逻辑，但通过线程池避免阻塞事件循环
+            result = await self._aexecute_single(
+                _tool_name=_tool_name,
+                _tool_args=_tool_args,
+                _tool=_tool,
+                _post_handler=_post_handler,
+                _tools=_tools,
+                timeout=timeout,
+            )
+            _tool_calls_result.append(self._tool_call_result(result,_tool_id,_tool_name))
+        
+        return _tool_calls_result
+
+    async def _aexecute_single(self,_tool_name:str,_tool_args:dict,_tool:callable,_post_handler:callable,_tools,timeout=60):
+        """
+        异步环境下执行单个工具调用：
+        - 如果工具是异步函数，则直接 await
+        - 如果工具是同步函数，则在单独线程中执行，避免阻塞事件循环
+        """
+        if _tool is None:
+            return f"工具 '{_tool_name}' 未找到"
+
+        # 异步工具：直接 await，不再包一层线程，尊重调用方的事件循环
+        if inspect.iscoroutinefunction(_tool):
+            try:
+                result = await _tool(**_tool_args)
+
+                if _post_handler is not None:
+                    if inspect.iscoroutinefunction(_post_handler):
+                        result = await _post_handler(result)
+                    else:
+                        result = _post_handler(result)
+
+                return str(result)
+            except Exception as e:
+                return f"工具 '{_tool_name}' 执行失败: {str(e)}"
+
+        # 同步工具：在单独线程中执行，复用已有的线程管理和超时逻辑
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            lambda: self._execute(_tool_name,_tool_args,_tool,_post_handler,_tools,timeout=timeout)
+        )
+
+    def _tool_call_result(self,_tool_result,_tool_id,_tool_name):
+        return {"role":"tool","content":_tool_result,"tool_call_id":_tool_id,"tool_name":_tool_name}
+    def _execute(self,_tool_name:str,_tool_args:dict,_tool:callable,_post_handler:callable,_tools,timeout=60):
         """
         执行工具
         Args:
             name (str): 工具名称
             timeout (int): 超时时间（秒）, 默认60秒
-            *args: 位置参数
             **kwargs: 关键字参数
         Returns:
             any: 工具返回值
         """
-        self.__auto_cleanup_threads()
+        self._auto_cleanup_threads()
 
         if self.thread_tools_registered and _tool_name in ['list_running_threads', 'kill_thread', 'get_thread_output', 'cleanup_finished_threads']:
             try:
-                result = _tool(*args, **kwargs)
+                result = _tool(**_tool_args)
                 post_handler = _post_handler
                 if post_handler is not None:
                     try:
@@ -66,21 +149,21 @@ class ToolsExecutor:
             self.thread_counter += 1
             thread_id = self.thread_counter
         
-        def func(*args, **kwargs):
+        def func(**kwargs):
             nonlocal tool_result, exception_occurred
             try:
                 # 重定向标准输出和错误输出到缓冲区
                 with redirect_stdout(output_buffer), redirect_stderr(output_buffer):
-                    tool_result = _tool(*args, **kwargs)
+                    tool_result = _tool(**kwargs)
                     if tool_result is not None:
-                        output_buffer.write(f"\n[返回值]: {tool_result}")
+                        output_buffer.write(f"\n{tool_result}")
             except Exception as e:
                 exception_occurred = e
                 output_buffer.write(f"\n[错误]: {str(e)}")
                 tool_result = f"工具执行失败: {str(e)}"
         
         try:
-            tool_thread = threading.Thread(target=func, args=args, kwargs=kwargs)
+            tool_thread = threading.Thread(target=func, kwargs=_tool_args)
             tool_thread.daemon = True  # 设置为守护线程
             
             # 记录线程信息
@@ -101,8 +184,8 @@ class ToolsExecutor:
                 runtime = time.time() - self.running_threads[thread_id]["start_time"]
                 
                 # 如果超时时间达到60秒，动态注册线程管理工具
-                if timeout >= 60:
-                    self.__add_thread_management_tools(_tools)
+                if runtime >= timeout:
+                    self._add_thread_management_tools(_tools)
                     thread_management_hint = f"工具执行时间较长\n" \
                                            f"- list_running_threads(): 查看所有运行中的线程\n" \
                                            f"- get_thread_output({thread_id}): 获取线程最新输出\n" \
@@ -138,7 +221,7 @@ class ToolsExecutor:
         result = tool_result if tool_result is not None else full_output
         
         # 应用后处理器（仅在成功时）
-        post_handler = _tools.post_handler.get(_tool_name, None)
+        post_handler = _post_handler
         if post_handler is not None:
             try:
                 result = post_handler(result)
@@ -148,11 +231,11 @@ class ToolsExecutor:
                        f"工具原始输出: {result}"
         
         if full_output.strip() and str(result) != full_output.strip():
-            return f"{full_output}\n[最终结果]: {result}"
+            return f"{full_output}\n"
         
         return str(result)
     
-    def __auto_cleanup_threads(self):
+    def _auto_cleanup_threads(self):
         """自动清理已完成的线程（内部方法）"""
         try:
             with self.thread_lock:
@@ -167,7 +250,7 @@ class ToolsExecutor:
             # 静默处理清理错误，不影响主程序
             pass
     
-    def __add_thread_management_tools(self,_tools: Tools):
+    def _add_thread_management_tools(self,_tools):
         """动态添加线程管理工具（仅在需要时调用）"""
         # 防止重复注册
         if self.thread_tools_registered:

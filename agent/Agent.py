@@ -10,17 +10,19 @@ AgentByLocalModel类：本地模型智能体类，继承自Agent
 from __future__ import annotations
 
 import json
-from typing import List, Union, Generator, Iterator, Dict, Any
+from typing import List, Union, Generator, Iterator, Dict, Any, AsyncGenerator
 
-from .core.tools import Tools
-from .core.executor import AgentExecutor
-from .core.prompt import Prompt
-from ..mcp.Client import MCPClient
-from ..mcp.MCPToolExecutor import MCPToolExecutor
 from ..llm.BaseAPI import BaseAPI
-from ..core.error import TinaError
+from .core.tools import Tools
+from ..mcp.Client import MCPClient
+from .core.prompt import Prompt
+from ..mcp.MCPToolExecutor import MCPToolExecutor
+from .core.context_manager import ContextManager
 
+from ..core.error import TinaError
 from .core.parser import local_model_llama_cpp_parser 
+
+from ..utils.timer import timer, async_stream_timer, stream_timer
 
 
 class Agent:
@@ -28,8 +30,9 @@ class Agent:
     基础智能体类，默认支持API调用方式
     兼容原有tina框架的所有方法和返回值格式
     """
-    
-    def __init__(self, llm: BaseAPI, tools: Tools, sys_prompt: str = None, execute_tool: bool = True, mcp: MCPClient = None, context_length: int = 10000,tools_result_length:int = 4000,name:str="None"):
+    llm: BaseAPI
+    tools: Tools  
+    def __init__(self, llm: BaseAPI, tools: Tools, system_prompt: str = None, execute_tool: bool = True, mcp: MCPClient = None,context_manager:ContextManager=None,name:str="None"):
         """
         实例化一个Agent对象
         
@@ -51,30 +54,23 @@ class Agent:
         self.tools_call_result = []
         self.tools_call = []
         self.isExecute = execute_tool
-        self.context_length = context_length
-        self._max_tools_output_length = tools_result_length
         self.mcpclient = None
-
-        # 连接的智能体
-        self.connected_agents = []
-        
-        # 初始化MCP
-        self._mcp_serve(mcp)
-        
-        # 初始化提示词和消息
-        if sys_prompt is not None:
-            self.Prompt = sys_prompt
-            self.messages = [
-                {"role": "system", "content": self.Prompt},  # 系统提示词
-            ]
+        if context_manager is None:
+            self.context_manager = ContextManager()
         else:
-            self.Prompt = Prompt("tina")
-            self.messages = [
-                {"role": "system", "content": self.Prompt.prompt},  
-            ]
+            self.context_manager = context_manager
+        # 初始化MCP
+        self._mcp_to_tools(mcp)
+        
+        if system_prompt is not None:
+            self.context_manager.set_system_message(system_prompt)
+        else:
+            self.context_manager.set_system_message(Prompt("tina").prompt)
+        # 初始化消息，可以直接使用context_manager来修改messages
+        self.messages = self.context_manager.return_messages()
 
 
-    def _mcp_serve(self, MCP):
+    def _mcp_to_tools(self, MCP):
         """如果传入了MCP，则将MCP的工具集加入到当前的工具集中"""
         try:
             if MCP is not None:
@@ -85,7 +81,7 @@ class Agent:
         except Exception as e:
             raise e
 
-    def disableTool(self, tool_name: str) -> bool:
+    def disable_tool(self, tool_name: str) -> bool:
         """
         禁用工具
         Args:
@@ -93,21 +89,7 @@ class Agent:
         """
         return self.tools.disableTool(tool_name)
     
-    def connect(self,agent:Agent):
-        """
-        连接到另一个Agent
-        Args:
-            agent: 另一个Agent对象
-        """
-        if isinstance(agent, Agent):
-            if agent not in self.connected_agents:
-                agent.addMessage(role="system", content=f"你已连接到{self.name}智能体")
-                self.addMessage(role="system", content=f"你已连接到{agent.name}智能体")
-            else:
-                raise TinaError("该Agent已经连接过了")
-        self.connected_agents.append(agent)
-    
-    def enableTool(self, tool_name: str) -> bool:
+    def enable_tool(self, tool_name: str) -> bool:
         """
         启用工具
         Args:
@@ -115,34 +97,43 @@ class Agent:
         """
         return self.tools.enableTool(tool_name)
     
-    def getMessages(self) -> list:
+    def get_messages(self) -> list:
         """
         获取当前Agent的消息列表
         Agent会在当前运行状态维护一个自己的消息列表，可以通过该方法获取
         """
         return self.messages
-    def clearMessages(self) -> None:
+    def clear_messages(self) -> None:
         """
         清理当前Agent的消息列表，只保留前三个系统消息
         """
-        self.messages = self.messages[:3]
+        self.context_manager.clear_messages()
     
-    def getTools(self) -> list:
+    def get_tools(self) -> list:
         """
         获取当前Agent的工具列表
         """
-        return self.tools.tools
+        return self.tools.getTools()
     
-    def getPrompt(self) -> str:
+    def get_prompt(self) -> str:
         """
         获取当前Agent的提示词
         """
-        return self.Prompt
+        return self.context_manager.get_system_message()
     
-    def add_message(self, role: str, content: str, messages: list = None):
-        return self.addMessage(role, content, messages)
-    
-    def addMessage(self, role: str = None, content: str = None, messages: list = None) -> None:
+    def add_message(self, role: str = None, content: str = None) -> None:
+        """
+        """
+        if role is None or content is None:
+            raise TinaError("role和content参数不能为空")
+        if role == "user":
+            self.context_manager.add_user_message(content)
+            return
+        elif role == "assistant":
+            self.context_manager.add_assistant_message(content)
+            return
+        
+    def add_messages(self,messages: list[dict[str,str]] = None) -> None:
         """
         在当前的Agent添加新的消息
         Args:
@@ -150,78 +141,19 @@ class Agent:
             content:消息的内容
             messages:消息列表，可以一次性添加多个消息,格式为[{"role": "user", "content": "你好，我是用户"}]，注意如果传入了messages，则role和content参数将被忽略
         """
-        if self.context_length > 0:
-            self.__limit_messages()
-        if messages is not None:
-            self.messages.extend(messages)
-            return 
-        self.messages.append({"role": role, "content": content})
+        self.messages = self.context_manager.add_messages(messages)
+
 
     def get_tools_call_result(self) -> list:
-        return self.getToolsCallResult()
-
-    def getToolsCallResult(self) -> list:
         """
         获取当前Agent的工具调用结果列表
         """
-        return self.tools_call_result
+        return self.context_manager.get_tools_result()
     
-    def __limit_messages(self):
-        """
-        限制消息列表总字数不超过self.context_length
-        保留前三个系统消息，优先删除较早的非系统消息
-        """
-        if self.context_length < 0:
-            return 
-        
-        if not self.messages:
-            return
-
-        # 强制保留前三个系统消息
-        preserved, current_length = self.__get_system_messages_length()
-        
-        # 如果初始长度已超限，只保留前三个
-        if current_length >= self.context_length:
-            self.messages = preserved
-            return
-
-        remaining = self.context_length - current_length
-        new_messages = preserved.copy()
-        total = 0
-        
-        for msg in reversed(self.messages[1:]) if len(self.messages) > 1 else []:
-            content_len = len(msg.get('content', ''))
-            if total + content_len <= remaining:
-                new_messages.append(msg)
-                total += content_len
-            else:
-                continue
-        
-        new_messages = preserved + sorted(new_messages[1:], key=lambda x: self.messages.index(x))
-        self.messages = new_messages
-
-    def __get_system_messages_length(self):
-        preserved = self.messages[:1]
-        current_length = sum(len(msg.get('content', '')) for msg in preserved)
-        return preserved,current_length
-    def getMessagesLength(self) -> int:
-        """
-        获取当前Agent的消息列表总字数
-        """
-        return sum(len(msg.get('content', '')) for msg in self.messages)
     def get_tools_call(self) -> list:
-        return self.getToolsCall()
-    
-    def getToolsCall(self) -> list:
-        """
-        获取当前Agent的工具调用列表
-        """
-        return self.tools_call
+        return self.context_manager.get_tool_calls()
     
     def add_mcp_server(self, server_id: str, config: Dict[str, Any], max_retries=3, timeout=90) -> bool:
-        return self.addMCPServer(server_id, config, max_retries, timeout)
-    
-    def addMCPServer(self, server_id: str, config: Dict[str, Any], max_retries=3, timeout=90) -> bool:
         """
         添加MCP服务器
         Args:
@@ -236,9 +168,6 @@ class Agent:
             raise ValueError("MCP客户端未初始化，请先初始化MCP客户端")
         
     def remove_server(self, server_id: str) -> bool:
-        return self.removeServer(server_id)
-    
-    def removeServer(self, server_id: str) -> bool:
         """
         移除MCP服务器
         Args:
@@ -248,8 +177,8 @@ class Agent:
             return self.mcpclient.removeServer(server_id)
         else:
             raise ValueError("MCP客户端未初始化，请先初始化MCP客户端")
-    
-    def getMCPServerInfo(self, server_id: str = None) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
+
+    def get_mcp_server_info(self, server_id: str = None) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
         """
         获取MCP服务器信息
         Args:
@@ -270,9 +199,7 @@ class Agent:
         调用agent进行生成文本回复，默认流式输出
         """
         if input_text is not None:
-            self.messages.append(
-            {"role": "user", "content": input_text}
-            )
+            self.messages = self.context_manager.add_user_message(input_text)
         if stream:
             llm_result = self.llm.predict(
                 messages=self.messages,
@@ -283,100 +210,76 @@ class Agent:
                 min_p=min_p,
                 stream=stream,
             )
-            return self.parser(llm_result)
+            return self.stream_parser(llm_result)
         else:
             
-            while True:
-                tool_call = False
+            return self.predict_no_stream(temperature, top_p, stream)
+    
+        
+    @timer
+    def predict_no_stream(self, temperature, top_p, stream):
+        while True:
+            tool_call = False
                 
-                llm_result = self.llm.predict(
+            llm_result = self.llm.predict(
                     messages=self.messages,
                     temperature=temperature,
                     tools=self.tools.getTools(),
                     top_p=top_p,
                     stream=stream
                 )
-                if "tool_calls" in llm_result.keys():
-                    tool_call = (llm_result["tool_calls"]["function"]["name"],json.loads(llm_result["tool_calls"]["function"]["arguments"]),True)
-                    result = self.__execute_tool(tool_call[0], tool_call[1], tool_call[2])
-                    if not result[1]:
-                        return result[0]
-                    
-                    self.messages.append(
-                        {"role": "system", "content": "工具的执行结果为：\n" + result[0]}
+            if "tool_calls" in llm_result.keys():
+                tool_call = True
+                result = self._execute_tool(
+                        llm_result["tool_calls"]["function"]["name"],
+                        json.loads(llm_result["tool_calls"]["function"]["arguments"]),
                     )
-                    tool_call = result[1]
-                if tool_call == False:
-            
-                    self.messages.append(
+                print(llm_result)
+                self.context_manager.add_tool_calls(
+                        llm_result["tool_calls"]["id"],
+                        llm_result["tool_calls"]["function"],
+                    )
+                    # self.context_manager.add_tool_call_result(result)
+                tool_call = result[1]
+            if tool_call == False:
+                self.messages.append(
                         llm_result
                     )
-                    self.__sent_message(llm_result)
-                    return llm_result 
-                else:
-                    continue
+                return llm_result 
+            else:
+                continue
 
-    def __sent_message(self, llm_result):
-        if self.connected_agents:
-            for agent in self.connected_agents:
-                agent.addMessage(role="assistant", content=llm_result["content"])
-
-    def parser(self, generator):
-        content_parts = []
-        tool_result = ('', False)
-        reasoning_buffer = "" 
+    @stream_timer
+    def stream_parser(self, generator):
+        content_parts:list = []
+        tool_result:str
+        reasoning_buffer:str 
         
         for chunk in generator:
             if chunk.get("content") is None:
                 chunk["content"] = ""
-            if "tool_name" in chunk:
+
+            if "tool_name" in chunk or "tool_arguments" in chunk:
                 yield chunk
+
             elif "tool_calls" in chunk and chunk["id"] != '':
                 whole_content = "".join(content_parts)
+
                 if whole_content:
-                    self.messages.append({"role": "assistant", "content": whole_content})
+                    self.context_manager.add_assistant_message(whole_content)
+
                 content_parts = []  
                 reasoning_buffer = "" 
-                tool_call = chunk["tool_calls"][0]
-                function_args = tool_call["function"]["arguments"]
+
                 
-                yield {"role": "assistant", "tool_arguments": function_args, "content": ""}
-                
-                try:
-                    args = json.loads(function_args)
-                    if args is None:
-                        error_msg = "工具参数为空"
-                        yield {"role": "assistant", "content": error_msg}
-                        self.__limit_messages()
-                        
-                        yield from self.predict(input_text=f"{error_msg}，请重新输入，你之前输入的内容为：\n{whole_content}", stream=True)
-                        continue
-                except json.JSONDecodeError as e:
-                    error_msg = f"工具参数解析失败:{e}"
-                    yield {"role": "tool", "content": error_msg}
-                    
-                    yield from self.predict(input_text=f"{error_msg}，请重新输入，你之前输入的内容为：\n{whole_content}", stream=True)
-                    continue
-                
-                tool_call_obj = {
-                    "tool_call_id": chunk["id"],
-                    "function": {
-                        "name": tool_call["function"]["name"],
-                        "arguments": function_args
-                    }
-                }
-                
-                self.tools_call.append(tool_call_obj)
-                
+                self.context_manager.add_tool_calls(tool_calls=chunk["tool_calls"])
+    
                 if self.isExecute:
-                    tool_result = self.__execute_tool(tool_call["function"]["name"], args, tool_call_obj)
-                    yield {"role": "tool", "content": tool_result[0]}
-                    
-                    if tool_result[1]:
-                        self.messages.append({"role": "assistant", "tool_calls": [tool_call_obj]})
-                        self.messages.append({"role": "tool", "content": f"工具调用结果：\n{tool_result[0]}"})
-                        
-                        yield from self.predict(input_text=None, stream=True)
+                    results = self._execute_tool(chunk["tool_calls"])
+                    for result in results:
+                        yield result
+                      
+                    yield from self.predict(input_text=None, stream=True)
                 
             elif "reasoning_content" in chunk:
                 reasoning_content = chunk.get("reasoning_content", "")
@@ -387,42 +290,147 @@ class Agent:
                 content = chunk.get("content", "")
                 if content:
                     content_parts.append(content)
-                    yield {"role": "assistant", "content": content}                
+                    yield {"role": "assistant", "content": content}    
+
         whole_content = "".join(content_parts)
         if whole_content:
             self.messages.append({"role": "assistant", "content": whole_content})
-            self.__sent_message({"role": "assistant", "content": whole_content})
-
-    def __execute_tool(self, tool_name, args, tool_call_obj, max_input=None)-> tuple[str, bool]:
+    
+    @timer
+    def _execute_tool(self, _tool_calls)-> str:
         """执行工具调用并返回结果"""
-        tool_call = (tool_name, args, True)
         
         # 根据工具名称选择执行方式
-        if tool_name.startswith("mcp_"):
-            tool_result = MCPToolExecutor.execute_mcp_tool(tool_name, args, tools = self.tools,mcp_client=self.mcpclient)
 
-                
-        else:
-            tool_result = (self.tools.execute(tool_name, **args), True)
+        tool_result = self.tools.execute(_tool_calls,self.tools)
+        self.context_manager.add_tool_calls_result(tool_result)
             
-            
-            
-        # 记录工具调用结果
-        result_record = {
-            "id": tool_call_obj["tool_call_id"],
-            "name": tool_name,
-            "arguments": tool_call_obj["function"]["arguments"],
-            "result": tool_result[0],
-            "success": tool_result[1]
-        }
-        
-        self.tools_call_result.append(result_record)
-        if len(str(tool_result[0])) > self._max_tools_output_length:
-            tool_result = (str(tool_result[0])[:self._max_tools_output_length-3] + "...", tool_result[1])
         return tool_result
 
     def tag_parser(self, text_generator: Iterator[Any], tag="") -> Generator[str, None, None]:
         pass
+
+    @timer
+    async def _aexecute_tool(self, _tool_calls) -> str:
+        """异步执行工具调用并返回结果"""
+        tool_result = await self.tools.aexecute(_tool_calls, self.tools)
+        self.context_manager.add_tool_calls_result(tool_result)
+        return tool_result
+    
+    @async_stream_timer
+    async def aparser(self, generator) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        异步版本的 parser，用于处理流式异步输出
+        """
+        content_parts: list[str] = []
+        reasoning_buffer: str = ""
+
+        async for chunk in generator:
+            if chunk.get("content") is None:
+                chunk["content"] = ""
+
+            if "tool_name" in chunk or "tool_arguments" in chunk:
+                # 直接透传工具消息
+                yield chunk
+
+            elif "tool_calls" in chunk and chunk["id"] != "":
+                # 先把已经生成的普通内容写入上下文
+                whole_content = "".join(content_parts)
+                if whole_content:
+                    self.context_manager.add_assistant_message(whole_content)
+
+                content_parts = []
+                reasoning_buffer = ""
+
+                # 记录工具调用
+                self.context_manager.add_tool_calls(tool_calls=chunk["tool_calls"])
+
+                # 执行工具
+                if self.isExecute:
+                    result = await self._aexecute_tool(chunk["tool_calls"])
+                    # 把工具执行结果也往外推一把，结构与同步 execute 保持一致
+                    for result_chunk in result:yield result_chunk
+                    # 工具执行后，继续让大模型回答
+                    async for msg in await self.apredict(input_text=None, stream=True):
+                        yield msg
+
+            elif "reasoning_content" in chunk:
+                reasoning_content = chunk.get("reasoning_content", "")
+                if reasoning_content:
+                    reasoning_buffer += reasoning_content
+                    yield {
+                        "role": "assistant",
+                        "reasoning_content": reasoning_content,
+                        "content": "",
+                    }
+            else:
+                content = chunk.get("content", "")
+                if content:
+                    content_parts.append(content)
+                    yield {"role": "assistant", "content": content}
+
+        # 生成结束后，把累计内容写入消息
+        whole_content = "".join(content_parts)
+        if whole_content:
+            self.messages.append({"role": "assistant", "content": whole_content})
+
+    async def apredict(
+        self,
+        input_text: str = None,
+        temperature: float = 0.5,
+        top_p: float = 0.9,
+        top_k: int = 1,
+        min_p: float = 0.0,
+        stream: bool = True,
+    ) -> Union[str, AsyncGenerator[Dict[str, Any], None]]:
+        """
+        异步版本的 predict，默认流式输出
+        注意：这里假定 BaseAPI 提供了对应的异步方法 apredict
+        """
+        if input_text is not None:
+            self.messages = self.context_manager.add_user_message(input_text)
+
+        if stream:
+            # 异步获取流式输出（假设 llm.apredict 返回异步生成器）
+            llm_result = await self.llm.apredict(
+                messages=self.messages,
+                temperature=temperature,
+                tools=self.tools.getTools(),
+                top_p=top_p,
+                top_k=top_k,
+                min_p=min_p,
+                stream=True,
+            )
+            return self.aparser(llm_result)
+        else:
+            # 非流式异步：每轮调用一次模型，遇到工具调用则先执行工具再继续
+            while True:
+                tool_call_happened = False
+
+                llm_result = await self.llm.apredict(
+                    messages=self.messages,
+                    temperature=temperature,
+                    tools=self.tools.getTools(),
+                    top_p=top_p,
+                    top_k=top_k,
+                    min_p=min_p,
+                    stream=False,
+                )
+
+                if "tool_calls" in llm_result:
+                    tool_call_happened = True
+                    # 记录工具调用
+                    self.context_manager.add_tool_calls(
+                        tool_calls=llm_result["tool_calls"]
+                    )
+                    # 异步执行工具
+                    await self._aexecute_tool(llm_result["tool_calls"])
+                    # 执行完工具后，继续下一轮循环，请求模型
+                    continue
+
+                if not tool_call_happened:
+                    self.messages.append(llm_result)
+                    return llm_result
 
 
 class AgentUsingLocalModel(Agent):
@@ -478,7 +486,7 @@ class AgentUsingLocalModel(Agent):
                     )
                     return llm_result 
                 else:
-                    result = AgentExecutor.execute(parser_result, self.tools)
+                    result = self.tools.execute(parser_result, self.tools)
                     self.messages.append(
                         {"role": "tool", "content": "工具的执行结果为：\n" + result[0]}
                     )
@@ -538,7 +546,7 @@ class AgentUsingLocalModel(Agent):
                     tool_name = tool_call_parsed[0]
                     yield {"role": "system", "tool_name": tool_name, "content": f"正在执行工具：{tool_name}"}
                     
-                    result = AgentExecutor.execute(tool_call_parsed, self.tools, LLM=self.llm)
+                    result = self.tools.execute(tool_call_parsed, self.tools, LLM=self.llm)
                     if result[1]:
                         self.messages.extend([{
                             "role": "assistant",

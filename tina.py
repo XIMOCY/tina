@@ -20,7 +20,7 @@ logo = inspect.getfile(tina)[:-11] + 'logo.svg'
 with open(readme_path, 'r', encoding='utf-8') as file:
     readme = file.read()
 class Tina:
-    def __init__(self,tools:Tools=None):
+    def __init__(self,tools:Tools=None,mcp=None):
         """
         初始化你的控制台tina
         """
@@ -185,22 +185,23 @@ class Tina:
         self.agent = Agent(
             llm=self.llm,
             tools=self.tools,
-            sys_prompt=tina_prompt
+            mcp=mcp,
+            system_prompt=tina_prompt
         )
         self.plan_agent = Agent(
             llm=self.llm,
             tools=self.tools,
-            sys_prompt=plan_prompt
+            system_prompt=plan_prompt
         )
         self.executor_agent = Agent(
             llm=self.llm,
             tools=self.tools,
-            sys_prompt=execute_prompt
+            system_prompt=execute_prompt
         )
         self.check_agent = Agent(
             llm=self.llm,
             tools=self.tools,
-            sys_prompt=check_prompt
+            system_prompt=check_prompt
         )
 
     def run(self):
@@ -222,7 +223,7 @@ class Tina:
             else:
                 self.chat(user_input)
     def show_history(self):
-        for line in self.agent.getMessages():
+        for line in self.agent.get_messages():
             if line["role"] == "user":
                 print(f"\n( • ̀ω•́ ) >>>User:\n{line['content']}")
             elif line["role"] == "assistant":
@@ -293,7 +294,7 @@ class Tina:
                     print(f"🗓  开始执行{r['goal']}")
                     print("请稍等，tina正在规划你的任务...")
                     result = self.executor_agent.predict(input_text=f"开始规划 {r['goal']}",stream=False)
-                    self.agent.addMessage(role="tool",content=result['content'])
+                    self.agent.add_message(role="tool",content=result['content'])
                     print(f"📤 任务规划：{result['content']}")   
                     print(f"tina已为你生成任务清单，开始执行...")
                     self.executor_agent.predict(input_text=f"开始执行任务{result['content']}",stream=False)

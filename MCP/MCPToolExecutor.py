@@ -38,9 +38,9 @@ class MCPToolExecutor:
                     if text_content.type == "text":
                         tool_result += text_content.text
                     
-                return tool_result, True
+                return tool_result
             else:
-                return f"工具调用失败: {result.get('error', '未知错误')}", False
+                return f"工具调用失败: {result.get('error', '未知错误')}"
         
         except Exception as e:
-            return f"执行MCP工具时出错: {str(e)}", False
+            return f"执行MCP工具时出错: {str(e)}"
