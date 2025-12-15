@@ -32,7 +32,7 @@ class Agent:
     """
     llm: BaseAPI
     tools: Tools  
-    def __init__(self, llm: BaseAPI, tools: Tools, system_prompt: str = None, execute_tool: bool = True, mcp: MCPClient = None,context_manager:ContextManager=None,name:str="None"):
+    def __init__(self, llm: BaseAPI, tools: Tools, system_prompt: str = None, execute_tool: bool = True, mcp: MCPClient = None,context_manager:ContextManager=None,max_tool_loop:int = 30,name:str="None"):
         """
         实例化一个Agent对象
         
@@ -44,6 +44,8 @@ class Agent:
             MCP: tina.MCPClient类型，MCP客户端对象，如果不传入，则不进行MCP调用。
             context_length: int 最大上下文长度，超过该长度则删除旧消息，保留最近的消息。
             context_limit: int 上下文限制，使用大模型来总结你的上下文，数字为0时不触发
+            max_tool_loop: int 最大工具调用次数，超过该次数则停止调用工具
+            name: str 智能体名字，用于多Agent区分
         """
         # 智能体的名称
         self.name =name
@@ -53,8 +55,9 @@ class Agent:
         self.tools = tools
         self.tools_call_result = []
         self.tools_call = []
-        self.isExecute = execute_tool
-        self.mcpclient = None
+        self.is_execute = execute_tool
+        self.max_tool_loop = max_tool_loop
+        self.mcp_client = mcp
         if context_manager is None:
             self.context_manager = ContextManager()
         else:
@@ -74,8 +77,8 @@ class Agent:
         """如果传入了MCP，则将MCP的工具集加入到当前的工具集中"""
         try:
             if MCP is not None:
-                self.mcpclient = MCP
-                _tools = self.mcpclient.toTinaTools()
+                self.mcp_client = MCP
+                _tools = self.mcp_client.toTinaTools()
                 self.tools = _tools + self.tools
                 del _tools
         except Exception as e:
@@ -113,7 +116,7 @@ class Agent:
         """
         获取当前Agent的工具列表
         """
-        return self.tools.getTools()
+        return self.tools.get_tools()
     
     def get_prompt(self) -> str:
         """
@@ -162,8 +165,8 @@ class Agent:
             max_retries:最大重试次数
             timeout:超时时间
         """
-        if self.mcpclient is not None:
-            return self.mcpclient.addServer(server_id, config, max_retries, timeout)
+        if self.mcp_client is not None:
+            return self.mcp_client.add_server(server_id, config, max_retries, timeout)
         else:
             raise ValueError("MCP客户端未初始化，请先初始化MCP客户端")
         
@@ -173,8 +176,8 @@ class Agent:
         Args:
             server_id:服务器ID
         """
-        if self.mcpclient is not None:
-            return self.mcpclient.removeServer(server_id)
+        if self.mcp_client is not None:
+            return self.mcp_client.remove_server(server_id)
         else:
             raise ValueError("MCP客户端未初始化，请先初始化MCP客户端")
 
@@ -184,8 +187,8 @@ class Agent:
         Args:
             server_id:服务器ID，如果不传入，则返回所有服务器信息
         """
-        if self.mcpclient is not None:
-            return self.mcpclient.getServerInfo(server_id)
+        if self.mcp_client is not None:
+            return self.mcp_client.get_server_info(server_id)
         else:
             raise ValueError("MCP客户端未初始化，请先初始化MCP客户端")
     
@@ -198,18 +201,23 @@ class Agent:
         """
         调用agent进行生成文本回复，默认流式输出
         """
+        # 定义计数器
+        counter = 0
         if input_text is not None:
             self.messages = self.context_manager.add_user_message(input_text)
+            
         if stream:
+  
             llm_result = self.llm.predict(
-                messages=self.messages,
-                temperature=temperature,
-                tools=self.tools.getTools(),
-                top_p=top_p,
-                top_k=top_k,
-                min_p=min_p,
-                stream=stream,
-            )
+                    messages=self.messages,
+                    temperature=temperature,
+                    tools=self.tools.get_tools(),
+                    top_p=top_p,
+                    top_k=top_k,
+                    min_p=min_p,
+                    stream=stream,
+                )
+                
             return self.stream_parser(llm_result)
         else:
             
@@ -224,7 +232,7 @@ class Agent:
             llm_result = self.llm.predict(
                     messages=self.messages,
                     temperature=temperature,
-                    tools=self.tools.getTools(),
+                    tools=self.tools.get_tools(),
                     top_p=top_p,
                     stream=stream
                 )
@@ -252,7 +260,6 @@ class Agent:
     @stream_timer
     def stream_parser(self, generator):
         content_parts:list = []
-        tool_result:str
         reasoning_buffer:str 
         
         for chunk in generator:
@@ -274,7 +281,7 @@ class Agent:
                 
                 self.context_manager.add_tool_calls(tool_calls=chunk["tool_calls"])
     
-                if self.isExecute:
+                if self.is_execute:
                     results = self._execute_tool(chunk["tool_calls"])
                     for result in results:
                         yield result
@@ -300,9 +307,9 @@ class Agent:
     def _execute_tool(self, _tool_calls)-> str:
         """执行工具调用并返回结果"""
         
-        # 根据工具名称选择执行方式
 
-        tool_result = self.tools.execute(_tool_calls,self.tools)
+         # 默认工具执行方式
+        tool_result = self.tools.execute(_tool_calls,self.tools,self.mcp_client)
         self.context_manager.add_tool_calls_result(tool_result)
             
         return tool_result
@@ -310,14 +317,13 @@ class Agent:
     def tag_parser(self, text_generator: Iterator[Any], tag="") -> Generator[str, None, None]:
         pass
 
-    @timer
+
     async def _aexecute_tool(self, _tool_calls) -> str:
         """异步执行工具调用并返回结果"""
-        tool_result = await self.tools.aexecute(_tool_calls, self.tools)
+        tool_result = await self.tools.aexecute(_tool_calls, self.tools,self.mcp_client)
         self.context_manager.add_tool_calls_result(tool_result)
         return tool_result
-    
-    @async_stream_timer
+
     async def aparser(self, generator) -> AsyncGenerator[Dict[str, Any], None]:
         """
         异步版本的 parser，用于处理流式异步输出
@@ -346,7 +352,7 @@ class Agent:
                 self.context_manager.add_tool_calls(tool_calls=chunk["tool_calls"])
 
                 # 执行工具
-                if self.isExecute:
+                if self.is_execute:
                     result = await self._aexecute_tool(chunk["tool_calls"])
                     # 把工具执行结果也往外推一把，结构与同步 execute 保持一致
                     for result_chunk in result:yield result_chunk
@@ -385,7 +391,6 @@ class Agent:
     ) -> Union[str, AsyncGenerator[Dict[str, Any], None]]:
         """
         异步版本的 predict，默认流式输出
-        注意：这里假定 BaseAPI 提供了对应的异步方法 apredict
         """
         if input_text is not None:
             self.messages = self.context_manager.add_user_message(input_text)
@@ -395,7 +400,7 @@ class Agent:
             llm_result = await self.llm.apredict(
                 messages=self.messages,
                 temperature=temperature,
-                tools=self.tools.getTools(),
+                tools=self.tools.get_tools(),
                 top_p=top_p,
                 top_k=top_k,
                 min_p=min_p,
@@ -410,7 +415,7 @@ class Agent:
                 llm_result = await self.llm.apredict(
                     messages=self.messages,
                     temperature=temperature,
-                    tools=self.tools.getTools(),
+                    tools=self.tools.get_tools(),
                     top_p=top_p,
                     top_k=top_k,
                     min_p=min_p,
@@ -459,7 +464,7 @@ class AgentUsingLocalModel(Agent):
             llm_result = self.llm.predict(
                 messages=self.messages,
                 temperature=temperature,
-                tools=self.tools.getTools(),
+                tools=self.tools.get_tools(),
                 top_p=top_p,
                 top_k=top_k,
                 min_p=min_p,
@@ -472,7 +477,7 @@ class AgentUsingLocalModel(Agent):
                 llm_result = self.llm.predict(
                     messages=self.messages,
                     temperature=temperature,
-                    tools=self.tools.tools,
+                    tools=self.tools.tools_schemas,
                     top_p=top_p,
                     top_k=top_k,
                     min_p=min_p,

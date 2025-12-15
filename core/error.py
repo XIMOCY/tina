@@ -32,15 +32,10 @@ class ToolParameterTypeError(TinaError):
 class NetworkNotConnected(TinaError):
     def __init__(self):
         super().__init__("Network is not connected. Please check your network connection and try again. \n网络未连接，请检查网络连接后重试。")
-class PostHandlerTypeError(TinaError):
-    def __init__(self, tool_name: str, expected_type: str, actual_type: str, error_details: str = ""):
-        super().__init__(f"工具 '{tool_name}' 的后处理函数参数类型不匹配：期望 {expected_type}，实际 {actual_type}。{error_details}")
+
 class APIRequestFailed(TinaError):
     def __init__(self,url: str, status_code: int, error_details: str = ""):
         super().__init__(f"API request failed:request {url} failed,\n status code {status_code}.\n {error_details}\nAPI请求失败：请求{url}失败，\n状态码{status_code}。\n{error_details}")
 class ModelPathNotGiven(TinaError):
     def __init__(self, model_name: str):
         super().__init__(f"Model path is not given. Please provide a valid model path. \n模型的路径没有给出，请提供一个有效的模型路径。")
-class ModelInterfaceEngineNotSupported(TinaError):
-    def __init__(self, model_interface_engine: str):
-        super().__init__(f"Model interface engine '{model_interface_engine}' is not supported. \n模型推理引擎'{model_interface_engine}'不被支持。")

@@ -19,7 +19,7 @@ try:
 except ImportError:
     MCP_AVAILABLE = False
 
-from ..agent.core.tools import Tools
+
 
 
 class MCPClient:
@@ -79,7 +79,7 @@ class MCPClient:
     
     # 同步方法 - 用户主要使用的方法
     
-    def addServer(self, server_id: str, config: Dict[str, Any], max_retries=3, timeout=90) -> bool:
+    def add_server(self, server_id: str, config: Dict[str, Any], max_retries=3, timeout=90) -> bool:
         """
         添加MCP服务端（同步版本，带重试机制）
         
@@ -126,7 +126,7 @@ class MCPClient:
         
         return False
     
-    def closeServer(self, server_id: str, max_retries=2, timeout=30) -> bool:
+    def close_server(self, server_id: str, max_retries=2, timeout=30) -> bool:
         """
         关闭指定服务端连接（同步版本）
         
@@ -164,7 +164,7 @@ class MCPClient:
         
         return False
     
-    def removeServer(self, server_id: str) -> bool:
+    def remove_server(self, server_id: str) -> bool:
         """
         移除MCP服务端（同步版本）
         
@@ -174,8 +174,8 @@ class MCPClient:
         Returns:
             bool: 移除是否成功
         """
-        return self.closeServer(server_id)
-    def setPostHandler(self,called_function:callable,post_handler: callable) -> None:
+        return self.close_server(server_id)
+    def set_post_handler(self,called_function:callable,post_handler: callable) -> None:
         """
         设置一个函数，用于在每次请求后调用
         Args:
@@ -205,7 +205,7 @@ class MCPClient:
             # 普通函数
             globals()[original_function.__name__] = wrapped_function
 
-    def getTools(self, server_id: Optional[str] = None, max_retries=2, timeout=30) -> List[Dict[str, Any]]:
+    def get_tools(self, server_id: Optional[str] = None, max_retries=2, timeout=30) -> List[Dict[str, Any]]:
         """
         获取服务端提供的工具（同步版本）
         
@@ -251,7 +251,7 @@ class MCPClient:
         
         return []
     
-    def callTool(self, tool_name: str, tool_args: Dict[str, Any], server_id: Optional[str] = None, max_retries=2, timeout=120) -> Dict[str, Any]:
+    def call_tool(self, tool_name: str, tool_args: Dict[str, Any], server_id: Optional[str] = None, max_retries=2, timeout=120) -> Dict[str, Any]:
         """
         调用工具（同步版本）
         
@@ -308,7 +308,7 @@ class MCPClient:
             "error": "达到最大重试次数"
         }
     
-    def toTinaTools(self) -> Tools:
+    def to_tina_tools(self):
         """
         将MCP工具转换为tina的Tools类实例（同步版本）
         
@@ -316,11 +316,12 @@ class MCPClient:
             Tools: tina的Tools类实例
         """
         # 创建一个新的Tools实例
+        from ..agent.core.tools import Tools
         tina_tools = Tools()
         
         # 获取所有MCP工具
         try:
-            mcp_tools = self.getTools()
+            mcp_tools = self.get_tools()
             
             if not mcp_tools:
                 return tina_tools
@@ -344,7 +345,7 @@ class MCPClient:
                     }
                 
                 # 注册工具到tina的Tools实例
-                tina_tools.registerNotWithFunction(
+                tina_tools.register_no_function(
                     name=f"mcp_{server_id}_{name}",
                     description=f"[MCP:{server_id}] {description}",
                     required_parameters=required_parameters,
@@ -357,7 +358,7 @@ class MCPClient:
         
         return tina_tools
     
-    def updateTinaTools(self, tina_tools: Tools) -> Tools:
+    def update_tina_tools(self, tina_tools):
         """
         更新现有的tina Tools实例，添加MCP工具（同步版本）
         
@@ -368,7 +369,7 @@ class MCPClient:
             Tools: 更新后的tina Tools实例
         """
         # 获取MCP工具转换为tina工具格式
-        mcp_tina_tools = self.toTinaTools()
+        mcp_tina_tools = self.to_tina_tools()
         
         # 合并工具
         combined_tools = tina_tools + mcp_tina_tools
@@ -387,7 +388,7 @@ class MCPClient:
             print(f"关闭客户端调用失败: {e}")
             return False
     
-    def loadConfig(self, config_path: str) -> bool:
+    def load_config(self, config_path: str) -> bool:
         """
         从配置文件加载服务端配置
         
@@ -403,7 +404,7 @@ class MCPClient:
             
             if "mcpServers" in config:
                 for server_id, server_config in config["mcpServers"].items():
-                    self.addServer(server_id, server_config)
+                    self.add_server(server_id, server_config)
                 return True
             else:
                 print("配置文件格式错误，缺少mcpServers字段")
@@ -413,7 +414,7 @@ class MCPClient:
             print(f"加载配置文件失败: {e}")
             return False
     
-    def saveConfig(self, config_path: str) -> bool:
+    def save_config(self, config_path: str) -> bool:
         """
         保存服务端配置到文件
         
@@ -440,7 +441,7 @@ class MCPClient:
             print(f"保存配置文件失败: {e}")
             return False
     
-    def getRequestHistory(self, limit: int = 100, filter_type: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_request_history(self, limit: int = 100, filter_type: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         获取请求历史
         
@@ -457,7 +458,7 @@ class MCPClient:
         else:
             return self.request_history[-limit:]
     
-    def getServerInfo(self, server_id: Optional[str] = None) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
+    def get_server_info(self, server_id: Optional[str] = None) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
         """
         获取服务端信息
         
@@ -486,8 +487,8 @@ class MCPClient:
                 "added_at": server_info["added_at"].isoformat()
             } for sid, server_info in self.servers.items()]
     
-    # 异步方法 - 带Async后缀，用于开发者可以异步调用这个类
-    async def addServerAsync(self, server_id: str, config: Dict[str, Any]) -> bool:
+    # 异步方法
+    async def aadd_server(self, server_id: str, config: Dict[str, Any]) -> bool:
         """
         添加MCP服务端（异步版本）
         
@@ -502,7 +503,7 @@ class MCPClient:
         """
         return await self._add_server_async(server_id, config)
     
-    async def closeServerAsync(self, server_id: str) -> bool:
+    async def aclose_server(self, server_id: str) -> bool:
         """
         关闭指定服务端连接（异步版本）
         
@@ -514,7 +515,7 @@ class MCPClient:
         """
         return await self._close_server_async(server_id)
     
-    async def removeServerAsync(self, server_id: str) -> bool:
+    async def aremove_server(self, server_id: str) -> bool:
         """
         移除MCP服务端（异步版本）
         
@@ -526,7 +527,7 @@ class MCPClient:
         """
         return await self._close_server_async(server_id)
     
-    async def getToolsAsync(self, server_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    async def aget_tools(self, server_id: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         获取服务端提供的工具（异步版本）
         
@@ -538,7 +539,7 @@ class MCPClient:
         """
         return await self._get_tools_async(server_id)
     
-    async def callToolAsync(self, tool_name: str, tool_args: Dict[str, Any], server_id: Optional[str] = None) -> Dict[str, Any]:
+    async def acall_tool(self, tool_name: str, tool_args: Dict[str, Any], server_id: Optional[str] = None) -> Dict[str, Any]:
         """
         调用工具（异步版本）
         
@@ -552,7 +553,7 @@ class MCPClient:
         """
         return await self._call_tool_async(tool_name, tool_args, server_id)
     
-    async def toTinaToolsAsync(self) -> Tools:
+    async def ato_tina_tools(self):
         """
         将MCP工具转换为tina的Tools类实例（异步版本）
         
@@ -560,6 +561,7 @@ class MCPClient:
             Tools: tina的Tools类实例
         """
         # 创建一个新的Tools实例
+        from ..agent.core.tools import Tools
         tina_tools = Tools()
         
         # 获取所有MCP工具
@@ -599,7 +601,7 @@ class MCPClient:
         
         return tina_tools
     
-    async def updateTinaToolsAsync(self, tina_tools: Tools) -> Tools:
+    async def aupdate_tina_tools(self, tina_tools):
         """
         更新现有的tina Tools实例，添加MCP工具（异步版本）
         
@@ -610,14 +612,14 @@ class MCPClient:
             Tools: 更新后的tina Tools实例
         """
         # 获取MCP工具转换为tina工具格式
-        mcp_tina_tools = await self.toTinaToolsAsync()
+        mcp_tina_tools = await self.ato_tina_tools()
         
         # 合并工具
         combined_tools = tina_tools + mcp_tina_tools
         
         return combined_tools
     
-    async def closeAsync(self):
+    async def aclose(self):
         """关闭所有连接（异步版本）"""
         return await self._close_async()
     

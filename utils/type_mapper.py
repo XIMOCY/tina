@@ -230,7 +230,7 @@ def tools_to_json_schema(tools_list: List) -> List[Dict[str, Any]]:
     return TypeMapper.generate_tools_schema(tools_list)
 
 
-def convert_tools_for_llm(tools: "Tools") -> List[Dict[str, Any]]:
+def convert_tools_for_llm(tools) -> List[Dict[str, Any]]:
     """
     将Tina Tools对象转换为大模型可用的工具格式
     

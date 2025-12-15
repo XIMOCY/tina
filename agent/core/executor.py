@@ -3,14 +3,6 @@
 日期：2024，12，13
 版本：0.4.2
 功能：Agent的工具执行器
-通过导入ToolsExecutor类，可以调用Agent的工具执行器，该类包含一个parser参数，该参数为解析工具调用的函数，默认为tina_parser函数。
-通过传入Tools对象来动态导入工具类，并调用该类的方法。
-使用方法：
-1. 导入AgentExecutor类
-from executor import AgentExecutor
-
-
-
 """
 import io
 from contextlib import redirect_stdout, redirect_stderr
@@ -19,6 +11,9 @@ import time
 import json
 import asyncio
 import inspect
+from ...core import logger
+
+from ...mcp.MCPToolExecutor import MCPToolExecutor
 
 
 class ToolsExecutor:
@@ -32,7 +27,7 @@ class ToolsExecutor:
         self.thread_counter = 0    # 线程计数器
         self.thread_lock = threading.Lock()  # 线程安全锁
         self.thread_tools_registered = False  # 标记线程管理工具是否已注册
-    def execute(self,_tool_calls:list[dict],_tools,timeout=60,**kwargs):
+    def execute(self,_tool_calls:list[dict],_tools,_mcp_client = None,timeout=60,**kwargs):
         """
         执行工具调用
         """
@@ -42,40 +37,55 @@ class ToolsExecutor:
             _tool_name = tool_call["function"]["name"]
             _tool_args = json.loads(tool_call["function"]["arguments"])
             _tool_id = tool_call["id"]
-            _tool = _tools.getTool(name=_tool_name)
-            _post_handler = _tools.getPostHandler(name=_tool_name)
+            _tool = _tools.get_tool(name=_tool_name)
+            _post_handler = _tools.get_post_handler(name=_tool_name)
 
             try:
-                result = self._execute(_tool_name,_tool_args,_tool,_post_handler,_tools,timeout=timeout)
-                _tool_calls_result.append(self._tool_call_result(result,_tool_id,_tool_name))
+                if _tool_name.startswith("mcp_"):
+                    # 使用MCP工具执行器执行MCP工具
+                    result = MCPToolExecutor.execute_mcp_tool(_tool_name, _tool_args, _tools, _mcp_client)
+
+                else:
+                    result = self._execute(_tool_name,_tool_args,_tool,_post_handler,_tools,timeout=timeout)
+
+                    logger.debug(f"ToolsExecutor - 工具 '{_tool_name}' 执行结果: {result}：参数 {_tool_args}")
+
+                    _tool_calls_result.append(self._tool_call_result(result,_tool_id,_tool_name))
             except Exception as e:
+                logger.error(f"ToolsExecutor - 工具 '{_tool_name}' 执行失败: {str(e)}：参数 {_tool_args}")
                 _tool_calls_result.append(self._tool_call_result(str(e),_tool_id,_tool_name))
 
 
         return _tool_calls_result
     
-    async def aexecute(self,_tool_calls,_tools,timeout=60,**kwargs)->any:
+    async def aexecute(self,_tool_calls,_tools,_mcp_client=None,timeout=60,**kwargs)->any:
         _tool_calls_result = []
         _tool_calls.sort(key=lambda x: x['index'])
         for tool_call in _tool_calls:
             _tool_name = tool_call["function"]["name"]
             _tool_args = json.loads(tool_call["function"]["arguments"])
             _tool_id = tool_call["id"]
-            _tool = _tools.getTool(name=_tool_name)
-            _post_handler = _tools.getPostHandler(name=_tool_name)
+            _tool = _tools.get_tool(name=_tool_name)
+            _post_handler = _tools.get_post_handler(name=_tool_name)
 
             # 根据工具类型选择执行方式：
             # - 异步工具：直接在当前事件循环中 await 执行
             # - 同步工具：复用现有线程逻辑，但通过线程池避免阻塞事件循环
-            result = await self._aexecute_single(
-                _tool_name=_tool_name,
-                _tool_args=_tool_args,
-                _tool=_tool,
-                _post_handler=_post_handler,
-                _tools=_tools,
-                timeout=timeout,
-            )
-            _tool_calls_result.append(self._tool_call_result(result,_tool_id,_tool_name))
+            if _tool_name.startswith("mcp_"):
+                # 使用MCP工具执行器执行MCP工具
+                result = await MCPToolExecutor.aexecute_mcp_tool(_tool_name, _tool_args, _mcp_client)
+
+                _tool_calls_result.append(self._tool_call_result(result,_tool_id,_tool_name))
+            else:    
+                result = await self._aexecute_single(
+                    _tool_name=_tool_name,
+                    _tool_args=_tool_args,
+                    _tool=_tool,
+                    _post_handler=_post_handler,
+                    _tools=_tools,
+                    timeout=timeout,
+                )
+                _tool_calls_result.append(self._tool_call_result(result,_tool_id,_tool_name))
         
         return _tool_calls_result
 
@@ -98,9 +108,10 @@ class ToolsExecutor:
                         result = await _post_handler(result)
                     else:
                         result = _post_handler(result)
-
+                logger.debug(f"ToolsExecutor - 异步工具 '{_tool_name}' 执行结果: {result}：参数 {_tool_args}")
                 return str(result)
             except Exception as e:
+                logger.error(f"ToolsExecutor - 异步工具 '{_tool_name}' 执行失败: {str(e)}：参数 {_tool_args}")
                 return f"工具 '{_tool_name}' 执行失败: {str(e)}"
 
         # 同步工具：在单独线程中执行，复用已有的线程管理和超时逻辑

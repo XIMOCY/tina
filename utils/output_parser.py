@@ -10,9 +10,7 @@ def stream_generator_parser(base_url, payload, headers, timeout):
     final_tool_calls = None
     received_ids = {}
     tool_name_sent = set()
-    tool_args_sent = set()
     reasoning_buffer = ""
-    retry_count = 0
     usage = None  # 新增：缓存 usage
 
     with httpx.stream("POST", f"{base_url}", json=payload, headers=headers, timeout=timeout) as response:
@@ -97,7 +95,6 @@ def stream_generator_parser(base_url, payload, headers, timeout):
                                         )
 
                             final_tool_calls = [v for k, v in sorted(tool_calls_buffer.items())]
-                            logger.debug(f"BaseAPI - 发生了工具调用流式更新，当前工具调用缓冲区状态：{final_tool_calls}")
 
                 except json.JSONDecodeError:
                     continue
@@ -131,14 +128,13 @@ async def astream_generator_parser(
     final_tool_calls = None
     received_ids = {}
     tool_name_sent = set()
-    tool_args_sent = set()
     reasoning_buffer = ""
     usage = None  # 新增：缓存 usage
 
     async with httpx.AsyncClient() as client:
         async with client.stream("POST", f"{base_url}", json=payload, headers=headers, timeout=timeout) as response:
             if response.status_code != 200:
-                logger.error(f"BaseAPI - 在发送请求时收到错误状态码：{response.status_code}，错误信息：{response.text}，请求信息：{payload}")
+                logger.error(f"BaseAPI - 在发送请求时收到错误状态码：{response.status_code}，错误信息：{await response.aread()}，请求信息：{payload}")
                 raise Exception(f"请求失败了，状态码：{response.status_code}")
 
             async for line in response.aiter_lines():
@@ -217,8 +213,7 @@ async def astream_generator_parser(
                                             )
 
                                 final_tool_calls = [v for k, v in sorted(tool_calls_buffer.items())]
-                                logger.debug(f"BaseAPI - 发生了工具调用流式更新，当前工具调用缓冲区状态：{final_tool_calls}")
-
+                                
                     except json.JSONDecodeError:
                         continue
 

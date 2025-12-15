@@ -1,14 +1,21 @@
 import os
-import sys
 import datetime
 import platform
 import subprocess
 import time
+from tina import Tools
 
-def getTime() -> str:
-    """获取当前系统时间"""
+system_tools = Tools()
+
+@system_tools.register()
+def get_time() -> str:
+    """
+    获取当前系统时间
+    """
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-def makeDir(path: str) -> None:
+
+@system_tools.register()
+def make_dir(path: str) -> None:
     """
     创建目录
     Args:
@@ -19,16 +26,21 @@ def makeDir(path: str) -> None:
     if not os.path.exists(path):
         os.makedirs(path)
     return os.path.abspath(path)
-def listDir(path: str, prefix: str = "", max_depth: int = -1, current_depth: int = 0, spec=None, root_path=None):
+
+@system_tools.register()
+def list_dir(path: str) -> list[str]:
     """
     打印目录结构
+    Args:
+        path: 目录路径
     """
     if not os.path.exists(path):
         print(f"❌ 路径不存在：{path}")
         return
     return os.listdir(path)
 
-def getPath(path: str) -> str:
+@system_tools.register()
+def get_path(path: str) -> str:
     """
     获取一个文件或者文件夹的绝对路径
     Args:
@@ -38,7 +50,8 @@ def getPath(path: str) -> str:
     """
     return os.path.abspath(path)
 
-def readCode(path: str,start:int=0,end:int = 2000) -> str:
+@system_tools.register()
+def read_code(path: str,start:int=0,end:int = 2000) -> str:
     """
     读取文件内容
     Args:
@@ -56,8 +69,9 @@ def readCode(path: str,start:int=0,end:int = 2000) -> str:
         return f"文件不存在：{path}"
     except UnicodeDecodeError:
         return f"无法解码文件：{path}，请检查文件编码格式"
-    
-def writeCode(path: str, content: str) -> None:
+
+@system_tools.register()  
+def write_code(path: str, content: str) -> None:
     """
     写入文件内容，如果文件不存在会自动创建，但是不存在的父文件夹无法创建
     Args:
@@ -71,7 +85,8 @@ def writeCode(path: str, content: str) -> None:
         f.write(content)
     return os.path.abspath(path)
 
-def shotdownSystem() -> None:
+@system_tools.register()
+def shot_down_system() -> None:
     """
     关机（Windows/Linux）
     Returns:
@@ -88,7 +103,7 @@ def shotdownSystem() -> None:
     else:
         print("输入错误，取消关机")
     
-
+@system_tools.register()
 def delay(seconds: int, why: str = "延迟响应") -> str:
     """
     延时函数
@@ -101,6 +116,7 @@ def delay(seconds: int, why: str = "延迟响应") -> str:
     time.sleep(seconds)
     return f"{why}时间到了"
 
+@system_tools.register()
 def terminal(command: str) -> str:
     """
     在终端运行指令
