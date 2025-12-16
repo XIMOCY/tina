@@ -241,7 +241,7 @@ def convert_tools_for_llm(tools) -> List[Dict[str, Any]]:
         List[Dict]: 大模型可用的工具列表
     """
     result = []
-    for tool_dict in tools.tools:
+    for tool_dict in tools.tools_schemas:
         # 直接使用已有的工具定义
         result.append({
             "type": "function",

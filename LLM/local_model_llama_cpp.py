@@ -165,7 +165,7 @@ class LocalModelUsingLlamaCpp(BaseAPI):
             "available_models": [self.model]
         }
 
-    def predictNoStream(
+    def predict_no_stream(
         self,
         input_text: str = None,
         sys_prompt: str = '你的工作非常的出色！',
@@ -214,7 +214,7 @@ class LocalModelUsingLlamaCpp(BaseAPI):
         except Exception as e:
             raise Exception(f"本地模型调用失败: {str(e)}")
 
-    def predictStream(
+    def predict_stream(
         self,
         input_text: str = None,
         role: str = 'user',

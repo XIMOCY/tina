@@ -8,7 +8,7 @@ class BaseContextManager(ABC):
         pass
 
     @abstractmethod
-    def return_messages(self) -> list[dict[str, Any]]:
+    def get_messages(self) -> list[dict[str, Any]]:
         pass
     @abstractmethod
     def add_user_message(self, message: str) -> list[dict[str, Any]]:
@@ -46,7 +46,7 @@ class ContextManager(BaseContextManager):
     def set_messages(self, messages: list[dict[str, Any]]) -> None:
         self.messages = messages
 
-    def return_messages(self) -> list[dict[str, Any]]:
+    def get_messages(self) -> list[dict[str, Any]]:
         """返回消息列表"""
         return self.messages
 
@@ -73,8 +73,10 @@ class ContextManager(BaseContextManager):
 
     def add_tool_calls(self, tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
         # 给每个 tool_call 补充 tool_call_id
+
         for tool_call in tool_calls:
             if "tool_call_id" not in tool_call and "id" in tool_call:
+                
                 tool_call["tool_call_id"] = tool_call["id"]
 
         self.tool_calls.extend(tool_calls)

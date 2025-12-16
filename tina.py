@@ -246,7 +246,7 @@ class Tina:
 
     def chat(self, user_input):
         self.isChat = True
-        result = self.agent.predict(input_text=user_input,stream=self.stream)
+        result = self.agent.predict(instruction=user_input,stream=self.stream)
         if self.stream:
             print("\n(・∀・) >>>tina:")
             self.process_result(result)
@@ -293,11 +293,11 @@ class Tina:
                     print(f"🎯 目标：{r['goal']}")
                     print(f"🗓  开始执行{r['goal']}")
                     print("请稍等，tina正在规划你的任务...")
-                    result = self.executor_agent.predict(input_text=f"开始规划 {r['goal']}",stream=False)
+                    result = self.executor_agent.predict(instruction=f"开始规划 {r['goal']}",stream=False)
                     self.agent.add_message(role="tool",content=result['content'])
                     print(f"📤 任务规划：{result['content']}")   
                     print(f"tina已为你生成任务清单，开始执行...")
-                    self.executor_agent.predict(input_text=f"开始执行任务{result['content']}",stream=False)
+                    self.executor_agent.predict(instruction=f"开始执行任务{result['content']}",stream=False)
 
         
             elif "tool_arguments" in r:

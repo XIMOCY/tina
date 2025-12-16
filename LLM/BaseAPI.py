@@ -156,7 +156,7 @@ class BaseAPI():
         }
     
     @timer
-    def predictNoStream(self,
+    def predict_no_stream(self,
                        input_text: str = None,
                        sys_prompt: str = '你的工作非常的出色！',
                        role: str = 'user',
@@ -225,14 +225,17 @@ class BaseAPI():
         # 如果包含工具调用，添加 tool_calls
         if "tool_calls" in response_data["choices"][0]["message"]:
             tool_calls = response_data["choices"][0]["message"].get("tool_calls",[])
+
             # 修改为需要的格式，开发者可以**直接**将这个工具使用追加到消息列表
             if tool_calls:
                 result["tool_calls"] = tool_calls
         
         return result
+
+
     
     @stream_timer
-    def predictStream(self,
+    def predict_stream(self,
                      input_text: str = None,
                      role: str = 'user',
                      sys_prompt: str = '你的工作非常的出色！',
@@ -360,7 +363,7 @@ class BaseAPI():
             >>> result = predict(input_text="创意写作", top_k=50, min_p=0.1, max_tokens=1000)
         """
         if stream:
-            return self.predictStream(
+            return self.predict_stream(
                 input_text=input_text,
                 role=role,
                 sys_prompt=sys_prompt,
@@ -379,7 +382,7 @@ class BaseAPI():
                 **kwargs
             )
         else:
-            return self.predictNoStream(
+            return self.predict_no_stream(
                 input_text=input_text,
                 sys_prompt=sys_prompt,
                 messages=messages,
@@ -547,7 +550,7 @@ class BaseAPI():
             >>> result = await llm.apredict(input_text="创意写作", top_k=50, min_p=0.1, max_tokens=1000)
         """
         if stream:
-            return await self._apredict_stream(
+            return await self.apredict_stream(
                 input_text=input_text,
                 role=role,
                 sys_prompt=sys_prompt,
@@ -567,7 +570,7 @@ class BaseAPI():
             )
         else:
             # 异步非流式调用
-            return await self._apredict_no_stream(
+            return await self.apredict_no_stream(
                 input_text=input_text,
                 role=role,
                 sys_prompt=sys_prompt,
@@ -587,7 +590,7 @@ class BaseAPI():
             )
         
     @async_stream_timer
-    async def _apredict_stream(self,
+    async def apredict_stream(self,
                                  input_text: str = None,
                                  role: str = "user",
                                  sys_prompt: str = '你的工作非常的出色！',
@@ -616,7 +619,7 @@ class BaseAPI():
             from ..utils.output_parser import astream_generator_parser
             return astream_generator_parser(self.base_url, payload, headers, timeout)
     @timer
-    async def _apredict_no_stream(self,
+    async def apredict_no_stream(self,
                                  input_text: str = None,
                                  role: str = "user",
                                  sys_prompt: str = '你的工作非常的出色！',
@@ -689,10 +692,6 @@ class BaseAPI():
             if "tool_calls" in response_data["choices"][0]["message"]:
                 tool_calls = response_data["choices"][0]["message"].get("tool_calls", [])
                 # 修改为需要的格式，开发者可以**直接**将这个工具使用追加到消息列表
-                tool_calls = {
-                    "id": tool_calls[0]["id"],
-                    "function": tool_calls[0]["function"],
-                }
                 if tool_calls:
                     result["tool_calls"] = tool_calls
 
@@ -738,7 +737,7 @@ class BaseAPI_multimodal(BaseAPI):
                 messages.append({"role": "user", "content": user_content})
         return messages
 
-    def predictNoStream(self,
+    def predict_no_stream(self,
                        input_text: str = None,
                        input_image: str = None,
                        sys_prompt: str = '你的工作非常出色！',
@@ -815,7 +814,7 @@ class BaseAPI_multimodal(BaseAPI):
             result["tool_calls"] = response_data["choices"][0]["message"]["tool_calls"]
         return result
 
-    def predictStream(self,
+    def predict_stream(self,
                      input_text: str = None,
                      input_image: str = None,
                      sys_prompt: str = '你的工作非常出色！',
@@ -1007,7 +1006,7 @@ class BaseAPI_multimodal(BaseAPI):
             Union[dict, Generator[dict, None, None]]: 根据stream参数返回对应结果
         """
         if stream:
-            return self.predictStream(
+            return self.predict_stream(
                 input_text=input_text,
                 input_image=input_image,
                 sys_prompt=sys_prompt,
@@ -1024,7 +1023,7 @@ class BaseAPI_multimodal(BaseAPI):
                 **kwargs
             )
         else:
-            return self.predictNoStream(
+            return self.predict_no_stream(
                 input_text=input_text,
                 input_image=input_image,
                 sys_prompt=sys_prompt,

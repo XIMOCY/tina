@@ -16,23 +16,31 @@ from ..llm.BaseAPI import BaseAPI
 from .core.tools import Tools
 from ..mcp.Client import MCPClient
 from .core.prompt import Prompt
-from ..mcp.MCPToolExecutor import MCPToolExecutor
 from .core.context_manager import ContextManager
-
+from .core.agent_runtime import ToolCallingAgentRuntime,BaseAgentRuntime
 from ..core.error import TinaError
 from .core.parser import local_model_llama_cpp_parser 
-
+from enum import Enum
 from ..utils.timer import timer, async_stream_timer, stream_timer
 
 
 class Agent:
     """
     基础智能体类，默认支持API调用方式
-    兼容原有tina框架的所有方法和返回值格式
+    默认实现了ToolCallingAgent
     """
     llm: BaseAPI
     tools: Tools  
-    def __init__(self, llm: BaseAPI, tools: Tools, system_prompt: str = None, execute_tool: bool = True, mcp: MCPClient = None,context_manager:ContextManager=None,max_tool_loop:int = 30,name:str="None"):
+    def __init__(self,
+                  llm: BaseAPI, 
+                  tools: Tools, 
+                  system_prompt: str = None, 
+                  execute_tool: bool = True, 
+                  mcp: MCPClient = None,
+                  context_manager:ContextManager=None,
+                  agent_runtime: BaseAgentRuntime = None,
+                  max_tool_loop:int = 30,
+                  name:str="None"):
         """
         实例化一个Agent对象
         
@@ -56,7 +64,6 @@ class Agent:
         self.tools_call_result = []
         self.tools_call = []
         self.is_execute = execute_tool
-        self.max_tool_loop = max_tool_loop
         self.mcp_client = mcp
         if context_manager is None:
             self.context_manager = ContextManager()
@@ -70,7 +77,13 @@ class Agent:
         else:
             self.context_manager.set_system_message(Prompt("tina").prompt)
         # 初始化消息，可以直接使用context_manager来修改messages
-        self.messages = self.context_manager.return_messages()
+        self.messages = self.context_manager.get_messages()
+
+        if agent_runtime is None:
+            self.runtime = ToolCallingAgentRuntime(self.llm, self.tools, self.context_manager,max_tool_loop=max_tool_loop,mcp_client=mcp)
+        else:
+            self.runtime = agent_runtime
+        
 
 
     def _mcp_to_tools(self, MCP):
@@ -78,7 +91,7 @@ class Agent:
         try:
             if MCP is not None:
                 self.mcp_client = MCP
-                _tools = self.mcp_client.toTinaTools()
+                _tools = self.mcp_client.to_tina_tools()
                 self.tools = _tools + self.tools
                 del _tools
         except Exception as e:
@@ -192,7 +205,8 @@ class Agent:
         else:
             raise ValueError("MCP客户端未初始化，请先初始化MCP客户端")
     
-    def predict(self, input_text: str = None,
+    def predict(self, 
+                instruction: str = None,
                 temperature: float = 0.5,
                 top_p: float = 0.9,
                 top_k: int = 1,
@@ -201,128 +215,25 @@ class Agent:
         """
         调用agent进行生成文本回复，默认流式输出
         """
-        # 定义计数器
-        counter = 0
-        if input_text is not None:
-            self.messages = self.context_manager.add_user_message(input_text)
-            
         if stream:
-  
-            llm_result = self.llm.predict(
-                    messages=self.messages,
-                    temperature=temperature,
-                    tools=self.tools.get_tools(),
-                    top_p=top_p,
-                    top_k=top_k,
-                    min_p=min_p,
-                    stream=stream,
-                )
-                
-            return self.stream_parser(llm_result)
+            return self.runtime.run_prediction_stream(
+                instruction,
+                temperature,
+                top_p,
+                top_k,
+                min_p,
+            )
         else:
             
-            return self.predict_no_stream(temperature, top_p, stream)
+            return self.runtime.run_prediction_no_stream(
+                instruction,
+                temperature,
+                top_p,
+                top_k,
+                min_p,
+            )
     
-        
-    @timer
-    def predict_no_stream(self, temperature, top_p, stream):
-        while True:
-            tool_call = False
-                
-            llm_result = self.llm.predict(
-                    messages=self.messages,
-                    temperature=temperature,
-                    tools=self.tools.get_tools(),
-                    top_p=top_p,
-                    stream=stream
-                )
-            if "tool_calls" in llm_result.keys():
-                tool_call = True
-                result = self._execute_tool(
-                        llm_result["tool_calls"]["function"]["name"],
-                        json.loads(llm_result["tool_calls"]["function"]["arguments"]),
-                    )
-                print(llm_result)
-                self.context_manager.add_tool_calls(
-                        llm_result["tool_calls"]["id"],
-                        llm_result["tool_calls"]["function"],
-                    )
-                    # self.context_manager.add_tool_call_result(result)
-                tool_call = result[1]
-            if tool_call == False:
-                self.messages.append(
-                        llm_result
-                    )
-                return llm_result 
-            else:
-                continue
 
-    @stream_timer
-    def stream_parser(self, generator):
-        content_parts:list = []
-        reasoning_buffer:str 
-        
-        for chunk in generator:
-            if chunk.get("content") is None:
-                chunk["content"] = ""
-
-            if "tool_name" in chunk or "tool_arguments" in chunk:
-                yield chunk
-
-            elif "tool_calls" in chunk and chunk["id"] != '':
-                whole_content = "".join(content_parts)
-
-                if whole_content:
-                    self.context_manager.add_assistant_message(whole_content)
-
-                content_parts = []  
-                reasoning_buffer = "" 
-
-                
-                self.context_manager.add_tool_calls(tool_calls=chunk["tool_calls"])
-    
-                if self.is_execute:
-                    results = self._execute_tool(chunk["tool_calls"])
-                    for result in results:
-                        yield result
-                      
-                    yield from self.predict(input_text=None, stream=True)
-                
-            elif "reasoning_content" in chunk:
-                reasoning_content = chunk.get("reasoning_content", "")
-                if reasoning_content:
-                    reasoning_buffer += reasoning_content
-                    yield {"role": "assistant", "reasoning_content": reasoning_content, "content": ""}                
-            else:
-                content = chunk.get("content", "")
-                if content:
-                    content_parts.append(content)
-                    yield {"role": "assistant", "content": content}    
-
-        whole_content = "".join(content_parts)
-        if whole_content:
-            self.messages.append({"role": "assistant", "content": whole_content})
-    
-    @timer
-    def _execute_tool(self, _tool_calls)-> str:
-        """执行工具调用并返回结果"""
-        
-
-         # 默认工具执行方式
-        tool_result = self.tools.execute(_tool_calls,self.tools,self.mcp_client)
-        self.context_manager.add_tool_calls_result(tool_result)
-            
-        return tool_result
-
-    def tag_parser(self, text_generator: Iterator[Any], tag="") -> Generator[str, None, None]:
-        pass
-
-
-    async def _aexecute_tool(self, _tool_calls) -> str:
-        """异步执行工具调用并返回结果"""
-        tool_result = await self.tools.aexecute(_tool_calls, self.tools,self.mcp_client)
-        self.context_manager.add_tool_calls_result(tool_result)
-        return tool_result
 
     async def aparser(self, generator) -> AsyncGenerator[Dict[str, Any], None]:
         """
@@ -357,7 +268,7 @@ class Agent:
                     # 把工具执行结果也往外推一把，结构与同步 execute 保持一致
                     for result_chunk in result:yield result_chunk
                     # 工具执行后，继续让大模型回答
-                    async for msg in await self.apredict(input_text=None, stream=True):
+                    async for msg in await self.apredict(instruction=None, stream=True):
                         yield msg
 
             elif "reasoning_content" in chunk:
@@ -382,7 +293,7 @@ class Agent:
 
     async def apredict(
         self,
-        input_text: str = None,
+        instruction: str = None,
         temperature: float = 0.5,
         top_p: float = 0.9,
         top_k: int = 1,
@@ -392,50 +303,22 @@ class Agent:
         """
         异步版本的 predict，默认流式输出
         """
-        if input_text is not None:
-            self.messages = self.context_manager.add_user_message(input_text)
-
         if stream:
-            # 异步获取流式输出（假设 llm.apredict 返回异步生成器）
-            llm_result = await self.llm.apredict(
-                messages=self.messages,
-                temperature=temperature,
-                tools=self.tools.get_tools(),
-                top_p=top_p,
-                top_k=top_k,
-                min_p=min_p,
-                stream=True,
+            return self.runtime.arun_prediction_stream(
+                instruction,
+                temperature,
+                top_p,
+                top_k,
+                min_p,
             )
-            return self.aparser(llm_result)
         else:
-            # 非流式异步：每轮调用一次模型，遇到工具调用则先执行工具再继续
-            while True:
-                tool_call_happened = False
-
-                llm_result = await self.llm.apredict(
-                    messages=self.messages,
-                    temperature=temperature,
-                    tools=self.tools.get_tools(),
-                    top_p=top_p,
-                    top_k=top_k,
-                    min_p=min_p,
-                    stream=False,
-                )
-
-                if "tool_calls" in llm_result:
-                    tool_call_happened = True
-                    # 记录工具调用
-                    self.context_manager.add_tool_calls(
-                        tool_calls=llm_result["tool_calls"]
-                    )
-                    # 异步执行工具
-                    await self._aexecute_tool(llm_result["tool_calls"])
-                    # 执行完工具后，继续下一轮循环，请求模型
-                    continue
-
-                if not tool_call_happened:
-                    self.messages.append(llm_result)
-                    return llm_result
+            return await self.runtime.arun_prediction_no_stream(
+                instruction,
+                temperature,
+                top_p,
+                top_k,
+                min_p,
+            )
 
 
 class AgentUsingLocalModel(Agent):
@@ -579,6 +462,3 @@ class AgentUsingLocalModel(Agent):
                 "content": whole_content
             })
 
-
-Agent_API = Agent
-Agent_LOCAL = AgentUsingLocalModel

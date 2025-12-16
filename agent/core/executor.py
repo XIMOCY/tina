@@ -12,7 +12,7 @@ import json
 import asyncio
 import inspect
 from ...core import logger
-
+# from .tools import Tools
 from ...mcp.MCPToolExecutor import MCPToolExecutor
 
 
@@ -32,21 +32,25 @@ class ToolsExecutor:
         执行工具调用
         """
         _tool_calls_result = []
-        _tool_calls.sort(key=lambda x: x['index'])
+
+        if "index" in _tool_calls[0].keys():
+            _tool_calls.sort(key=lambda x: x['index'])
         for tool_call in _tool_calls:
             _tool_name = tool_call["function"]["name"]
             _tool_args = json.loads(tool_call["function"]["arguments"])
             _tool_id = tool_call["id"]
-            _tool = _tools.get_tool(name=_tool_name)
-            _post_handler = _tools.get_post_handler(name=_tool_name)
+            
+            
 
             try:
                 if _tool_name.startswith("mcp_"):
                     # 使用MCP工具执行器执行MCP工具
-                    result = MCPToolExecutor.execute_mcp_tool(_tool_name, _tool_args, _tools, _mcp_client)
+                    result = MCPToolExecutor.execute_mcp_tool(_tool_name, _tool_args, _mcp_client)
+                    _tool_calls_result.append(self._tool_call_result(result,_tool_id,_tool_name))
 
                 else:
-                    result = self._execute(_tool_name,_tool_args,_tool,_post_handler,_tools,timeout=timeout)
+                    _tool = _tools.get_tool(name=_tool_name)
+                    result = self._execute(_tool_name,_tool_args,_tool,_tools,timeout=timeout)
 
                     logger.debug(f"ToolsExecutor - 工具 '{_tool_name}' 执行结果: {result}：参数 {_tool_args}")
 
@@ -57,7 +61,7 @@ class ToolsExecutor:
 
 
         return _tool_calls_result
-    
+
     async def aexecute(self,_tool_calls,_tools,_mcp_client=None,timeout=60,**kwargs)->any:
         _tool_calls_result = []
         _tool_calls.sort(key=lambda x: x['index'])
@@ -66,7 +70,6 @@ class ToolsExecutor:
             _tool_args = json.loads(tool_call["function"]["arguments"])
             _tool_id = tool_call["id"]
             _tool = _tools.get_tool(name=_tool_name)
-            _post_handler = _tools.get_post_handler(name=_tool_name)
 
             # 根据工具类型选择执行方式：
             # - 异步工具：直接在当前事件循环中 await 执行
@@ -81,7 +84,6 @@ class ToolsExecutor:
                     _tool_name=_tool_name,
                     _tool_args=_tool_args,
                     _tool=_tool,
-                    _post_handler=_post_handler,
                     _tools=_tools,
                     timeout=timeout,
                 )
@@ -89,7 +91,7 @@ class ToolsExecutor:
         
         return _tool_calls_result
 
-    async def _aexecute_single(self,_tool_name:str,_tool_args:dict,_tool:callable,_post_handler:callable,_tools,timeout=60):
+    async def _aexecute_single(self,_tool_name:str,_tool_args:dict,_tool:callable,_tools,timeout=60):
         """
         异步环境下执行单个工具调用：
         - 如果工具是异步函数，则直接 await
@@ -103,11 +105,6 @@ class ToolsExecutor:
             try:
                 result = await _tool(**_tool_args)
 
-                if _post_handler is not None:
-                    if inspect.iscoroutinefunction(_post_handler):
-                        result = await _post_handler(result)
-                    else:
-                        result = _post_handler(result)
                 logger.debug(f"ToolsExecutor - 异步工具 '{_tool_name}' 执行结果: {result}：参数 {_tool_args}")
                 return str(result)
             except Exception as e:
@@ -118,12 +115,12 @@ class ToolsExecutor:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None,
-            lambda: self._execute(_tool_name,_tool_args,_tool,_post_handler,_tools,timeout=timeout)
+            lambda: self._execute(_tool_name,_tool_args,_tool,_tools,timeout=timeout)
         )
 
     def _tool_call_result(self,_tool_result,_tool_id,_tool_name):
         return {"role":"tool","content":_tool_result,"tool_call_id":_tool_id,"tool_name":_tool_name}
-    def _execute(self,_tool_name:str,_tool_args:dict,_tool:callable,_post_handler:callable,_tools,timeout=60):
+    def _execute(self,_tool_name:str,_tool_args:dict,_tool:callable,_tools,timeout=60):
         """
         执行工具
         Args:
@@ -138,14 +135,7 @@ class ToolsExecutor:
         if self.thread_tools_registered and _tool_name in ['list_running_threads', 'kill_thread', 'get_thread_output', 'cleanup_finished_threads']:
             try:
                 result = _tool(**_tool_args)
-                post_handler = _post_handler
-                if post_handler is not None:
-                    try:
-                        result = post_handler(result)
-                    except Exception as e:
-                        return f"线程管理工具 '' 的后处理器执行失败: {str(e)}\n" \
-                               f"请检查后处理器的参数类型是否与工具输出类型匹配\n" \
-                               f"工具原始输出: {result}"
+
                 return str(result)
             except Exception as e:
                 return f"线程管理工具 '' 执行失败: {str(e)}"
@@ -231,15 +221,6 @@ class ToolsExecutor:
         # 确定最终结果
         result = tool_result if tool_result is not None else full_output
         
-        # 应用后处理器（仅在成功时）
-        post_handler = _post_handler
-        if post_handler is not None:
-            try:
-                result = post_handler(result)
-            except Exception as e:
-                return f"工具 '{_tool_name}' 的后处理器执行失败: {str(e)}\n" \
-                       f"请检查后处理器的参数类型是否与工具输出类型匹配\n" \
-                       f"工具原始输出: {result}"
         
         if full_output.strip() and str(result) != full_output.strip():
             return f"{full_output}\n"
