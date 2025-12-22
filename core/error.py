@@ -39,3 +39,7 @@ class APIRequestFailed(TinaError):
 class ModelPathNotGiven(TinaError):
     def __init__(self, model_name: str):
         super().__init__(f"Model path is not given. Please provide a valid model path. \n模型的路径没有给出，请提供一个有效的模型路径。")
+
+class NoConfirmationHanlder(TinaError):
+    def __init__(self):
+        super().__init__("No confirmation handler is given. Please provide a valid confirmation handler. \n你设定了工具需要被确认执行，但是没有设置处理程序，请注册on_tool_confirmation事件")

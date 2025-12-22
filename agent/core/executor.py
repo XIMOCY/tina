@@ -14,80 +14,191 @@ import inspect
 from ...core import logger
 # from .tools import Tools
 from ...mcp.MCPToolExecutor import MCPToolExecutor
+from ...core.error import NoConfirmationHanlder
+
+
+from .events import Events
 
 
 class ToolsExecutor:
     """
     工具执行器
     """
-    def __init__(self,safe_mode=True):
-        self.safe_mode = safe_mode
 
+    def __init__(self):
+        # 事件系统由外部注入（Agent / Runtime）
+        self.events: Events = None
         self.running_threads = {} 
         self.thread_counter = 0    # 线程计数器
         self.thread_lock = threading.Lock()  # 线程安全锁
         self.thread_tools_registered = False  # 标记线程管理工具是否已注册
-    def execute(self,_tool_calls:list[dict],_tools,_mcp_client = None,timeout=60,**kwargs):
+
+    def execute(self,_tool_calls:list[dict],_tools,_mcp_client = None,timeout=60,events:Events=None,**kwargs):
         """
         执行工具调用
         """
         _tool_calls_result = []
 
-        if "index" in _tool_calls[0].keys():
+        if not _tool_calls:
+            return _tool_calls_result
+
+        if "index" in _tool_calls[0]:
             _tool_calls.sort(key=lambda x: x['index'])
+
+        # 优先使用参数传入的 events，其次回退到自身持有的 events
+        active_events = events if events is not None else self.events
+
         for tool_call in _tool_calls:
             _tool_name = tool_call["function"]["name"]
             _tool_args = json.loads(tool_call["function"]["arguments"])
             _tool_id = tool_call["id"]
-            
-            
 
-            try:
-                if _tool_name.startswith("mcp_"):
-                    # 使用MCP工具执行器执行MCP工具
+            # ============= 事件处理：不捕获异常，让上层感知 =============
+            if active_events is not None:
+                for handler in active_events.get_handler("before_tool_call"):
+                    handler(_tool_name, _tool_args)
+
+            # ============= 工具执行：严格捕获异常，避免中断 Agent =============
+            if _tool_name.startswith("mcp_"):
+                # 使用 MCP 工具执行器执行 MCP 工具
+                try:
                     result = MCPToolExecutor.execute_mcp_tool(_tool_name, _tool_args, _mcp_client)
-                    _tool_calls_result.append(self._tool_call_result(result,_tool_id,_tool_name))
+                except Exception as e:
+                    logger.error(f"ToolsExecutor - MCP 工具 '{_tool_name}' 执行失败: {str(e)}：参数 {_tool_args}")
+                    result = f"工具 '{_tool_name}' 执行失败: {str(e)}"
 
+            else:
+                _tool = _tools.get_tool(name=_tool_name)
+
+                # 需要人工确认的工具
+                if _tools.get_require_confirmations(_tool_name):
+                    if active_events is None:
+                        # 没有事件系统，无法完成确认流程
+                        raise NoConfirmationHanlder()
+
+                    confirmation_handler = active_events.get_tool_confirmation_handler()
+                    # Events 默认把 on_tool_confirmation 初始化为内置 callable，需要特殊处理视为「未注册」
+                    if confirmation_handler is None:
+                        raise NoConfirmationHanlder()
+
+                    # 事件处理阶段不包裹 try/except，错误直接抛出给上层
+                    if confirmation_handler(_tool_name, _tool_args) is False:
+                        result = f"用户阻止了{_tool_name}的运行"
+                    else:
+                        try:
+                            result = self._execute(_tool_name, _tool_args, _tool, _tools, timeout=timeout)
+                        except Exception as e:
+                            logger.error(f"ToolsExecutor - 工具 '{_tool_name}' 执行失败: {str(e)}：参数 {_tool_args}")
+                            result = f"工具 '{_tool_name}' 执行失败: {str(e)}"
                 else:
-                    _tool = _tools.get_tool(name=_tool_name)
-                    result = self._execute(_tool_name,_tool_args,_tool,_tools,timeout=timeout)
+                    try:
+                        result = self._execute(_tool_name, _tool_args, _tool, _tools, timeout=timeout)
+                    except Exception as e:
+                        logger.error(f"ToolsExecutor - 工具 '{_tool_name}' 执行失败: {str(e)}：参数 {_tool_args}")
+                        result = f"工具 '{_tool_name}' 执行失败: {str(e)}"
 
-                    logger.debug(f"ToolsExecutor - 工具 '{_tool_name}' 执行结果: {result}：参数 {_tool_args}")
+                logger.debug(f"ToolsExecutor - 工具 '{_tool_name}' 执行结果: {result}：参数 {_tool_args}")
 
-                    _tool_calls_result.append(self._tool_call_result(result,_tool_id,_tool_name))
-            except Exception as e:
-                logger.error(f"ToolsExecutor - 工具 '{_tool_name}' 执行失败: {str(e)}：参数 {_tool_args}")
-                _tool_calls_result.append(self._tool_call_result(str(e),_tool_id,_tool_name))
+            # ============= after_tool_call 事件：只在工具执行结束后触发 =============
+            if active_events is not None:
+                for handler in active_events.get_handler("after_tool_call"):
+                    handler(_tool_name, _tool_args, result)
+
+            _tool_calls_result.append(self._tool_call_result(result,_tool_id,_tool_name))
 
 
         return _tool_calls_result
 
-    async def aexecute(self,_tool_calls,_tools,_mcp_client=None,timeout=60,**kwargs)->any:
+    async def aexecute(self,_tool_calls,_tools,_mcp_client=None,timeout=60,events:Events=None,**kwargs)->any:
         _tool_calls_result = []
-        _tool_calls.sort(key=lambda x: x['index'])
+        if not _tool_calls:
+            return _tool_calls_result
+
+        if "index" in _tool_calls[0]:
+            _tool_calls.sort(key=lambda x: x['index'])
+
+        active_events = events if events is not None else self.events
+
         for tool_call in _tool_calls:
             _tool_name = tool_call["function"]["name"]
             _tool_args = json.loads(tool_call["function"]["arguments"])
             _tool_id = tool_call["id"]
-            _tool = _tools.get_tool(name=_tool_name)
+
+            # ============= 事件处理：不捕获异常，让上层感知 =============
+            if active_events is not None:
+                for handler in active_events.get_handler("before_tool_call"):
+                    if inspect.iscoroutinefunction(handler):
+                        await handler(_tool_name, _tool_args)
+                    else:
+                        handler(_tool_name, _tool_args)
 
             # 根据工具类型选择执行方式：
             # - 异步工具：直接在当前事件循环中 await 执行
             # - 同步工具：复用现有线程逻辑，但通过线程池避免阻塞事件循环
             if _tool_name.startswith("mcp_"):
                 # 使用MCP工具执行器执行MCP工具
-                result = await MCPToolExecutor.aexecute_mcp_tool(_tool_name, _tool_args, _mcp_client)
+                try:
+                    result = await MCPToolExecutor.aexecute_mcp_tool(_tool_name, _tool_args, _mcp_client)
+                except Exception as e:
+                    logger.error(f"ToolsExecutor - MCP 工具 '{_tool_name}' 异步执行失败: {str(e)}：参数 {_tool_args}")
+                    result = f"工具 '{_tool_name}' 执行失败: {str(e)}"
 
-                _tool_calls_result.append(self._tool_call_result(result,_tool_id,_tool_name))
             else:    
-                result = await self._aexecute_single(
-                    _tool_name=_tool_name,
-                    _tool_args=_tool_args,
-                    _tool=_tool,
-                    _tools=_tools,
-                    timeout=timeout,
-                )
-                _tool_calls_result.append(self._tool_call_result(result,_tool_id,_tool_name))
+                _tool = _tools.get_tool(name=_tool_name)
+
+                # 需要人工确认的工具
+                if _tools.get_require_confirmations(_tool_name):
+                    if active_events is None:
+                        raise NoConfirmationHanlder()
+
+                    confirmation_handler = active_events.get_tool_confirmation_handler()
+                    if confirmation_handler is None:
+                        raise NoConfirmationHanlder()
+
+                    # 支持异步 / 同步确认处理器
+                    if inspect.iscoroutinefunction(confirmation_handler):
+                        confirmed = await confirmation_handler(_tool_name, _tool_args)
+                    else:
+                        confirmed = confirmation_handler(_tool_name, _tool_args)
+
+                    if confirmed is False:
+                        result = f"用户阻止了{_tool_name}的运行"
+                    else:
+                        try:
+                            result = await self._aexecute_single(
+                                _tool_name=_tool_name,
+                                _tool_args=_tool_args,
+                                _tool=_tool,
+                                _tools=_tools,
+                                timeout=timeout,
+                            )
+                        except Exception as e:
+                            logger.error(f"ToolsExecutor - 异步工具 '{_tool_name}' 执行失败: {str(e)}：参数 {_tool_args}")
+                            result = f"工具 '{_tool_name}' 执行失败: {str(e)}"
+                else:
+                    try:
+                        result = await self._aexecute_single(
+                            _tool_name=_tool_name,
+                            _tool_args=_tool_args,
+                            _tool=_tool,
+                            _tools=_tools,
+                            timeout=timeout,
+                        )
+                    except Exception as e:
+                        logger.error(f"ToolsExecutor - 异步工具 '{_tool_name}' 执行失败: {str(e)}：参数 {_tool_args}")
+                        result = f"工具 '{_tool_name}' 执行失败: {str(e)}"
+
+                logger.debug(f"ToolsExecutor - 异步工具 '{_tool_name}' 执行结果: {result}：参数 {_tool_args}")
+
+            # ============= after_tool_call 事件（异步版，同步/异步 handler 都支持） =============
+            if active_events is not None:
+                for handler in active_events.get_handler("after_tool_call"):
+                    if inspect.iscoroutinefunction(handler):
+                        await handler(_tool_name, _tool_args, result)
+                    else:
+                        handler(_tool_name, _tool_args, result)
+
+            _tool_calls_result.append(self._tool_call_result(result,_tool_id,_tool_name))
         
         return _tool_calls_result
 
@@ -138,7 +249,7 @@ class ToolsExecutor:
 
                 return str(result)
             except Exception as e:
-                return f"线程管理工具 '' 执行失败: {str(e)}"
+                return f"线程管理工具 '{_tool_name}' 执行失败: {str(e)}"
         
         # 为工具执行创建输出捕获
         output_buffer = io.StringIO()

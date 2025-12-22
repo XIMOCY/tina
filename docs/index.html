@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="tina - 简单优雅的 Python AI Agent 框架">
+    <title>tina - Build AI Agents Fast</title>
+    
+    <!-- Marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Highlight.js for code syntax highlighting -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    
+    <style>
+        :root {
+            --bg-primary: #1a2332;
+            --bg-secondary: #0f1419;
+            --accent-primary: #c64545;
+            --accent-secondary: #e94560;
+            --accent-purple: #a78bfa;
+            --text-primary: #ffffff;
+            --text-secondary: #94a3b8;
+            --nav-bg: rgba(255, 255, 255, 0.98);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', 'PingFang SC', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Animated Background */
+        .hero {
+            position: relative;
+            min-height: 100vh;
+            overflow: hidden;
+            background: linear-gradient(135deg, #1a2332 0%, #0f1922 100%);
+        }
+
+        .hero-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0.4;
+            background: 
+                linear-gradient(60deg, transparent 30%, rgba(198, 69, 69, 0.3) 50%, transparent 70%),
+                linear-gradient(120deg, transparent 30%, rgba(167, 139, 250, 0.2) 50%, transparent 70%);
+            background-size: 200% 200%;
+            animation: gradientShift 15s ease infinite;
+        }
+
+        .wave-pattern {
+            position: absolute;
+            width: 200%;
+            height: 100%;
+            background-image: 
+                repeating-linear-gradient(
+                    45deg,
+                    transparent,
+                    transparent 2px,
+                    rgba(255, 255, 255, 0.03) 2px,
+                    rgba(255, 255, 255, 0.03) 4px
+                );
+            animation: waveMove 20s linear infinite;
+        }
+
+        @keyframes gradientShift {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+
+        @keyframes waveMove {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            background: var(--nav-bg);
+            backdrop-filter: blur(10px);
+            z-index: 1000;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+
+        .nav-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1a2332;
+            text-decoration: none;
+        }
+
+        .logo img {
+            width: 40px;
+            height: 40px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: #475569;
+            text-decoration: none;
+            font-weight: 500;
+            transition: color 0.3s;
+        }
+
+        .nav-links a:hover {
+            color: var(--accent-primary);
+        }
+
+        .nav-cta {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s;
+            border: none;
+            cursor: pointer;
+            font-size: 0.95rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(198, 69, 69, 0.3);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--text-primary);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--accent-purple);
+            background: rgba(167, 139, 250, 0.1);
+        }
+
+        /* Hero Section */
+        .hero-content {
+            position: relative;
+            z-index: 1;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 12rem 2rem 8rem;
+            text-align: center;
+        }
+
+        .hero-title {
+            font-size: clamp(3rem, 8vw, 5.5rem);
+            font-weight: 800;
+            line-height: 1.1;
+            margin-bottom: 1.5rem;
+            background: linear-gradient(135deg, #ffffff, #cbd5e1);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero-subtitle {
+            font-size: clamp(1.1rem, 2.5vw, 1.5rem);
+            color: var(--text-secondary);
+            max-width: 700px;
+            margin: 0 auto 3rem;
+            line-height: 1.6;
+        }
+
+        .hero-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+
+        .hero-buttons .btn {
+            padding: 1rem 2rem;
+            font-size: 1.1rem;
+        }
+
+        /* Features Grid */
+        .features {
+            background: var(--bg-secondary);
+            padding: 8rem 2rem;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .section-title {
+            text-align: center;
+            font-size: clamp(2rem, 5vw, 3rem);
+            margin-bottom: 1rem;
+            font-weight: 700;
+        }
+
+        .section-subtitle {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 1.2rem;
+            margin-bottom: 4rem;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 2rem;
+            margin-top: 4rem;
+        }
+
+        .feature-card {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 2.5rem;
+            transition: all 0.3s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-8px);
+            border-color: var(--accent-primary);
+            box-shadow: 0 20px 40px rgba(198, 69, 69, 0.2);
+        }
+
+        .feature-icon {
+            font-size: 3rem;
+            margin-bottom: 1.5rem;
+            display: block;
+        }
+
+        .feature-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: var(--text-primary);
+        }
+
+        .feature-card p {
+            color: var(--text-secondary);
+            line-height: 1.7;
+        }
+
+        /* Code Demo */
+        .code-demo {
+            padding: 8rem 2rem;
+            background: var(--bg-primary);
+        }
+
+        .code-showcase {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 3rem;
+            margin-top: 4rem;
+            align-items: start;
+        }
+
+        .demo-card {
+            background: rgba(15, 20, 25, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .demo-header {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .demo-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ff5f56;
+        }
+
+        .demo-dot:nth-child(2) { background: #ffbd2e; }
+        .demo-dot:nth-child(3) { background: #27c93f; }
+
+        .demo-code {
+            padding: 1.5rem;
+            overflow-x: auto;
+        }
+
+        .demo-code pre {
+            margin: 0;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+
+        /* Markdown Content */
+        .markdown-section {
+            padding: 8rem 2rem;
+            background: var(--bg-secondary);
+        }
+
+        .markdown-content {
+            max-width: 900px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            padding: 3rem;
+        }
+
+        .markdown-content h1,
+        .markdown-content h2,
+        .markdown-content h3 {
+            color: var(--text-primary);
+            margin-top: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .markdown-content h1 {
+            font-size: 2.5rem;
+            border-bottom: 2px solid var(--accent-primary);
+            padding-bottom: 0.5rem;
+        }
+
+        .markdown-content h2 {
+            font-size: 2rem;
+        }
+
+        .markdown-content p {
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            line-height: 1.8;
+        }
+
+        .markdown-content code {
+            background: rgba(198, 69, 69, 0.1);
+            color: var(--accent-secondary);
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'Consolas', monospace;
+        }
+
+        .markdown-content pre {
+            background: #0d1117;
+            border-radius: 8px;
+            padding: 1.5rem;
+            overflow-x: auto;
+            margin: 1.5rem 0;
+        }
+
+        .markdown-content pre code {
+            background: none;
+            color: inherit;
+            padding: 0;
+        }
+
+        .markdown-content ul, .markdown-content ol {
+            margin-left: 2rem;
+            margin-bottom: 1rem;
+        }
+
+        .markdown-content li {
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        /* Footer */
+        footer {
+            background: var(--bg-secondary);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 4rem 2rem 2rem;
+            text-align: center;
+        }
+
+        footer p {
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+        }
+
+        footer a {
+            color: var(--accent-purple);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Loading State */
+        .loading {
+            text-align: center;
+            padding: 4rem;
+            color: var(--text-secondary);
+        }
+
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid var(--accent-primary);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Responsive */
+        @media (max-width: 968px) {
+            .nav-links {
+                display: none;
+            }
+
+            .code-showcase {
+                grid-template-columns: 1fr;
+            }
+
+            .hero-content {
+                padding: 10rem 1rem 6rem;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .hero-buttons {
+                flex-direction: column;
+            }
+
+            .nav-cta {
+                display: none;
+            }
+
+            .markdown-content {
+                padding: 1.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav>
+        <div class="nav-container">
+            <a href="#" class="logo">
+                <img src="../logo.svg" alt="tina logo">
+                <span>tina</span>
+            </a>
+            <ul class="nav-links">
+                <li><a href="#features">Features</a></li>
+                <li><a href="#quickstart">Quick Start</a></li>
+                <li><a href="#docs">Docs</a></li>
+            </ul>
+            <div class="nav-cta">
+                <a href="https://github.com" class="btn btn-primary" target="_blank">GitHub</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-bg"></div>
+        <div class="wave-pattern"></div>
+        <div class="hero-content">
+            <h1 class="hero-title">Build AI Agents Fast</h1>
+            <p class="hero-subtitle">
+                介于 OpenAI SDK 和 LangChain 之间的轻量级 Python AI Agent 框架。
+                <br>注释即工具，开箱即用的 MCP 支持，专为快速原型开发而生。
+            </p>
+            <div class="hero-buttons">
+                <a href="#quickstart" class="btn btn-primary">快速开始</a>
+                <a href="#docs" class="btn btn-secondary">查看文档</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" class="features">
+        <div class="container">
+            <h2 class="section-title">为什么选择 tina?</h2>
+            <p class="section-subtitle">恰到好处的抽象层次，专注于快速原型开发和教育学习</p>
+            
+            <div class="features-grid">
+                <div class="feature-card">
+                    <span class="feature-icon">🎯</span>
+                    <h3>恰到好处的抽象</h3>
+                    <p>比 OpenAI SDK 更灵活，比 LangChain 更简单。专注核心功能，避免过度工程化。</p>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">✍️</span>
+                    <h3>注释即工具</h3>
+                    <p>使用 Google 风格注释自动生成工具描述。一次编写，无需重复定义参数类型。</p>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">🔌</span>
+                    <h3>完美支持 MCP</h3>
+                    <p>开箱即用的模型上下文协议支持，轻松集成 Playwright、文件系统等外部服务。</p>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">🧩</span>
+                    <h3>模块化设计</h3>
+                    <p>LLM、Tools、Agent 可独立使用。按需组合，灵活搭配你的应用架构。</p>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">⚡</span>
+                    <h3>同步/异步双模</h3>
+                    <p>完整的异步支持，同时提供简洁的同步接口。自由选择适合你的编程模式。</p>
+                </div>
+
+                <div class="feature-card">
+                    <span class="feature-icon">📚</span>
+                    <h3>教育导向</h3>
+                    <p>清晰的概念，透明的行为。非常适合学习和理解 AI Agent 的工作原理。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Quick Start -->
+    <section id="quickstart" class="code-demo">
+        <div class="container">
+            <h2 class="section-title">30秒上手</h2>
+            <p class="section-subtitle">从调用大模型到构建完整 Agent，三步搞定</p>
+
+            <div class="code-showcase">
+                <div class="demo-card">
+                    <div class="demo-header">
+                        <span class="demo-dot"></span>
+                        <span class="demo-dot"></span>
+                        <span class="demo-dot"></span>
+                        <span style="margin-left: auto; color: #94a3b8; font-size: 0.875rem;">1. 调用大模型</span>
+                    </div>
+                    <div class="demo-code">
+                        <pre><code class="language-python">from tina.llm import BaseAPI
+
+llm = BaseAPI()
+result = llm.predict(
+    input_text="Hello tina!"
+)
+print(result["content"])</code></pre>
+                    </div>
+                </div>
+
+                <div class="demo-card">
+                    <div class="demo-header">
+                        <span class="demo-dot"></span>
+                        <span class="demo-dot"></span>
+                        <span class="demo-dot"></span>
+                        <span style="margin-left: auto; color: #94a3b8; font-size: 0.875rem;">2. 注册工具</span>
+                    </div>
+                    <div class="demo-code">
+                        <pre><code class="language-python">from tina import Tools
+
+tools = Tools()
+
+@tools.register()
+def get_weather(city: str):
+    """
+    获取城市天气
+    Args:
+        city: 城市名称
+    """
+    return f"{city}今天晴，25度"</code></pre>
+                    </div>
+                </div>
+
+                <div class="demo-card">
+                    <div class="demo-header">
+                        <span class="demo-dot"></span>
+                        <span class="demo-dot"></span>
+                        <span class="demo-dot"></span>
+                        <span style="margin-left: auto; color: #94a3b8; font-size: 0.875rem;">3. 创建 Agent</span>
+                    </div>
+                    <div class="demo-code">
+                        <pre><code class="language-python">from tina import Agent
+
+agent = Agent(
+    llm=BaseAPI(),
+    tools=tools
+)
+
+# Agent 自动调用工具
+for chunk in agent.predict("北京天气?"):
+    print(chunk.get("content", ""), end="")</code></pre>
+                    </div>
+                </div>
+
+                <div class="demo-card">
+                    <div class="demo-header">
+                        <span class="demo-dot"></span>
+                        <span class="demo-dot"></span>
+                        <span class="demo-dot"></span>
+                        <span style="margin-left: auto; color: #94a3b8; font-size: 0.875rem;">4. 使用 MCP 🔥</span>
+                    </div>
+                    <div class="demo-code">
+                        <pre><code class="language-python">from tina.mcp import MCPClient
+
+mcp = MCPClient()
+mcp.add_server("playwright", {
+    "type": "stdio",
+    "command": "npx",
+    "args": ["@playwright/mcp@latest"]
+})
+
+# Agent 获得浏览器自动化能力!
+agent = Agent(llm, tools, mcp=mcp)</code></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Documentation -->
+    <section id="docs" class="markdown-section">
+        <div class="container">
+            <h2 class="section-title">完整文档</h2>
+            <p class="section-subtitle">从入门到精通，探索 tina 的所有功能</p>
+            
+            <div class="markdown-content">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>加载文档中...</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <p style="font-size: 1.1rem; margin-bottom: 1.5rem;">
+            Made with ❤️ by QiQi in 🌟 XIMO
+        </p>
+        <p>
+            <a href="https://modelcontextprotocol.io" target="_blank">MCP 官方文档</a> • 
+            <a href="https://www.modelscope.cn/mcp" target="_blank">魔塔 MCP 广场</a> •
+            <a href="https://github.com" target="_blank">GitHub</a>
+        </p>
+        <p style="margin-top: 2rem; opacity: 0.6; font-size: 0.9rem;">
+            ⚠️ tina 是个人兴趣项目，适合快速原型验证和学习使用<br>
+            如需生产环境的稳定性，建议使用 LangChain 等成熟框架
+        </p>
+    </footer>
+
+    <script>
+        // Initialize syntax highlighting
+        marked.setOptions({
+            highlight: function(code, lang) {
+                if (lang && hljs.getLanguage(lang)) {
+                    return hljs.highlight(code, { language: lang }).value;
+                }
+                return hljs.highlightAuto(code).value;
+            }
+        });
+
+        // Load and render README.md
+        async function loadReadme() {
+            const markdownContent = document.querySelector('.markdown-content');
+            
+            try {
+                const response = await fetch('../README.md');
+                if (!response.ok) throw new Error('Failed to load README');
+                
+                const markdown = await response.text();
+                const html = marked.parse(markdown);
+                
+                markdownContent.innerHTML = html;
+                
+                // Apply syntax highlighting to code blocks
+                markdownContent.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                });
+                
+            } catch (error) {
+                markdownContent.innerHTML = `
+                    <div style="text-align: center; padding: 3rem;">
+                        <h3 style="color: var(--accent-secondary); margin-bottom: 1rem;">无法加载文档</h3>
+                        <p style="color: var(--text-secondary); margin-bottom: 2rem;">
+                            ${error.message}
+                        </p>
+                        <p style="color: var(--text-secondary);">
+                            请查看 
+                            <a href="../README.md" target="_blank" style="color: var(--accent-purple);">README.md</a>
+                        </p>
+                    </div>
+                `;
+            }
+        }
+
+        // Smooth scrolling for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    const offsetTop = target.offsetTop - 80;
+                    window.scrollTo({
+                        top: offsetTop,
+                        behavior: 'smooth'
+                    });
+                }
+            });
+        });
+
+        // Apply syntax highlighting to demo code
+        document.querySelectorAll('.demo-code code').forEach((block) => {
+            hljs.highlightElement(block);
+        });
+
+        // Load README on page load
+        loadReadme();
+    </script>
+</body>
+</html>

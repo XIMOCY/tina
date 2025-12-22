@@ -14,7 +14,7 @@ def get_time() -> str:
     """
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-@system_tools.register()
+@system_tools.register(require_confirmation=True)
 def make_dir(path: str) -> None:
     """
     创建目录
@@ -70,7 +70,7 @@ def read_code(path: str,start:int=0,end:int = 2000) -> str:
     except UnicodeDecodeError:
         return f"无法解码文件：{path}，请检查文件编码格式"
 
-@system_tools.register()  
+@system_tools.register(require_confirmation=True)  
 def write_code(path: str, content: str) -> None:
     """
     写入文件内容，如果文件不存在会自动创建，但是不存在的父文件夹无法创建
