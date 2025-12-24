@@ -50,7 +50,7 @@ class ToolsExecutor:
 
         for tool_call in _tool_calls:
             _tool_name = tool_call["function"]["name"]
-            _tool_args = json.loads(tool_call["function"]["arguments"])
+            _tool_args = tool_call["function"]["arguments"]
             _tool_id = tool_call["id"]
 
             # ============= 事件处理：不捕获异常，让上层感知 =============
@@ -62,7 +62,7 @@ class ToolsExecutor:
             if _tool_name.startswith("mcp_"):
                 # 使用 MCP 工具执行器执行 MCP 工具
                 try:
-                    result = MCPToolExecutor.execute_mcp_tool(_tool_name, _tool_args, _mcp_client)
+                    result = MCPToolExecutor.execute_mcp_tool(_tool_name, json.loads(_tool_args), _mcp_client)
                 except Exception as e:
                     logger.error(f"ToolsExecutor - MCP 工具 '{_tool_name}' 执行失败: {str(e)}：参数 {_tool_args}")
                     result = f"工具 '{_tool_name}' 执行失败: {str(e)}"
@@ -86,13 +86,13 @@ class ToolsExecutor:
                         result = f"用户阻止了{_tool_name}的运行"
                     else:
                         try:
-                            result = self._execute(_tool_name, _tool_args, _tool, _tools, timeout=timeout)
+                            result = self._execute(_tool_name, json.loads(_tool_args), _tool, _tools, timeout=timeout)
                         except Exception as e:
                             logger.error(f"ToolsExecutor - 工具 '{_tool_name}' 执行失败: {str(e)}：参数 {_tool_args}")
                             result = f"工具 '{_tool_name}' 执行失败: {str(e)}"
                 else:
                     try:
-                        result = self._execute(_tool_name, _tool_args, _tool, _tools, timeout=timeout)
+                        result = self._execute(_tool_name, json.loads(_tool_args), _tool, _tools, timeout=timeout)
                     except Exception as e:
                         logger.error(f"ToolsExecutor - 工具 '{_tool_name}' 执行失败: {str(e)}：参数 {_tool_args}")
                         result = f"工具 '{_tool_name}' 执行失败: {str(e)}"
@@ -121,7 +121,7 @@ class ToolsExecutor:
 
         for tool_call in _tool_calls:
             _tool_name = tool_call["function"]["name"]
-            _tool_args = json.loads(tool_call["function"]["arguments"])
+            _tool_args = tool_call["function"]["arguments"]
             _tool_id = tool_call["id"]
 
             # ============= 事件处理：不捕获异常，让上层感知 =============
@@ -138,7 +138,7 @@ class ToolsExecutor:
             if _tool_name.startswith("mcp_"):
                 # 使用MCP工具执行器执行MCP工具
                 try:
-                    result = await MCPToolExecutor.aexecute_mcp_tool(_tool_name, _tool_args, _mcp_client)
+                    result = await MCPToolExecutor.aexecute_mcp_tool(_tool_name, json.loads(_tool_args), _mcp_client)
                 except Exception as e:
                     logger.error(f"ToolsExecutor - MCP 工具 '{_tool_name}' 异步执行失败: {str(e)}：参数 {_tool_args}")
                     result = f"工具 '{_tool_name}' 执行失败: {str(e)}"
@@ -167,7 +167,7 @@ class ToolsExecutor:
                         try:
                             result = await self._aexecute_single(
                                 _tool_name=_tool_name,
-                                _tool_args=_tool_args,
+                                _tool_args=json.loads(_tool_args),
                                 _tool=_tool,
                                 _tools=_tools,
                                 timeout=timeout,
@@ -179,7 +179,7 @@ class ToolsExecutor:
                     try:
                         result = await self._aexecute_single(
                             _tool_name=_tool_name,
-                            _tool_args=_tool_args,
+                            _tool_args=json.loads(_tool_args),
                             _tool=_tool,
                             _tools=_tools,
                             timeout=timeout,

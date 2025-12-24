@@ -243,10 +243,3 @@ MIT License
 > tina 是个人兴趣项目,适合快速原型验证和学习使用。  
 > 如需生产环境的稳定性,建议使用 LangChain 等成熟框架。
 
----
-
-<div align="center">
-
-**Made with ❤️ by QiQi in 🌟 XIMO**
-
-</div>
