@@ -7,10 +7,11 @@
 Tools类：用于管理大模型的工具，包括注册、查询、调用等功能
 """
 import inspect
+import re
 from .executor import ToolsExecutor
 from ...utils.doc_parser import parse_docstring
 from ...core.error import ToolNotFound,ToolsAddError
-
+# 工具基类
 class Tool:
     tool: callable
     description: str
@@ -105,6 +106,55 @@ class Tools:
                 if tool_name in other.tools_tool:
                     combined.tools_tool[tool_name] = other.tools_tool[tool_name]
 
+    def __sub__(self, other):
+        if not isinstance(other, Tools):
+            raise ToolsAddError()
+
+        result = Tools()
+        # 复制当前实例的内容
+        result.tools_schemas = self.tools_schemas.copy()
+        result.tools_functions = self.tools_functions.copy()
+        result.tools_names = self.tools_names.copy()
+        result.tools_parameters = self.tools_parameters.copy()
+        result.tools_tool = self.tools_tool.copy()
+
+        # 从结果中移除other中的工具（如果存在）
+        for tool_dict in other.tools_schemas:
+            tool_name = tool_dict["function"]["name"]
+            if tool_name in result.tools_names:
+                # 从各个列表中移除该工具
+                index = result.tools_names.index(tool_name)
+                result.tools_names.pop(index)
+                result.tools_schemas.pop(index)
+                result.tools_parameters.pop(index)
+                
+                # 从函数字典中移除
+                result.tools_functions.pop(tool_name, None)
+                # 从工具字典中移除
+                result.tools_tool.pop(tool_name, None)
+
+        return result
+
+    def __isub__(self, other):
+        if not isinstance(other, Tools):
+            raise ToolsAddError()
+        
+        # 从当前实例中移除other中的工具（如果存在）
+        for tool_dict in other.tools_schemas:
+            tool_name = tool_dict["function"]["name"]
+            if tool_name in self.tools_names:
+                # 从各个列表中移除该工具
+                index = self.tools_names.index(tool_name)
+                self.tools_names.pop(index)
+                self.tools_schemas.pop(index)
+                self.tools_parameters.pop(index)
+                
+                # 从函数字典中移除
+                self.tools_functions.pop(tool_name, None)
+                # 从工具字典中移除
+                self.tools_tool.pop(tool_name, None)
+
+        return self
     # 打印工具列表
     def __str__(self):
         result = "工具列表:\n"
@@ -210,7 +260,8 @@ class Tools:
         Args:
             tool (callable): 工具函数
             description (str): 工具描述
-            post_handler (callable, optional): 工具执行后的处理函数，用于处理工具返回的结果
+            require_confirmation (bool): 是否需要确认执行
+            require_persistence (bool): 是否需要持久化运行
         """
         def decorator(func):
             self.register_tool(func,description,require_confirmation=require_confirmation,require_persistence=require_persistence)
@@ -238,7 +289,8 @@ class Tools:
         required_parameters = [p for p in parameters if parameters[p].default is inspect.Parameter.empty]
         p_doc = parse_docstring(tool.__doc__)
         parameters = self._get_parameters(name, parameters, required_parameters, p_doc, properties)
-        description = description if description is not None else tool.__doc__.strip()
+                # 从docstring中提取纯描述部分（Args之前的内容）
+        description = self._get_description(tool, description)
         _tool = Tool(
             tool=tool,
             description=description,
@@ -256,6 +308,15 @@ class Tools:
         self._update_tools(description, name, parameters)
 
         return self.get_tools()[-1]
+
+    def _get_description(self, tool, description):
+        doc_content = tool.__doc__.strip() if tool.__doc__ else ""
+        # 使用正则表达式移除Args部分及其内容
+        # 移除Args: 开始的部分，包括其后的内容直到下一个顶级标题
+        description_part = re.sub(r'\s*Args:\s*.*?(?=\n\s*\w+:|$)', '', doc_content, flags=re.DOTALL)
+        description_part = description_part.strip()
+        description = description if description is not None else description_part
+        return description
     def disable_tool(self, tool_name: str) -> bool:
         """
         禁用工具，只会在工具列表中移除该工具，但不会删除工具函数，依然存在于工具列表中，只是暂时不被大模型所知道

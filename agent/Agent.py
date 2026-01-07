@@ -86,24 +86,59 @@ class Agent:
         
     # 事件管理（对外公开 Events 的装饰器接口）
     def before_tool_call(self):
+        """
+        在执行工具调用之 前  
+        需要事件处理函数接受下面的参数：  
+        tool_name: str,tool_arguments: dict,
+        """
         return self.events.before_tool_call()
 
     def after_tool_call(self):
+        """
+        在执行工具调用之 后
+        需要事件处理函数接受下面的参数：  
+        tool_name: str,tool_arguments: dict,tool_result: any
+        """
         return self.events.after_tool_call()
 
     def before_tool_calls(self):
+        """
+        在工具调用被大模型处理之前
+        需要事件处理函数接受下面的参数：  
+        tool_calls: list[dict[str,str]]
+        """
         return self.events.before_tool_calls()
 
     def after_tool_calls(self):
+        """
+        在工具调用被大模型处理之后
+        需要事件处理函数接受下面的参数：  
+        tool_calls: list[dict[str,str]]
+        """
         return self.events.after_tool_calls()
 
     def before_user_instruction(self):
+        """
+        在用户输入被大模型处理之前
+        需要事件处理函数接受下面的参数：  
+        user_message: str
+        """
         return self.events.before_user_instruction()
 
     def after_user_instruction(self):
+        """
+        在用户输入被大模型处理之后
+        需要事件处理函数接受下面的参数：  
+        user_message: str assistant_message: str
+        """
         return self.events.after_user_instruction()
 
     def on_tool_confirmation(self):
+        """
+        如果一个工具被登记为需要验证才可以运行，请监听此事件  
+        需要事件处理函数接受下面的参数：  
+        tool_name: str tool_arguments: dict
+        """
         return self.events.on_tool_confirmation()
 
     def _mcp_to_tools(self, MCP):
@@ -283,4 +318,3 @@ class Agent:
                 top_k,
                 min_p,
             )
-

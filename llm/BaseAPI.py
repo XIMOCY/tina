@@ -8,6 +8,7 @@
 - BaseAPI: 基础API类，所有使用api访问大模型的类都继承自此类
 - BaseAPI_multimodal: 多模态API类，继承自BaseAPI，增加了图片参数
 """
+import base64
 import httpx
 import json
 import os
@@ -400,81 +401,6 @@ class BaseAPI():
                 **kwargs
             )
 
-    def generate(self,
-                input_text: str = None,
-                sys_prompt: str = '你的工作非常的出色！',
-                messages: list = None,
-                temperature: float = 1.0,
-                top_p: float = 0.9,
-                top_k: int = None,
-                min_p: float = None,
-                max_tokens: int = None,
-                presence_penalty: float = None,
-                frequency_penalty: float = None,
-                stream: bool = False,
-                format:str = "text",
-                json_format:str = '{}',
-                tools: list = None,
-                timeout: int = 180,
-                **kwargs) -> Union[dict, Generator[dict, None, None]]:
-        """
-        generate方法是predict方法的别名
-        
-        此方法完全等同于predict()方法，但使用更通用的命名约定。
-        
-        Args:
-            input_text (str, optional): 用户输入文本. 默认为 None.
-            sys_prompt (str, optional): 系统提示词. 默认为 "你的工作非常的出色！".
-            messages (list, optional): 历史对话消息列表. 默认为 None.
-            temperature (float, optional): 生成文本的随机性参数 (0.0-1.0). 默认 1.0.
-            top_p (float, optional): 核采样参数 (0.0-1.0). 默认 0.9.
-            top_k (int, optional): Top-K采样参数，限制候选词汇数量. 
-                注意：不是所有模型都支持，不支持时会自动忽略. 默认 None.
-            min_p (float, optional): Min-P采样参数，设置最小概率阈值. 
-                注意：较新的采样方法，老模型可能不支持. 默认 None.
-            max_tokens (int, optional): 最大生成token数量. 默认 None.
-            presence_penalty (float, optional): 存在惩罚参数 (-2.0到2.0). 默认 None.
-            frequency_penalty (float, optional): 频率惩罚参数 (-2.0到2.0). 默认 None.
-            stream (bool, optional): 是否启用流式响应. 默认 False.
-            format (str, optional): 返回格式类型，"text"或"json". 默认 "text".
-            json_format (str, optional): JSON格式模板. 默认空字符串.
-            tools (list, optional): 工具调用列表. 默认 None.
-            timeout (int, optional): 请求超时时间(秒). 默认 180.
-
-        Returns:
-            Union[dict, Generator[dict, None, None]]: 根据stream参数返回对应结果
-            
-        Examples:
-            ### 基础文本生成
-            >>> result = llm.generate(input_text="你好")
-            {"role": "assistant", "content": "你好！有什么可以帮助你的吗？"}
-            
-            ### 流式文本生成
-            >>> for chunk in llm.generate(input_text="讲个故事", stream=True):
-            ...     print(chunk["content"], end="")
-            
-            ### 使用高级采样参数
-            >>> result = llm.generate(input_text="写诗", top_k=40, min_p=0.05, max_tokens=500)
-        """
-        return self.predict(
-            input_text=input_text,
-            sys_prompt=sys_prompt,
-            messages=messages,
-            temperature=temperature,
-            top_p=top_p,
-            top_k=top_k,
-            min_p=min_p,
-            max_tokens=max_tokens,
-            presence_penalty=presence_penalty,
-            frequency_penalty=frequency_penalty,
-            stream=stream,
-            format=format,
-            json_format=json_format,
-            tools=tools,
-            timeout=timeout,
-            **kwargs
-        )
-
     async def apredict(self,
                       input_text: str = None,
                       role: str = "user",
@@ -697,300 +623,113 @@ class BaseAPI():
 
             return result
 
-class BaseAPI_multimodal(BaseAPI):
-    API_ENV_VAR_NAME = ""  # 覆盖环境变量名
-    BASE_URL = ""  # 设置基础URL
+class BaseMultimodalAPI(BaseAPI):
+    """
+    多模态API类，继承自BaseAPI
+    扩展了对多图片（本地/URL）和多音频（本地）的支持
+    """
+    API_ENV_VAR_NAME = "LLM_API_KEY"
+    BASE_URL = ""
 
-    def __init__(self, model: str , api_key: str = None, base_url: str = None):
-        super().__init__(model=model, api_key=api_key, base_url=base_url)
-    
-    def _encode_image(self, image_path: str) -> str:
-        import base64
-        allowed_formats = ['.png', '.jpg', '.jpeg', '.webp']
-        if not any(image_path.lower().endswith(ext) for ext in allowed_formats):
-            raise ValueError(f"不支持的图片格式，仅支持{', '.join(allowed_formats)}")
+    def __init__(self, model: str = None, api_key: str = None, base_url: str = None, **kwargs):
+        super().__init__(model=model, api_key=api_key, base_url=base_url, **kwargs)
+
+    def _encode_file(self, file_path: str) -> str:
+        """统一的 Base64 编码方法"""
         try:
-            with open(image_path, "rb") as image_file:
-                return base64.b64encode(image_file.read()).decode('utf-8')
+            with open(file_path, "rb") as f:
+                return base64.b64encode(f.read()).decode('utf-8')
         except Exception as e:
-            import logging
-            logging.error(f"图片读取失败: {str(e)}")
+            self.logger.error(f"BaseMultimodalAPI - 文件读取失败 {file_path}: {str(e)}")
             raise
 
-    def _prepare_multimodal_messages(self, input_text: str = None, input_image: str = None, 
-                                   sys_prompt: str = '你的工作非常出色！', messages: list = None) -> list:
-        """准备多模态消息列表"""
+    def _prepare_multimodal_messages(self,
+                                     input_text: str = None, 
+                                     input_image: Union[str, list[str]] = None, 
+                                     input_audio: Union[str, list[str]] = None,
+                                     input_url: Union[str, list[str]] = None,
+                                     role: str = "user",
+                                     sys_prompt: str = '你的工作非常出色！', 
+                                     messages: list = None) -> list:
+        """准备多模态消息列表，支持单/多文本、图片、音频"""
         if messages is None:
             messages = [{"role": "system", "content": sys_prompt}]
-            user_content = []
-            if input_image:
+        
+        user_content = []
+
+        # 1. 文本
+        if input_text:
+            user_content.append({"type": "text", "text": input_text})
+
+        # 2. 本地图片列表处理
+        if input_image:
+            images = [input_image] if isinstance(input_image, str) else input_image
+            for img_path in images:
+                ext = img_path.split('.')[-1].lower()
+                if ext == 'jpg': ext = 'jpeg'
                 user_content.append({
                     "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/{input_image.split('.')[-1]};base64,{self._encode_image(input_image)}"
-                    }
+                    "image_url": {"url": f"data:image/{ext};base64,{self._encode_file(img_path)}"}
                 })
-            if input_text:
-                user_content.append({"type": "text", "text": input_text})
 
-            if user_content:
-                messages.append({"role": "user", "content": user_content})
+        # 3. 网络 URL 列表处理
+        if input_url:
+            urls = [input_url] if isinstance(input_url, str) else input_url
+            for url in urls:
+                user_content.append({"type": "image_url", "image_url": {"url": url}})
+
+        # 4. 本地音频列表处理
+        if input_audio:
+            audios = [input_audio] if isinstance(input_audio, str) else input_audio
+            for aud_path in audios:
+                audio_ext = aud_path.split('.')[-1].lower()
+                if audio_ext not in ['wav', 'mp3']: audio_ext = 'wav'
+                user_content.append({
+                    "type": "input_audio",
+                    "input_audio": {"data": self._encode_file(aud_path), "format": audio_ext}
+                })
+
+        if user_content:
+            messages.append({"role": role, "content": user_content})
         return messages
 
-    def predict_no_stream(self,
-                       input_text: str = None,
-                       input_image: str = None,
-                       sys_prompt: str = '你的工作非常出色！',
-                       messages: list = None,
-                       temperature: float = 0.3,
-                       top_p: float = 0.9,
-                       top_k: int = None,
-                       min_p: float = None,
-                       max_tokens: int = None,
-                       presence_penalty: float = None,
-                       frequency_penalty: float = None,
-                       tools: list = None,
-                       timeout: int = 60,
-                       **kwargs) -> dict:
-        """
-        多模态非流式API调用
-        
-        Args:
-            input_text (str, optional): 用户输入文本. 默认为 None.
-            input_image (str, optional): 图片文件路径. 默认为 None.
-            sys_prompt (str, optional): 系统提示词. 默认为 "你的工作非常出色！".
-            messages (list, optional): 历史对话消息列表. 默认为 None.
-            temperature (float, optional): 生成文本的随机性参数. 默认 0.3.
-            top_p (float, optional): 核采样参数. 默认 0.9.
-            top_k (int, optional): Top-K采样参数，限制候选词汇数量. 
-                注意：不是所有模型都支持，不支持时会自动忽略. 默认 None.
-            min_p (float, optional): Min-P采样参数，设置最小概率阈值. 
-                注意：较新的采样方法，老模型可能不支持. 默认 None.
-            max_tokens (int, optional): 最大生成token数量. 默认 None.
-            presence_penalty (float, optional): 存在惩罚参数 (-2.0到2.0). 默认 None.
-            frequency_penalty (float, optional): 频率惩罚参数 (-2.0到2.0). 默认 None.
-            tools (list, optional): 工具调用列表. 默认 None.
-            timeout (int, optional): 请求超时时间(秒). 默认 60.
-
-        Returns:
-            dict: API响应结果
-        """
-        messages = self._prepare_multimodal_messages(input_text, input_image, sys_prompt, messages)
-        
-        # 基础参数
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": temperature,
-            "top_p": top_p,
-            "stream": False,
-        }
-        
-        # 可选参数（只有非None时才添加，保证兼容性）
-        optional_params = {
-            "top_k": top_k,
-            "min_p": min_p,
-            "max_tokens": max_tokens,
-            "presence_penalty": presence_penalty,
-            "frequency_penalty": frequency_penalty
-        }
-        
-        # 智能过滤：只添加非None的参数
-        for param_name, param_value in optional_params.items():
-            if param_value is not None:
-                payload[param_name] = param_value
-        
-        if tools:
-            payload["tools"] = tools
-        payload.update(kwargs)
-
-        headers = self._prepare_headers()
-
-        response = httpx.post(f"{self.base_url}", json=payload, headers=headers, timeout=timeout)
-        response_data = response.json()
-        self.token += response_data.get("usage", {}).get("total_tokens", 0)
-        result = {"role": "assistant", "content": response_data["choices"][0]["message"]["content"]}
-        if "tool_calls" in response_data["choices"][0]["message"]:
-            result["tool_calls"] = response_data["choices"][0]["message"]["tool_calls"]
-        return result
-
-    def predict_stream(self,
-                     input_text: str = None,
-                     input_image: str = None,
-                     sys_prompt: str = '你的工作非常出色！',
-                     messages: list = None,
-                     temperature: float = 0.3,
-                     top_p: float = 0.9,
-                     top_k: int = None,
-                     min_p: float = None,
-                     max_tokens: int = None,
-                     presence_penalty: float = None,
-                     frequency_penalty: float = None,
-                     tools: list = None,
-                     timeout: int = 60,
-                     **kwargs) -> Generator[dict, None, None]:
-        """
-        多模态流式API调用
-        
-        Args:
-            input_text (str, optional): 用户输入文本. 默认为 None.
-            input_image (str, optional): 图片文件路径. 默认为 None.
-            sys_prompt (str, optional): 系统提示词. 默认为 "你的工作非常出色！".
-            messages (list, optional): 历史对话消息列表. 默认为 None.
-            temperature (float, optional): 生成文本的随机性参数. 默认 0.3.
-            top_p (float, optional): 核采样参数. 默认 0.9.
-            top_k (int, optional): Top-K采样参数，限制候选词汇数量. 
-                注意：不是所有模型都支持，不支持时会自动忽略. 默认 None.
-            min_p (float, optional): Min-P采样参数，设置最小概率阈值. 
-                注意：较新的采样方法，老模型可能不支持. 默认 None.
-            max_tokens (int, optional): 最大生成token数量. 默认 None.
-            presence_penalty (float, optional): 存在惩罚参数 (-2.0到2.0). 默认 None.
-            frequency_penalty (float, optional): 频率惩罚参数 (-2.0到2.0). 默认 None.
-            tools (list, optional): 工具调用列表. 默认 None.
-            timeout (int, optional): 请求超时时间(秒). 默认 60.
-
-        Yields:
-            dict: 流式响应块
-        """
-        messages = self._prepare_multimodal_messages(input_text, input_image, sys_prompt, messages)
-        
-        # 基础参数
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": temperature,
-            "top_p": top_p,
-            "stream": True,
-        }
-        
-        # 可选参数（只有非None时才添加，保证兼容性）
-        optional_params = {
-            "top_k": top_k,
-            "min_p": min_p,
-            "max_tokens": max_tokens,
-            "presence_penalty": presence_penalty,
-            "frequency_penalty": frequency_penalty
-        }
-        
-        # 智能过滤：只添加非None的参数
-        for param_name, param_value in optional_params.items():
-            if param_value is not None:
-                payload[param_name] = param_value
-        
-        if tools:
-            payload["tools"] = tools
-        payload.update(kwargs)
-
-        headers = self._prepare_headers()
-
-        def stream_generator():
-            tool_calls_buffer = {}
-            final_tool_calls = None
-            received_ids = {}  
-            tool_name_sent = set()  
-            reasoning_buffer = ""  # 缓存推理内容
-
-            with httpx.stream("POST", f"{self.base_url}", json=payload, headers=headers, timeout=timeout) as response:
-                if response.status_code != 200:
-                    raise Exception(f"请求失败了，状态码：{response.status_code}")
-                for line in response.iter_lines():
-                    line = line.strip()
-                    if line.startswith("data: "):
-                        try:
-                            data = json.loads(line[6:])
-                            for choice in data.get("choices", []):
-                                delta = choice.get("delta", {})
-
-                                # 处理普通内容
-                                if "content" in delta:
-                                    content = delta.get("content", "")
-                                    if content:  # 只有当内容非空时才发送
-                                        yield {"role": "assistant", "content": content}
-                                
-                                # 处理推理内容
-                                if "reasoning_content" in delta:
-                                    reasoning_content = delta.get("reasoning_content", "")
-                                    if reasoning_content:  # 累积推理内容
-                                        reasoning_buffer += reasoning_content
-                                        yield {"role": "assistant", "reasoning_content": reasoning_content, "content": ""}
-
-                                # 处理工具调用
-                                if "tool_calls" in delta:
-                                    for tool_call in delta["tool_calls"]:
-                                        index = tool_call["index"]
-                                
-                                        if index not in tool_calls_buffer:
-                                            tool_calls_buffer[index] = {
-                                                "index": index,
-                                                "function": {"arguments": ""},
-                                                "type": "",
-                                                "id": ""
-                                            }
-                                
-                                        if tool_call.get("id") and index not in received_ids:
-                                            received_ids[index] = tool_call["id"]
-                                
-                                        current = tool_calls_buffer[index]
-                                        current["id"] = received_ids.get(index, "")
-                                        current["type"] = tool_call.get("type") or current["type"]
-                                
-                                        if tool_call.get("function"):
-                                            func = tool_call["function"]
-                                            current["function"]["name"] = func.get("name") or current["function"].get("name", "")
-                                            
-                                            if current["function"].get("name") and index not in tool_name_sent:
-                                                tool_name_sent.add(index)
-                                                yield {
-                                                    "role": "assistant",
-                                                    "content": "",
-                                                    "tool_name": current["function"]["name"]
-                                                }
-                                            
-                                            if func.get("arguments") is None:
-                                                continue
-                                            current["function"]["arguments"] += func.get("arguments", "")
-                            
-                                    final_tool_calls = [v for k,v in sorted(tool_calls_buffer.items())]
-
-                        except json.JSONDecodeError:
-                            continue
-                
-                if final_tool_calls:
-                    yield {
-                        "role": "assistant",
-                        "content": "",
-                        "tool_calls": final_tool_calls,
-                        "id": final_tool_calls[0]["id"] if final_tool_calls else ""
-                    }
-        
-        return stream_generator()
-
+    # ========================== 同步接口 ==========================
     def predict(self,
                 input_text: str = None,
-                input_image: str = None,  
+                input_image: Union[str, list[str]] = None,
+                input_audio: Union[str, list[str]] = None,
+                input_url: Union[str, list[str]] = None,
+                stream: bool = False,
+                role: str = "user",
                 sys_prompt: str = '你的工作非常出色！',
                 messages: list = None,
-                temperature: float = 0.3,
+                temperature: float = 1.0,
                 top_p: float = 0.9,
                 top_k: int = None,
                 min_p: float = None,
                 max_tokens: int = None,
                 presence_penalty: float = None,
                 frequency_penalty: float = None,
-                stream: bool = False,
+                format: str = "text",
+                json_format: str = '{}',
                 tools: list = None,
-                timeout: int = 60,
-                **kwargs) -> Union[dict, Generator[dict, None, None]]:
+                timeout: int = 180,
+                **kwargs
+    ):
         """
-        多模态预测统一入口，根据stream参数调用对应方法
+        多模态预测接口，支持文本、图片、音频和URL输入
         
         Args:
             input_text (str, optional): 用户输入文本. 默认为 None.
-            input_image (str, optional): 图片文件路径. 默认为 None.
-            sys_prompt (str, optional): 系统提示词. 默认为 "你的工作非常出色！".
+            input_image (Union[str, list[str]], optional): 本地图片路径或图片路径列表. 默认为 None.
+            input_audio (Union[str, list[str]], optional): 本地音频路径或音频路径列表. 默认为 None.
+            input_url (Union[str, list[str]], optional): 图片URL或URL列表. 默认为 None.
+            stream (bool, optional): 是否启用流式响应. 默认 False.
+            role (str, optional): 用户角色. 默认 "user".
+            sys_prompt (str, optional): 系统提示词. 默认 '你的工作非常出色！'.
             messages (list, optional): 历史对话消息列表. 默认为 None.
-            temperature (float, optional): 生成文本的随机性参数. 默认 0.3.
-            top_p (float, optional): 核采样参数. 默认 0.9.
+            temperature (float, optional): 生成文本的随机性参数 (0.0-1.0). 默认 1.0.
+            top_p (float, optional): 核采样参数 (0.0-1.0). 默认 0.9.
             top_k (int, optional): Top-K采样参数，限制候选词汇数量. 
                 注意：不是所有模型都支持，不支持时会自动忽略. 默认 None.
             min_p (float, optional): Min-P采样参数，设置最小概率阈值. 
@@ -998,17 +737,24 @@ class BaseAPI_multimodal(BaseAPI):
             max_tokens (int, optional): 最大生成token数量. 默认 None.
             presence_penalty (float, optional): 存在惩罚参数 (-2.0到2.0). 默认 None.
             frequency_penalty (float, optional): 频率惩罚参数 (-2.0到2.0). 默认 None.
-            stream (bool, optional): 是否启用流式响应. 默认 False.
+            format (str, optional): 返回格式类型，"text"或"json". 默认 "text".
+            json_format (str, optional): JSON格式模板. 默认空字符串.
             tools (list, optional): 工具调用列表. 默认 None.
-            timeout (int, optional): 请求超时时间(秒). 默认 60.
+            timeout (int, optional): 请求超时时间(秒). 默认 180.
 
         Returns:
-            Union[dict, Generator[dict, None, None]]: 根据stream参数返回对应结果
+            Union[dict, Generator[dict, None, None]]:
+            - 非流式模式返回字典格式：
+              {"role": "assistant", "content": "...", "tool_calls": [...]}
+            - 流式模式返回生成器，逐块返回响应内容和/或工具调用信息
         """
         if stream:
             return self.predict_stream(
                 input_text=input_text,
                 input_image=input_image,
+                input_audio=input_audio,
+                input_url=input_url,
+                role=role,
                 sys_prompt=sys_prompt,
                 messages=messages,
                 temperature=temperature,
@@ -1018,6 +764,8 @@ class BaseAPI_multimodal(BaseAPI):
                 max_tokens=max_tokens,
                 presence_penalty=presence_penalty,
                 frequency_penalty=frequency_penalty,
+                format=format,
+                json_format=json_format,
                 tools=tools,
                 timeout=timeout,
                 **kwargs
@@ -1026,6 +774,9 @@ class BaseAPI_multimodal(BaseAPI):
             return self.predict_no_stream(
                 input_text=input_text,
                 input_image=input_image,
+                input_audio=input_audio,
+                input_url=input_url,
+                role=role,
                 sys_prompt=sys_prompt,
                 messages=messages,
                 temperature=temperature,
@@ -1035,41 +786,46 @@ class BaseAPI_multimodal(BaseAPI):
                 max_tokens=max_tokens,
                 presence_penalty=presence_penalty,
                 frequency_penalty=frequency_penalty,
+                format=format,
+                json_format=json_format,
                 tools=tools,
                 timeout=timeout,
                 **kwargs
             )
-
-    # 别名方法 - 为不熟悉深度学习术语的开发者提供更直观的方法名
-    def generate(self,
-                input_text: str = None,
-                input_image: str = None,  
-                sys_prompt: str = '你的工作非常出色！',
-                messages: list = None,
-                temperature: float = 0.3,
-                top_p: float = 0.9,
-                top_k: int = None,
-                min_p: float = None,
-                max_tokens: int = None,
-                presence_penalty: float = None,
-                frequency_penalty: float = None,
-                stream: bool = False,
-                tools: list = None,
-                timeout: int = 60,
-                **kwargs) -> Union[dict, Generator[dict, None, None]]:
+    
+    def predict_no_stream(self,
+                          input_text: str = None,
+                          input_image: Union[str, list[str]] = None,
+                          input_audio: Union[str, list[str]] = None,
+                          input_url: Union[str, list[str]] = None,
+                          role: str = "user",
+                          sys_prompt: str = '你的工作非常出色！',
+                          messages: list = None,
+                          temperature: float = 1.0,
+                          top_p: float = 0.9,
+                          top_k: int = None,
+                          min_p: float = None,
+                          max_tokens: int = None,
+                          presence_penalty: float = None,
+                          frequency_penalty: float = None,
+                          format: str = "text",
+                          json_format: str = '{}',
+                          tools: list = None,
+                          timeout: int = 180,
+                          **kwargs) -> dict:
         """
-        generate方法是predict方法的别名，提供更直观的方法名
-        
-        此方法完全等同于predict()方法，但使用更通用的命名约定。
-        适合不熟悉深度学习术语的开发者使用。
+        同步非流式多模态API调用，直接返回完整响应
         
         Args:
             input_text (str, optional): 用户输入文本. 默认为 None.
-            input_image (str, optional): 图片文件路径. 默认为 None.
-            sys_prompt (str, optional): 系统提示词. 默认为 "你的工作非常出色！".
+            input_image (Union[str, list[str]], optional): 本地图片路径或图片路径列表. 默认为 None.
+            input_audio (Union[str, list[str]], optional): 本地音频路径或音频路径列表. 默认为 None.
+            input_url (Union[str, list[str]], optional): 图片URL或URL列表. 默认为 None.
+            role (str, optional): 用户角色. 默认 "user".
+            sys_prompt (str, optional): 系统提示词. 默认 '你的工作非常出色！'.
             messages (list, optional): 历史对话消息列表. 默认为 None.
-            temperature (float, optional): 生成文本的随机性参数. 默认 0.3.
-            top_p (float, optional): 核采样参数. 默认 0.9.
+            temperature (float, optional): 生成文本的随机性参数 (0.0-1.0). 默认 1.0.
+            top_p (float, optional): 核采样参数 (0.0-1.0). 默认 0.9.
             top_k (int, optional): Top-K采样参数，限制候选词汇数量. 
                 注意：不是所有模型都支持，不支持时会自动忽略. 默认 None.
             min_p (float, optional): Min-P采样参数，设置最小概率阈值. 
@@ -1077,47 +833,371 @@ class BaseAPI_multimodal(BaseAPI):
             max_tokens (int, optional): 最大生成token数量. 默认 None.
             presence_penalty (float, optional): 存在惩罚参数 (-2.0到2.0). 默认 None.
             frequency_penalty (float, optional): 频率惩罚参数 (-2.0到2.0). 默认 None.
-            stream (bool, optional): 是否启用流式响应. 默认 False.
+            format (str, optional): 返回格式类型，"text"或"json". 默认 "text".
+            json_format (str, optional): JSON格式模板. 默认空字符串.
             tools (list, optional): 工具调用列表. 默认 None.
-            timeout (int, optional): 请求超时时间(秒). 默认 60.
+            timeout (int, optional): 请求超时时间(秒). 默认 180.
 
         Returns:
-            Union[dict, Generator[dict, None, None]]: 根据stream参数返回对应结果
-            
-        Examples:
-            ### 基础文本生成
-            >>> result = llm.generate(input_text="你好")
-            {"role": "assistant", "content": "你好！有什么可以帮助你的吗？"}
-            
-            ### 流式文本生成
-            >>> for chunk in llm.generate(input_text="讲个故事", stream=True):
-            ...     print(chunk["content"], end="")
-            
-            ### 多模态生成
-            >>> result = llm.generate(input_text="描述这张图片", input_image="image.jpg")
-            
-            ### 使用高级采样参数
-            >>> result = llm.generate(
-            ...     input_text="分析图片内容", 
-            ...     input_image="photo.jpg",
-            ...     top_k=40, 
-            ...     max_tokens=800
-            ... )
+            dict: {"role": "assistant", "content": "...", "tool_calls": [...]}
+
+        Raises:
+            APIRequestFailed: 当API调用失败时抛出异常
         """
-        return self.predict(
-            input_text=input_text,
-            input_image=input_image,
-            sys_prompt=sys_prompt,
-            messages=messages,
-            temperature=temperature,
+        prepared_messages = self._prepare_multimodal_messages(
+            input_text, input_image, input_audio, input_url, role, sys_prompt, messages
+        )
+        payload = self._prepare_payload(
+            messages=prepared_messages, 
+            temperature=temperature, 
             top_p=top_p,
             top_k=top_k,
             min_p=min_p,
             max_tokens=max_tokens,
             presence_penalty=presence_penalty,
             frequency_penalty=frequency_penalty,
-            stream=stream,
-            tools=tools,
-            timeout=timeout,
+            stream=False, 
+            format=format,
+            json_format=json_format,
+            tools=tools, 
             **kwargs
         )
+        
+        response = httpx.post(self.base_url, json=payload, headers=self._prepare_headers(), timeout=timeout)
+        if response.status_code != 200:
+            raise APIRequestFailed(self.base_url, response.status_code, response.text)
+        
+        res_json = response.json()
+        self.tokens += res_json.get("usage", {}).get("total_tokens", 0)
+        
+        msg = res_json["choices"][0]["message"]
+        result = {"role": "assistant", "content": msg.get("content", "")}
+        if "tool_calls" in msg:
+            result["tool_calls"] = msg["tool_calls"]
+        return result
+
+    def predict_stream(self,
+                       input_text: str = None,
+                       input_image: Union[str, list[str]] = None,
+                       input_audio: Union[str, list[str]] = None,
+                       input_url: Union[str, list[str]] = None,
+                       role: str = "user",
+                       sys_prompt: str = '你的工作非常出色！',
+                       messages: list = None,
+                       temperature: float = 1.0,
+                       top_p: float = 0.9,
+                       top_k: int = None,
+                       min_p: float = None,
+                       max_tokens: int = None,
+                       presence_penalty: float = None,
+                       frequency_penalty: float = None,
+                       format: str = "text",
+                       json_format: str = '{}',
+                       tools: list = None,
+                       timeout: int = 180,
+                       **kwargs) -> Generator[dict, None, None]:
+        """
+        同步流式多模态API调用，返回生成器逐块返回响应
+        
+        Args:
+            input_text (str, optional): 用户输入文本. 默认为 None.
+            input_image (Union[str, list[str]], optional): 本地图片路径或图片路径列表. 默认为 None.
+            input_audio (Union[str, list[str]], optional): 本地音频路径或音频路径列表. 默认为 None.
+            input_url (Union[str, list[str]], optional): 图片URL或URL列表. 默认为 None.
+            role (str, optional): 用户角色. 默认 "user".
+            sys_prompt (str, optional): 系统提示词. 默认 '你的工作非常出色！'.
+            messages (list, optional): 历史对话消息列表. 默认为 None.
+            temperature (float, optional): 生成文本的随机性参数 (0.0-1.0). 默认 1.0.
+            top_p (float, optional): 核采样参数 (0.0-1.0). 默认 0.9.
+            top_k (int, optional): Top-K采样参数，限制候选词汇数量. 
+                注意：不是所有模型都支持，不支持时会自动忽略. 默认 None.
+            min_p (float, optional): Min-P采样参数，设置最小概率阈值. 
+                注意：较新的采样方法，老模型可能不支持. 默认 None.
+            max_tokens (int, optional): 最大生成token数量. 默认 None.
+            presence_penalty (float, optional): 存在惩罚参数 (-2.0到2.0). 默认 None.
+            frequency_penalty (float, optional): 频率惩罚参数 (-2.0到2.0). 默认 None.
+            format (str, optional): 返回格式类型，"text"或"json". 默认 "text".
+            json_format (str, optional): JSON格式模板. 默认空字符串.
+            tools (list, optional): 工具调用列表. 默认 None.
+            timeout (int, optional): 请求超时时间(秒). 默认 180.
+
+        Yields:
+            dict: 逐块返回响应内容和/或工具调用信息
+
+        Raises:
+            APIRequestFailed: 当API调用失败时抛出异常
+        """
+        prepared_messages = self._prepare_multimodal_messages(
+            input_text, input_image, input_audio, input_url, role, sys_prompt, messages
+        )
+        payload = self._prepare_payload(
+            messages=prepared_messages, 
+            temperature=temperature, 
+            top_p=top_p,
+            top_k=top_k,
+            min_p=min_p,
+            max_tokens=max_tokens,
+            presence_penalty=presence_penalty,
+            frequency_penalty=frequency_penalty,
+            stream=True, 
+            format=format,
+            json_format=json_format,
+            tools=tools, 
+            **kwargs
+        )
+        return stream_generator_parser(self.base_url, payload, self._prepare_headers(), timeout)
+
+    # ========================== 异步接口 ==========================
+    async def apredict(self,
+                       input_text: str = None,
+                       input_image: Union[str, list[str]] = None,
+                       input_audio: Union[str, list[str]] = None,
+                       input_url: Union[str, list[str]] = None,
+                       stream: bool = False,
+                       role: str = "user",
+                       sys_prompt: str = '你的工作非常出色！',
+                       messages: list = None,
+                       temperature: float = 1.0,
+                       top_p: float = 0.9,
+                       top_k: int = None,
+                       min_p: float = None,
+                       max_tokens: int = None,
+                       presence_penalty: float = None,
+                       frequency_penalty: float = None,
+                       format: str = "text",
+                       json_format: str = '{}',
+                       tools: list = None,
+                       timeout: int = 180,
+                       **kwargs):
+        """
+        异步多模态预测接口，支持文本、图片、音频和URL输入
+        
+        Args:
+            input_text (str, optional): 用户输入文本. 默认为 None.
+            input_image (Union[str, list[str]], optional): 本地图片路径或图片路径列表. 默认为 None.
+            input_audio (Union[str, list[str]], optional): 本地音频路径或音频路径列表. 默认为 None.
+            input_url (Union[str, list[str]], optional): 图片URL或URL列表. 默认为 None.
+            stream (bool, optional): 是否启用流式响应. 默认 False.
+            role (str, optional): 用户角色. 默认 "user".
+            sys_prompt (str, optional): 系统提示词. 默认 '你的工作非常出色！'.
+            messages (list, optional): 历史对话消息列表. 默认为 None.
+            temperature (float, optional): 生成文本的随机性参数 (0.0-1.0). 默认 1.0.
+            top_p (float, optional): 核采样参数 (0.0-1.0). 默认 0.9.
+            top_k (int, optional): Top-K采样参数，限制候选词汇数量. 
+                注意：不是所有模型都支持，不支持时会自动忽略. 默认 None.
+            min_p (float, optional): Min-P采样参数，设置最小概率阈值. 
+                注意：较新的采样方法，老模型可能不支持. 默认 None.
+            max_tokens (int, optional): 最大生成token数量. 默认 None.
+            presence_penalty (float, optional): 存在惩罚参数 (-2.0到2.0). 默认 None.
+            frequency_penalty (float, optional): 频率惩罚参数 (-2.0到2.0). 默认 None.
+            format (str, optional): 返回格式类型，"text"或"json". 默认 "text".
+            json_format (str, optional): JSON格式模板. 默认空字符串.
+            tools (list, optional): 工具调用列表. 默认 None.
+            timeout (int, optional): 请求超时时间(秒). 默认 180.
+
+        Returns:
+            Union[dict, Generator[dict, None, None]]:
+            - 非流式模式返回字典格式：
+              {"role": "assistant", "content": "...", "tool_calls": [...]}
+            - 流式模式返回生成器，逐块返回响应内容和/或工具调用信息
+        """
+        if stream:
+            return await self.apredict_stream(
+                input_text=input_text,
+                input_image=input_image,
+                input_audio=input_audio,
+                input_url=input_url,
+                role=role,
+                sys_prompt=sys_prompt,
+                messages=messages,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                min_p=min_p,
+                max_tokens=max_tokens,
+                presence_penalty=presence_penalty,
+                frequency_penalty=frequency_penalty,
+                format=format,
+                json_format=json_format,
+                tools=tools,
+                timeout=timeout,
+                **kwargs
+            )
+        else:
+            return await self.apredict_no_stream(
+                input_text=input_text,
+                input_image=input_image,
+                input_audio=input_audio,
+                input_url=input_url,
+                role=role,
+                sys_prompt=sys_prompt,
+                messages=messages,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                min_p=min_p,
+                max_tokens=max_tokens,
+                presence_penalty=presence_penalty,
+                frequency_penalty=frequency_penalty,
+                format=format,
+                json_format=json_format,
+                tools=tools,
+                timeout=timeout,
+                **kwargs
+            )
+    
+    async def apredict_no_stream(self,
+                                 input_text: str = None,
+                                 input_image: Union[str, list[str]] = None,
+                                 input_audio: Union[str, list[str]] = None,
+                                 input_url: Union[str, list[str]] = None,
+                                 role: str = "user",
+                                 sys_prompt: str = '你的工作非常出色！',
+                                 messages: list = None,
+                                 temperature: float = 1.0,
+                                 top_p: float = 0.9,
+                                 top_k: int = None,
+                                 min_p: float = None,
+                                 max_tokens: int = None,
+                                 presence_penalty: float = None,
+                                 frequency_penalty: float = None,
+                                 format: str = "text",
+                                 json_format: str = '{}',
+                                 tools: list = None,
+                                 timeout: int = 180,
+                                 **kwargs) -> dict:
+        """
+        异步非流式多模态API调用，直接返回完整响应
+        
+        Args:
+            input_text (str, optional): 用户输入文本. 默认为 None.
+            input_image (Union[str, list[str]], optional): 本地图片路径或图片路径列表. 默认为 None.
+            input_audio (Union[str, list[str]], optional): 本地音频路径或音频路径列表. 默认为 None.
+            input_url (Union[str, list[str]], optional): 图片URL或URL列表. 默认为 None.
+            role (str, optional): 用户角色. 默认 "user".
+            sys_prompt (str, optional): 系统提示词. 默认 '你的工作非常出色！'.
+            messages (list, optional): 历史对话消息列表. 默认为 None.
+            temperature (float, optional): 生成文本的随机性参数 (0.0-1.0). 默认 1.0.
+            top_p (float, optional): 核采样参数 (0.0-1.0). 默认 0.9.
+            top_k (int, optional): Top-K采样参数，限制候选词汇数量. 
+                注意：不是所有模型都支持，不支持时会自动忽略. 默认 None.
+            min_p (float, optional): Min-P采样参数，设置最小概率阈值. 
+                注意：较新的采样方法，老模型可能不支持. 默认 None.
+            max_tokens (int, optional): 最大生成token数量. 默认 None.
+            presence_penalty (float, optional): 存在惩罚参数 (-2.0到2.0). 默认 None.
+            frequency_penalty (float, optional): 频率惩罚参数 (-2.0到2.0). 默认 None.
+            format (str, optional): 返回格式类型，"text"或"json". 默认 "text".
+            json_format (str, optional): JSON格式模板. 默认空字符串.
+            tools (list, optional): 工具调用列表. 默认 None.
+            timeout (int, optional): 请求超时时间(秒). 默认 180.
+
+        Returns:
+            dict: {"role": "assistant", "content": "...", "tool_calls": [...]}
+
+        Raises:
+            APIRequestFailed: 当API调用失败时抛出异常
+        """
+        prepared_messages = self._prepare_multimodal_messages(
+            input_text, input_image, input_audio, input_url, role, sys_prompt, messages
+        )
+        payload = self._prepare_payload(
+            messages=prepared_messages, 
+            temperature=temperature, 
+            top_p=top_p,
+            top_k=top_k,
+            min_p=min_p,
+            max_tokens=max_tokens,
+            presence_penalty=presence_penalty,
+            frequency_penalty=frequency_penalty,
+            stream=False, 
+            format=format,
+            json_format=json_format,
+            tools=tools, 
+            **kwargs
+        )
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.post(self.base_url, json=payload, headers=self._prepare_headers(), timeout=timeout)
+            if response.status_code != 200:
+                raise APIRequestFailed(self.base_url, response.status_code, response.text)
+            
+            res_json = response.json()
+            self.tokens += res_json.get("usage", {}).get("total_tokens", 0)
+            
+            msg = res_json["choices"][0]["message"]
+            result = {"role": "assistant", "content": msg.get("content", "")}
+            if "tool_calls" in msg:
+                result["tool_calls"] = msg["tool_calls"]
+            return result
+
+    async def apredict_stream(self,
+                              input_text: str = None,
+                              input_image: Union[str, list[str]] = None,
+                              input_audio: Union[str, list[str]] = None,
+                              input_url: Union[str, list[str]] = None,
+                              role: str = "user",
+                              sys_prompt: str = '你的工作非常出色！',
+                              messages: list = None,
+                              temperature: float = 1.0,
+                              top_p: float = 0.9,
+                              top_k: int = None,
+                              min_p: float = None,
+                              max_tokens: int = None,
+                              presence_penalty: float = None,
+                              frequency_penalty: float = None,
+                              format: str = "text",
+                              json_format: str = '{}',
+                              tools: list = None,
+                              timeout: int = 180,
+                              **kwargs) -> AsyncGenerator[dict, None]:
+        """
+        异步流式多模态API调用，返回生成器逐块返回响应
+        
+        Args:
+            input_text (str, optional): 用户输入文本. 默认为 None.
+            input_image (Union[str, list[str]], optional): 本地图片路径或图片路径列表. 默认为 None.
+            input_audio (Union[str, list[str]], optional): 本地音频路径或音频路径列表. 默认为 None.
+            input_url (Union[str, list[str]], optional): 图片URL或URL列表. 默认为 None.
+            role (str, optional): 用户角色. 默认 "user".
+            sys_prompt (str, optional): 系统提示词. 默认 '你的工作非常出色！'.
+            messages (list, optional): 历史对话消息列表. 默认为 None.
+            temperature (float, optional): 生成文本的随机性参数 (0.0-1.0). 默认 1.0.
+            top_p (float, optional): 核采样参数 (0.0-1.0). 默认 0.9.
+            top_k (int, optional): Top-K采样参数，限制候选词汇数量. 
+                注意：不是所有模型都支持，不支持时会自动忽略. 默认 None.
+            min_p (float, optional): Min-P采样参数，设置最小概率阈值. 
+                注意：较新的采样方法，老模型可能不支持. 默认 None.
+            max_tokens (int, optional): 最大生成token数量. 默认 None.
+            presence_penalty (float, optional): 存在惩罚参数 (-2.0到2.0). 默认 None.
+            frequency_penalty (float, optional): 频率惩罚参数 (-2.0到2.0). 默认 None.
+            format (str, optional): 返回格式类型，"text"或"json". 默认 "text".
+            json_format (str, optional): JSON格式模板. 默认空字符串.
+            tools (list, optional): 工具调用列表. 默认 None.
+            timeout (int, optional): 请求超时时间(秒). 默认 180.
+
+        Yields:
+            dict: 逐块返回响应内容和/或工具调用信息
+
+        Raises:
+            APIRequestFailed: 当API调用失败时抛出异常
+        """
+        from ..utils.output_parser import astream_generator_parser
+        prepared_messages = self._prepare_multimodal_messages(
+            input_text, input_image, input_audio, input_url, role, sys_prompt, messages
+        )
+        payload = self._prepare_payload(
+            messages=prepared_messages, 
+            temperature=temperature, 
+            top_p=top_p,
+            top_k=top_k,
+            min_p=min_p,
+            max_tokens=max_tokens,
+            presence_penalty=presence_penalty,
+            frequency_penalty=frequency_penalty,
+            stream=True, 
+            format=format,
+            json_format=json_format,
+            tools=tools, 
+            **kwargs
+        )
+        return astream_generator_parser(self.base_url, payload, self._prepare_headers(), timeout)

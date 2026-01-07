@@ -22,10 +22,14 @@ def parse_docstring(doc):
             in_returns = True
             continue
         if in_args and line:
-            # 匹配参数名和描述
-            m = re.match(r"(\w+):\s*(.*)", line)
+            # 匹配参数名和描述 - 改进正则表达式以处理带类型注解的格式
+            # 匹配格式如：param_name (type): description 或 param_name: description
+            m = re.match(r"(\w+(?:\s*\([^)]*\))?)\s*:\s*(.*)", line)
             if m:
-                param_desc[m.group(1)] = m.group(2)
+                # 提取参数名，移除类型信息（括号内的内容）
+                full_param = m.group(1)
+                param_name = re.sub(r'\s*\([^)]*\)', '', full_param).strip()
+                param_desc[param_name] = m.group(2)
         if in_returns and line:
             return_desc += line + " "
     return param_desc, return_desc.strip()

@@ -1,3 +1,10 @@
+"""
+tina提供的系统工具包
+from tina.utils.system_tools import system_tools
+
+your_tools += system_tools
+"""
+
 import os
 import re
 import io
@@ -20,7 +27,7 @@ def get_time() -> str:
 
 
 @system_tools.register(require_confirmation=True)
-def make_dir(path: str) -> str:
+def make_dir(path: list[str]) -> str:
     """
     创建目录
     Args:

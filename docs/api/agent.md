@@ -2,7 +2,7 @@
 
 ## 概述
 
-`Agent` 是 tina 的智能体类,结合了 LLM 和 Tools,能够自动调用工具完成复杂任务。Agent 会自动维护消息历史和工具调用记录。
+[Agent](file://d:\development\project\tina\tina\agent\Agent.py#L0-L0) 是 tina 的智能体类,结合了 LLM 和 Tools,能够自动调用工具完成复杂任务。Agent 会自动维护消息历史和工具调用记录。
 
 ## 快速开始
 
@@ -38,7 +38,7 @@ for chunk in agent.predict("北京天气怎么样?"):
 ## Agent vs LLM
 
 | 特性 | LLM | Agent |
-|------|-----|-------|
+|------|-----|------- |
 | 工具调用 | 返回 tool_calls,需手动执行 | 自动执行工具 |
 | 消息管理 | 需手动维护 | 自动维护 |
 | 使用场景 | 简单对话 | 复杂任务,需要工具交互 |
@@ -62,7 +62,7 @@ Agent(
 ### 参数说明
 
 | 参数 | 类型 | 说明 | 默认值 |
-|------|------|------|--------|
+|------|------|------|-------- |
 | llm | BaseAPI | 大语言模型实例 | 必需 |
 | tools | Tools | 工具集实例 | 必需 |
 | system_prompt | str | 系统提示词 | tina 默认 prompt |
@@ -113,7 +113,7 @@ predict(
 #### 参数
 
 | 参数 | 类型 | 说明 | 默认值 |
-|------|------|------|--------|
+|------|------|------|-------- |
 | instruction | str | 用户指令 | 必需 |
 | temperature | float | 采样温度 | 1.0 |
 | top_p | float | 核采样参数 | 0.9 |
@@ -214,7 +214,7 @@ for chunk in agent.predict("北京天气怎么样?"):
 
 ### apredict()
 
-异步版本的 `predict()`,参数相同。
+异步版本的 [predict()](file://d:\development\project\tina\tina\agent\Agent.py#L263-L289),参数相同。
 
 ```python
 import asyncio
@@ -326,6 +326,81 @@ calls = agent.get_tools_call()
 ```python
 results = agent.get_tools_call_results()
 # 返回所有工具执行结果
+```
+
+## 事件管理方法
+
+Agent 支持事件驱动的编程模式，可以在特定时机执行自定义逻辑。
+
+### before_tool_call()
+
+在执行工具调用之前触发事件。
+
+```python
+@agent.before_tool_call()
+def before_tool_call_handler(tool_name: str, tool_arguments: dict):
+    print(f"即将调用工具: {tool_name}, 参数: {tool_arguments}")
+```
+
+### after_tool_call()
+
+在执行工具调用之后触发事件。
+
+```python
+@agent.after_tool_call()
+def after_tool_call_handler(tool_name: str, tool_arguments: dict, tool_result: any):
+    print(f"工具 {tool_name} 执行完成, 结果: {tool_result}")
+```
+
+### before_tool_calls()
+
+在工具调用被大模型处理之前触发事件。
+
+```python
+@agent.before_tool_calls()
+def before_tool_calls_handler(tool_calls: list[dict[str, str]]):
+    print(f"即将处理工具调用列表: {tool_calls}")
+```
+
+### after_tool_calls()
+
+在工具调用被大模型处理之后触发事件。
+
+```python
+@agent.after_tool_calls()
+def after_tool_calls_handler(tool_calls: list[dict[str, str]]):
+    print(f"工具调用处理完成: {tool_calls}")
+```
+
+### before_user_instruction()
+
+在用户输入被大模型处理之前触发事件。
+
+```python
+@agent.before_user_instruction()
+def before_user_instruction_handler(user_message: str):
+    print(f"接收到用户消息: {user_message}")
+```
+
+### after_user_instruction()
+
+在用户输入被大模型处理之后触发事件。
+
+```python
+@agent.after_user_instruction()
+def after_user_instruction_handler(user_message: str, assistant_message: str):
+    print(f"处理完成，助手回复: {assistant_message}")
+```
+
+### on_tool_confirmation()
+
+当工具被登记为需要验证才能运行时触发此事件。
+
+```python
+@agent.on_tool_confirmation()
+def on_tool_confirmation_handler(tool_name: str, tool_arguments: dict):
+    # 返回 True 允许执行，返回 False 拒绝执行
+    return True  # 或根据某些条件决定是否允许执行
 ```
 
 ## 系统方法
@@ -513,6 +588,49 @@ async def main():
 asyncio.run(main())
 ```
 
+### 示例6: 事件处理
+
+```python
+from tina import Agent, Tools
+from tina.llm import BaseAPI
+
+tools = Tools()
+
+@tools.register()
+def get_weather(city: str):
+    """获取天气 Args: city: 城市名"""
+    return f"{city}今天晴,25度"
+
+llm = BaseAPI()
+agent = Agent(llm=llm, tools=tools)
+
+# 注册事件处理器
+@agent.before_tool_call()
+def before_tool_call_handler(tool_name: str, tool_arguments: dict):
+    print(f"[事件] 即将调用工具: {tool_name}, 参数: {tool_arguments}")
+
+@agent.after_tool_call()
+def after_tool_call_handler(tool_name: str, tool_arguments: dict, tool_result: any):
+    print(f"[事件] 工具 {tool_name} 执行完成, 结果: {tool_result}")
+
+@agent.before_user_instruction()
+def before_user_instruction_handler(user_message: str):
+    print(f"[事件] 接收到用户消息: {user_message}")
+
+@agent.after_user_instruction()
+def after_user_instruction_handler(user_message: str, assistant_message: str):
+    print(f"[事件] 助手回复完成: {assistant_message}")
+
+# 使用 Agent
+for chunk in agent.predict("北京天气怎么样?"):
+    if "tool_name" in chunk:
+        print(f"\n[使用工具: {chunk['tool_name']}]")
+    elif chunk.get("role") == "tool":
+        print(f"  结果: {chunk['content']}")
+    else:
+        print(chunk.get("content", ""), end="")
+```
+
 ## 最佳实践
 
 ### 1. 清晰的系统提示词
@@ -581,6 +699,37 @@ except Exception as e:
     agent.clear_messages()
 ```
 
+### 6. 事件驱动的处理
+
+```python
+# 使用事件来记录工具调用
+tool_call_log = []
+
+@agent.before_tool_call()
+def log_tool_call(tool_name: str, tool_arguments: dict):
+    tool_call_log.append({
+        "tool_name": tool_name,
+        "arguments": tool_arguments,
+        "timestamp": time.time()
+    })
+
+@agent.after_tool_call()
+def log_tool_result(tool_name: str, tool_arguments: dict, tool_result: any):
+    # 更新日志记录
+    for log in tool_call_log:
+        if log["tool_name"] == tool_name and log["arguments"] == tool_arguments:
+            log["result"] = tool_result
+            log["completed"] = time.time()
+            break
+
+# 执行任务
+for chunk in agent.predict("执行任务"):
+    print(chunk.get("content", ""), end="")
+    
+# 检查工具调用日志
+print(f"\n工具调用日志: {tool_call_log}")
+```
+
 ## 常见问题
 
 ### Q: Agent 不调用工具?
@@ -643,6 +792,40 @@ with open("memory.json", "r") as f:
 agent.add_messages(messages)
 ```
 
+### Q: 如何使用事件处理?
+
+A: 事件系统允许您在特定时机插入自定义逻辑:
+
+```python
+from tina import Agent, Tools
+from tina.llm import BaseAPI
+
+tools = Tools()
+
+@tools.register()
+def search_web(query: str):
+    """搜索网络 Args: query: 搜索查询"""
+    return f"搜索结果: {query}"
+
+agent = Agent(llm=BaseAPI(), tools=tools)
+
+# 记录所有工具调用
+@agent.before_tool_call()
+def log_tool_start(tool_name: str, tool_arguments: dict):
+    print(f"开始调用工具: {tool_name}")
+
+@agent.after_tool_call()
+def log_tool_end(tool_name: str, tool_arguments: dict, tool_result: any):
+    print(f"完成调用工具: {tool_name}, 结果: {tool_result}")
+
+# 执行预测
+for chunk in agent.predict("搜索人工智能的最新进展"):
+    if "tool_name" in chunk:
+        print(f"[工具: {chunk['tool_name']}]")
+    else:
+        print(chunk.get("content", ""), end="")
+```
+
 ## 进阶技巧
 
 ### 中间插入指令
@@ -657,8 +840,13 @@ for chunk in agent.predict("分析数据"):
 
 ### 自定义工具执行逻辑
 
-通过继承 Agent 类,可以自定义工具执行行为(高级用法,需查看源码)。
+通过继承 Agent 类,可以自定义工具执行和Agent的运行逻辑。
+
+### 悄悄话
+开发者悄悄地说一句，tina的设计原则是"相信llm"  
+默认实现的是工具执行Agent的逻辑（输出-执行-反馈-再输出 ，可以搜索互联网），虽然我们提供了给你修改的权力，但是默认情况下，这个运行逻辑已经够用了哦  
 
 ---
 
 [返回文档首页](../) | [上一章: Tools API](./tools.md) | [下一章: MCP API](./mcp.md)
+
