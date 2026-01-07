@@ -217,7 +217,7 @@ class ToolsExecutor:
                 result = await _tool(**_tool_args)
 
                 logger.debug(f"ToolsExecutor - 异步工具 '{_tool_name}' 执行结果: {result}：参数 {_tool_args}")
-                return str(result)
+                return result
             except Exception as e:
                 logger.error(f"ToolsExecutor - 异步工具 '{_tool_name}' 执行失败: {str(e)}：参数 {_tool_args}")
                 return f"工具 '{_tool_name}' 执行失败: {str(e)}"
@@ -247,7 +247,7 @@ class ToolsExecutor:
             try:
                 result = _tool(**_tool_args)
 
-                return str(result)
+                return result
             except Exception as e:
                 return f"线程管理工具 '{_tool_name}' 执行失败: {str(e)}"
         
@@ -325,19 +325,30 @@ class ToolsExecutor:
             return f"工具执行失败: {str(e)}" 
         
         if exception_occurred:
-            return str(tool_result)
+            return tool_result
         
         full_output = output_buffer.getvalue()
         
         # 确定最终结果
         result = tool_result if tool_result is not None else full_output
         
-        
-        if full_output.strip() and str(result) != full_output.strip():
+        # 如果有额外输出内容，并且这些输出不完全等同于结果的字符串表示，则需要合并
+        if full_output.strip() and str(result).strip() != full_output.strip():
+            # 返回完整输出日志（包含print/stdout内容），这始终是一个字符串
             return f"{full_output}\n"
         
-        return str(result)
-    
+        # 保持原始类型
+        if result is None:
+            return ""
+        else:
+            # 如果没有额外输出，或输出已完全由tool_result代表，则返回原始值
+            if tool_result is not None:
+                # 工具有明确返回值，优先返回该值以保持其原始类型（如int, dict, list等）
+                return tool_result
+            else:
+                # 工具无返回值，只返回捕获的标准输出（字符串）
+                return full_output
+
     def _auto_cleanup_threads(self):
         """自动清理已完成的线程（内部方法）"""
         try:
@@ -352,7 +363,7 @@ class ToolsExecutor:
         except Exception:
             # 静默处理清理错误，不影响主程序
             pass
-    
+
     def _add_thread_management_tools(self,_tools):
         """动态添加线程管理工具（仅在需要时调用）"""
         # 防止重复注册
@@ -487,4 +498,3 @@ class ToolsExecutor:
         _tools.registerTool(kill_thread, "强制终止指定的工具线程")
         _tools.registerTool(get_thread_output, "获取指定线程的最新输出")
         _tools.registerTool(cleanup_finished_threads, "清理已完成的线程记录")
-        

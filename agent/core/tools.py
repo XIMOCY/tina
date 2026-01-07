@@ -18,19 +18,29 @@ class Tool:
     parameters: dict
     require_confirmation:bool
     require_persistence:bool
+    return_image:bool
+    return_audio:bool
+    return_url:bool
 
     def __init__(self,
                  tool: callable,
                  description: str,
                  parameters: dict = {},
                  require_confirmation:bool = False,
-                 require_persistence:bool = False
+                 require_persistence:bool = False,
+                 return_image:bool=False,
+                 return_audio:bool=False,
+                 return_url:bool=False,
                  ):
         self.tool = tool
         self.description = description
         self.parameters = parameters
         self.require_confirmation = require_confirmation
         self.require_persistence = require_persistence
+        self.return_image = return_image
+        self.return_audio = return_audio
+        self.return_url = return_url
+
 
 
     def get_tool(self):
@@ -43,6 +53,16 @@ class Tool:
         return self.require_confirmation
     def get_require_persistence(self):
         return self.require_persistence
+    def execute(self, **kargs: dict) -> str:
+        return self.tool(**kargs)
+    def get_return_type(self):
+        if self.return_image:
+            return "image"
+        if self.return_audio:
+            return "audio"
+        if self.return_url:
+            return "url"
+        return "text"
 
 
 class Tools:
@@ -56,6 +76,7 @@ class Tools:
     tools_parameters:list[dict] # 工具参数列表
     require_confirmations:dict[str,bool] # 是否需要确认执行的标识符
     require_persistences:dict[str,bool]   # 是否需要持久化的标识符
+    multimodal_tools:dict[str,dict] # 多模态工具列表
     disable_tools:dict[str,dict] # 禁用的工具列表
     tools_executor:ToolsExecutor
 
@@ -254,7 +275,7 @@ class Tools:
         del self.tools_parameters[index]
         return True
 
-    def register(self,description:str=None,require_confirmation:bool=False,require_persistence:bool=False):
+    def register(self,description:str=None,require_confirmation:bool=False,require_persistence:bool=False,return_image:bool=False,return_audio:bool=False,return_url:bool=False):
         """
         注册一个工具，装饰器
         Args:
@@ -262,23 +283,32 @@ class Tools:
             description (str): 工具描述
             require_confirmation (bool): 是否需要确认执行
             require_persistence (bool): 是否需要持久化运行
+            return_image (bool): 是否返回图片
+            return_audio (bool): 是否返回音频
+            return_url (bool): 是否返回URL
         """
         def decorator(func):
-            self.register_tool(func,description,require_confirmation=require_confirmation,require_persistence=require_persistence)
+            self.register_tool(func,description,require_confirmation=require_confirmation,require_persistence=require_persistence,return_image=return_image,return_audio=return_audio,return_url=return_url)
             return func
         return decorator
 
-    def register_tool(self,tool:callable,description:str=None,require_confirmation:bool=False,require_persistence:bool=False)->dict:
+    def register_tool(self,tool:callable,description:str=None,require_confirmation:bool=False,require_persistence:bool=False,return_image:bool=False,return_audio:bool=False,return_url:bool=False)->dict:
         """
         注册工具并进行类型检查
         
         Args:
             tool (callable): 工具函数
-            description (str, optional): 工具描述
+            description (str): 工具描述
+            require_confirmation (bool): 是否需要确认执行
+            require_persistence (bool): 是否需要持久化运行
+            return_image (bool): 是否返回图片
+            return_audio (bool): 是否返回音频
+            return_url (bool): 是否返回URL
             
         Returns:
             dict: 注册的工具信息
         """
+        
         name = tool.__name__
         if name in self.tools_names:
             return
@@ -297,6 +327,9 @@ class Tools:
             parameters=parameters,
             require_confirmation=require_confirmation,
             require_persistence=require_persistence,
+            return_image=return_image,
+            return_audio=return_audio,
+            return_url=return_url,
 
         )
         self.tools.append(_tool)
@@ -413,7 +446,17 @@ class Tools:
 
     # 获取工具信息
     def get_require_confirmations(self,name:str):
+        self.check_tools(name)
         return self.tools_tool[name].get_require_confirmation()
+    
+    def get_require_persistence(self,name:str):
+        self.check_tools(name)
+        return self.tools_tool[name].get_require_persistence()
+    
+    def get_multimodal_type(self,name:str):
+        self.check_tools(name)
+        return self.tools_tool[name].get_return_type()
+    
     def get_tools_for_llm(self) -> list:
         """
         获取适用于大语言模型的工具格式列表
@@ -432,14 +475,14 @@ class Tools:
         Returns:
             dict: 工具的信息
         """
+        self.check_tools(tool_name)
         for tool_dict in self.tools_schemas:
             if tool_dict["function"]["name"] == tool_name:
                 return tool_dict
         return None
 
     def get_tool(self,name:str)->callable:
-        if name not in self.tools_names:
-            return None  
+        self.check_tools(name) 
         return self.tools_functions.get(name,None)
     
     def check_tools(self,name:str)->bool:
@@ -450,8 +493,10 @@ class Tools:
         Returns:
             bool: 工具是否存在
         """
-        return (name in self.tools_names)
+        if name not in self.tools_names:
+            raise ToolNotFound(name)
     
     def get_tools(self)->list:
         """返回工具"""
+        
         return self.tools_schemas

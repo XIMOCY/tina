@@ -5,7 +5,7 @@
 描述：使用httpx库实现的API调用类，包含了API请求、token管理、工具调用等功能
 
 包含：
-- BaseAPI: 基础API类，所有使用api访问大模型的类都继承自此类
+- BaseAPI: 基础API类，所有使用openai api访问大模型的类都继承自此类
 - BaseAPI_multimodal: 多模态API类，继承自BaseAPI，增加了图片参数
 """
 import base64
@@ -16,6 +16,7 @@ from typing import AsyncGenerator, Union, Generator
 from ..utils.envReader import EnvReader
 from ..core.error import APIRequestFailed
 from ..utils.output_parser import stream_generator_parser
+from ..utils.multimodal_formatter import build_multimodal_message
 from ..core import logger
 from ..utils.timer import timer, stream_timer, async_stream_timer
 
@@ -654,44 +655,11 @@ class BaseMultimodalAPI(BaseAPI):
         """准备多模态消息列表，支持单/多文本、图片、音频"""
         if messages is None:
             messages = [{"role": "system", "content": sys_prompt}]
-        
-        user_content = []
-
-        # 1. 文本
-        if input_text:
-            user_content.append({"type": "text", "text": input_text})
-
-        # 2. 本地图片列表处理
-        if input_image:
-            images = [input_image] if isinstance(input_image, str) else input_image
-            for img_path in images:
-                ext = img_path.split('.')[-1].lower()
-                if ext == 'jpg': ext = 'jpeg'
-                user_content.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/{ext};base64,{self._encode_file(img_path)}"}
-                })
-
-        # 3. 网络 URL 列表处理
-        if input_url:
-            urls = [input_url] if isinstance(input_url, str) else input_url
-            for url in urls:
-                user_content.append({"type": "image_url", "image_url": {"url": url}})
-
-        # 4. 本地音频列表处理
-        if input_audio:
-            audios = [input_audio] if isinstance(input_audio, str) else input_audio
-            for aud_path in audios:
-                audio_ext = aud_path.split('.')[-1].lower()
-                if audio_ext not in ['wav', 'mp3']: audio_ext = 'wav'
-                user_content.append({
-                    "type": "input_audio",
-                    "input_audio": {"data": self._encode_file(aud_path), "format": audio_ext}
-                })
-
-        if user_content:
-            messages.append({"role": role, "content": user_content})
+    
+        user_message = build_multimodal_message(input_text, input_image, input_audio, input_url, role)
+        messages.append(user_message)
         return messages
+
 
     # ========================== 同步接口 ==========================
     def predict(self,
