@@ -22,7 +22,9 @@ from ..core.error import TinaError
 from .core.parser import local_model_llama_cpp_parser 
 
 
-
+class BaseAgent:
+    """
+    """
 
 class Agent:
     """

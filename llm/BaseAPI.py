@@ -632,18 +632,10 @@ class BaseMultimodalAPI(BaseAPI):
     API_ENV_VAR_NAME = "LLM_API_KEY"
     BASE_URL = ""
 
-    def __init__(self, model: str = None, api_key: str = None, base_url: str = None, **kwargs):
-        super().__init__(model=model, api_key=api_key, base_url=base_url, **kwargs)
+    def __init__(self, model: str = None, api_key: str = None, base_url: str = None, env_path: str = None,name:str="None",role:str="user"):
+        super().__init__(model=model, api_key=api_key, base_url=base_url, env_path=env_path,name=name,role=role)
 
-    def _encode_file(self, file_path: str) -> str:
-        """统一的 Base64 编码方法"""
-        try:
-            with open(file_path, "rb") as f:
-                return base64.b64encode(f.read()).decode('utf-8')
-        except Exception as e:
-            self.logger.error(f"BaseMultimodalAPI - 文件读取失败 {file_path}: {str(e)}")
-            raise
-
+   
     def _prepare_multimodal_messages(self,
                                      input_text: str = None, 
                                      input_image: Union[str, list[str]] = None, 
