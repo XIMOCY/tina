@@ -37,10 +37,10 @@ class Agent:
                   llm: BaseAPI, 
                   tools: Tools, 
                   system_prompt: str = None, 
-                  execute_tool: bool = True, 
                   mcp: MCPClient = None,
                   context_manager:ContextManager=None,
                   agent_runtime: BaseAgentRuntime = None,
+
                   max_tool_loop:int = 30,
                   name:str="None"):
         """
@@ -65,7 +65,6 @@ class Agent:
         self.tools = tools
         self.tools_call_result = []
         self.tools_call = []
-        self.is_execute = execute_tool
         self.mcp_client = mcp
         if context_manager is None:
             self.context_manager = ContextManager()
@@ -85,7 +84,12 @@ class Agent:
             self.runtime = ToolCallingAgentRuntime(self.llm, self.tools, self.context_manager,self.events,max_tool_loop=max_tool_loop,mcp_client=mcp)
         else:
             self.runtime = agent_runtime
-        
+    @property
+    def state(self)-> str:
+        """
+        获取当前Agent的状态
+        """
+        return self.runtime.state
     # 事件管理（对外公开 Events 的装饰器接口）
     def before_tool_call(self):
         """
@@ -154,13 +158,15 @@ class Agent:
         except Exception as e:
             raise e
 
-    def disable_tool(self, tool_name: str) -> bool:
+    def disable_tool(self, tool_names: list) -> bool:
         """
         禁用工具
         Args:
             tool_name:工具名称
         """
-        return self.tools.disable_tool(tool_name)
+        for tool_name in tool_names:
+            self.tools.disable_tool(tool_name)
+        return True
     
     def enable_tool(self, tool_name: str) -> bool:
         """

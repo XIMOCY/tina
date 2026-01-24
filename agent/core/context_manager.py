@@ -38,7 +38,7 @@ class ContextManager(BaseContextManager):
     tool_calls: list[dict[str, Any]]
     messages: list[dict[str, Any]]
 
-    def __init__(self, max_length: int = 100000, max_tool_result_length: int = 6000) -> None:
+    def __init__(self, max_length: int = 100000, max_tool_result_length: int = 10000) -> None:
         self.max_length = max_length
         self.max_tool_result_length = max_tool_result_length
         self.tool_calls = []          # 初始化 tool_calls

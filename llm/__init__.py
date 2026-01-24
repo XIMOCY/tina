@@ -1,5 +1,4 @@
-from .local_model_llama_cpp import LocalModelUsingLlamaCpp
-
+from .ollama_api import OllamaAPI
 from .BaseAPI import BaseAPI, BaseMultimodalAPI
 
 
@@ -9,5 +8,5 @@ __all__ = [
     "BaseAPI", "BaseMultimodalAPI",
     
     # 原有模型
-    "local_model_llama_cpp",
+    "OllamaAPI",
 ]

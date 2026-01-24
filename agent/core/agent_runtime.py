@@ -5,13 +5,7 @@ from ...mcp import MCPClient
 from .tools import Tools
 from .context_manager import BaseContextManager
 from typing import Generator
-from enum import Enum
-
-class AgentStatus(Enum):
-    IDLE=1
-    TOOL_CALLING = 2
-    RUNNING = 3
-    ERROR = 4
+from .state import AgentState
 
 class BaseAgentRuntime():
     """
@@ -29,7 +23,7 @@ class BaseAgentRuntime():
     tools: Tools
     context_manager: BaseContextManager
     mcp_client: MCPClient
-    status: AgentStatus
+    state: AgentState
     
     def __init__(self, llm, tools, context_manager, events = None,mcp_client=None):
         self.llm = llm
@@ -37,7 +31,7 @@ class BaseAgentRuntime():
         self.context_manager = context_manager
         self.mcp_client = mcp_client
         self.events = events
-        self.status = AgentStatus.IDLE
+        self.state = AgentState.IDLE
 
     def run_prediction_no_stream(self, instruction: str = None,
                 temperature: float = 0.5,
@@ -150,7 +144,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
         super().run_prediction_no_stream(instruction,temperature,top_p,top_k,min_p)
         counter = 0
         while counter < self.max_tool_loop:  
-            self.status = AgentStatus.RUNNING
+            self.state = AgentState.THINKING
             llm_response = self.llm.predict_no_stream(
                     messages=self.context_manager.get_messages(),
                     temperature=temperature,
@@ -159,7 +153,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                 )
             
             if "tool_calls" in llm_response:
-                self.status = AgentStatus.TOOL_CALLING
+                self.state = AgentState.TOOL_CALLING
                 _tool_calls = llm_response["tool_calls"]
                 self.context_manager.add_tool_calls(_tool_calls)
                 self._execute_tool(_tool_calls)
@@ -174,9 +168,9 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                     for handler in self.events.get_handler("after_user_instruction"):
                         handler(instruction, llm_response["content"])
                 return llm_response 
-        self.status = AgentStatus.IDLE
+        self.state = AgentState.IDLE
         if counter > self.max_tool_loop: 
-            self.status = AgentStatus.ERROR 
+            self.state = AgentState.ERROR 
             raise RuntimeError(f"超过了最大工具循环次数{self.max_tool_loop}")
         
 
@@ -201,11 +195,14 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
             content_parts:list = []
             reasoning_buffer:str =""
         
+            self.state = AgentState.RESPONDING
+
             for chunk in llm_response:
                 if chunk.get("content") is None:
                     chunk["content"] = ""
 
                 if "tool_name" in chunk or "tool_arguments" in chunk:
+                    self.state = AgentState.TOOL_CALLING
                     yield chunk
 
                 elif "tool_calls" in chunk and chunk["id"] != '':
@@ -230,6 +227,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                     break
                 
                 elif "reasoning_content" in chunk:
+                    self.state = AgentState.THINKING
                     reasoning_content = chunk.get("reasoning_content", "")
                     if reasoning_content:
                         reasoning_buffer += reasoning_content
@@ -251,6 +249,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
             if tool_called:
                 continue
             break
+        self.state = AgentState.IDLE
             
 
         if counter > self.max_tool_loop:
@@ -408,7 +407,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
         )
         counter = 0
         while counter < self.max_tool_loop:  
-            self.status = AgentStatus.RUNNING
+            self.state = AgentState.RESPONDING
             llm_response = self.llm.predict_no_stream(
                     messages=self.context_manager.get_messages(),
                     temperature=temperature,
@@ -419,7 +418,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                 )
             
             if "tool_calls" in llm_response:
-                self.status = AgentStatus.TOOL_CALLING
+                self.state = AgentState.TOOL_CALLING
                 _tool_calls = llm_response["tool_calls"]
                 self.context_manager.add_tool_calls(_tool_calls)
                 self._execute_tool(_tool_calls)
@@ -435,9 +434,9 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                     for handler in self.events.get_handler("after_user_instruction"):
                         handler(instruction, llm_response["content"])
                 return llm_response 
-        self.status = AgentStatus.IDLE
+        self.state = AgentState.IDLE
         if counter > self.max_tool_loop: 
-            self.status = AgentStatus.ERROR 
+            self.state = AgentState.ERROR 
             raise RuntimeError(f"超过了最大工具循环次数{self.max_tool_loop}")
         
 

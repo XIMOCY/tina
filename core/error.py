@@ -16,7 +16,9 @@ class ToolNotFound(TinaError):
 class ToolsAddError(TinaError):
     def __init__(self):
         super().__init__("Error adding Tools: Only objects of the Tools class can be merged. Please ensure both objects are instances of the Tools class.  \n工具合并失败：仅支持将两个Tools类对象进行合并。请检查参与合并的对象是否均为Tools类实例。")
-        
+class ToolAlreadyExists(TinaError):
+    def __init__(self, message:str):
+        super().__init__(message)
 class ToolParameterError(TinaError):
     def __init__(self, tool_name: str, parameter_name: str, parameter_type: str):
         super().__init__(f"{tool_name} parameter {parameter_name} should be {parameter_type}.")

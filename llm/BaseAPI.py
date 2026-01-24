@@ -641,6 +641,7 @@ class BaseMultimodalAPI(BaseAPI):
                                      input_image: Union[str, list[str]] = None, 
                                      input_audio: Union[str, list[str]] = None,
                                      input_url: Union[str, list[str]] = None,
+                                     image_detail: str = "auto",
                                      role: str = "user",
                                      sys_prompt: str = '你的工作非常出色！', 
                                      messages: list = None) -> list:
@@ -648,7 +649,7 @@ class BaseMultimodalAPI(BaseAPI):
         if messages is None:
             messages = [{"role": "system", "content": sys_prompt}]
     
-        user_message = build_multimodal_message(input_text, input_image, input_audio, input_url, role)
+        user_message = build_multimodal_message(input_text, input_image, input_audio, input_url,image_detail, role)
         messages.append(user_message)
         return messages
 
@@ -659,6 +660,7 @@ class BaseMultimodalAPI(BaseAPI):
                 input_image: Union[str, list[str]] = None,
                 input_audio: Union[str, list[str]] = None,
                 input_url: Union[str, list[str]] = None,
+                image_detail: str = "auto",
                 stream: bool = False,
                 role: str = "user",
                 sys_prompt: str = '你的工作非常出色！',
@@ -714,6 +716,7 @@ class BaseMultimodalAPI(BaseAPI):
                 input_image=input_image,
                 input_audio=input_audio,
                 input_url=input_url,
+                image_detail=image_detail,
                 role=role,
                 sys_prompt=sys_prompt,
                 messages=messages,
@@ -736,6 +739,7 @@ class BaseMultimodalAPI(BaseAPI):
                 input_image=input_image,
                 input_audio=input_audio,
                 input_url=input_url,
+                image_detail=image_detail,
                 role=role,
                 sys_prompt=sys_prompt,
                 messages=messages,
@@ -758,6 +762,7 @@ class BaseMultimodalAPI(BaseAPI):
                           input_image: Union[str, list[str]] = None,
                           input_audio: Union[str, list[str]] = None,
                           input_url: Union[str, list[str]] = None,
+                          image_detail: str = "auto",
                           role: str = "user",
                           sys_prompt: str = '你的工作非常出色！',
                           messages: list = None,
@@ -805,7 +810,7 @@ class BaseMultimodalAPI(BaseAPI):
             APIRequestFailed: 当API调用失败时抛出异常
         """
         prepared_messages = self._prepare_multimodal_messages(
-            input_text, input_image, input_audio, input_url, role, sys_prompt, messages
+            input_text, input_image, input_audio, input_url,image_detail, role, sys_prompt, messages
         )
         payload = self._prepare_payload(
             messages=prepared_messages, 
@@ -841,6 +846,7 @@ class BaseMultimodalAPI(BaseAPI):
                        input_image: Union[str, list[str]] = None,
                        input_audio: Union[str, list[str]] = None,
                        input_url: Union[str, list[str]] = None,
+                       image_detail: str = "auto",
                        role: str = "user",
                        sys_prompt: str = '你的工作非常出色！',
                        messages: list = None,
@@ -888,7 +894,7 @@ class BaseMultimodalAPI(BaseAPI):
             APIRequestFailed: 当API调用失败时抛出异常
         """
         prepared_messages = self._prepare_multimodal_messages(
-            input_text, input_image, input_audio, input_url, role, sys_prompt, messages
+            input_text, input_image, input_audio, input_url, image_detail,role, sys_prompt, messages
         )
         payload = self._prepare_payload(
             messages=prepared_messages, 
@@ -913,6 +919,7 @@ class BaseMultimodalAPI(BaseAPI):
                        input_image: Union[str, list[str]] = None,
                        input_audio: Union[str, list[str]] = None,
                        input_url: Union[str, list[str]] = None,
+                       image_detail: str = "auto",
                        stream: bool = False,
                        role: str = "user",
                        sys_prompt: str = '你的工作非常出色！',
@@ -1011,6 +1018,7 @@ class BaseMultimodalAPI(BaseAPI):
                                  input_image: Union[str, list[str]] = None,
                                  input_audio: Union[str, list[str]] = None,
                                  input_url: Union[str, list[str]] = None,
+                                 image_detail: str = "auto",
                                  role: str = "user",
                                  sys_prompt: str = '你的工作非常出色！',
                                  messages: list = None,
@@ -1058,7 +1066,7 @@ class BaseMultimodalAPI(BaseAPI):
             APIRequestFailed: 当API调用失败时抛出异常
         """
         prepared_messages = self._prepare_multimodal_messages(
-            input_text, input_image, input_audio, input_url, role, sys_prompt, messages
+            input_text, input_image, input_audio, input_url,image_detail, role, sys_prompt, messages
         )
         payload = self._prepare_payload(
             messages=prepared_messages, 
@@ -1095,6 +1103,7 @@ class BaseMultimodalAPI(BaseAPI):
                               input_image: Union[str, list[str]] = None,
                               input_audio: Union[str, list[str]] = None,
                               input_url: Union[str, list[str]] = None,
+                              image_detail: str = "auto",
                               role: str = "user",
                               sys_prompt: str = '你的工作非常出色！',
                               messages: list = None,
@@ -1143,7 +1152,7 @@ class BaseMultimodalAPI(BaseAPI):
         """
         from ..utils.output_parser import astream_generator_parser
         prepared_messages = self._prepare_multimodal_messages(
-            input_text, input_image, input_audio, input_url, role, sys_prompt, messages
+            input_text, input_image, input_audio, input_url,image_detail, role, sys_prompt, messages
         )
         payload = self._prepare_payload(
             messages=prepared_messages, 
