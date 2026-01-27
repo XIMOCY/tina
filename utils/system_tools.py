@@ -15,7 +15,7 @@ import time
 from contextlib import redirect_stdout, redirect_stderr
 from tina import Tools
 
-system_tools = Tools(name="tina_system_tools")
+system_tools = Tools(name="tina_sys_tools")
 
 
 @system_tools.register()

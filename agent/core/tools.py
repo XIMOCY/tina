@@ -1,21 +1,22 @@
 """
 编写者：王出日
-日期：2025，5，20
+日期：2026，1，24
 版本 0.5.0
-描述：工具类，用于管理大模型的工具
+描述：工具类，采用挂载式架构，支持递归搜集。
 包含：
 Tools类：用于管理大模型的工具，包括注册、查询、调用等功能
 """
 import inspect
 import re
+from typing import Callable, List, Dict
 from .executor import ToolsExecutor
 from ...utils.doc_parser import parse_docstring
-from ...core.error import ToolNotFound, ToolsAddError,ToolAlreadyExists
+from ...core.error import ToolNotFound, ToolsAddError, ToolAlreadyExists, ToolsNotNamed
 from ...utils.type_mapper import convert_tools_for_llm
 
 class Tool:
     name: str
-    tool: callable
+    tool: Callable
     description: str
     required_parameters: list
     parameters: dict
@@ -28,7 +29,7 @@ class Tool:
     belongs_to: str
 
     def __init__(self,
-                 tool: callable,
+                 tool: Callable,
                  description: str,
                  parameters: dict = {},
                  required_parameters: list = [],
@@ -77,9 +78,8 @@ class Tool:
         return self.schema
 
 class Tools:
-    tools: list[Tool]
-    tools_names: list[str]
-    tools_schemas: list[dict]
+    _direct_tools: List[Tool]
+    _sub_bundles: List["Tools"]
     tools_executor: ToolsExecutor
 
     def __init__(self, tools_executor: ToolsExecutor = ToolsExecutor(), name: str = None):
@@ -89,161 +89,119 @@ class Tools:
             tools_executor (ToolsExecutor): 工具执行器对象
             name (str): 工具包名称 默认为空 当你需要分发你的工具包时 建议填写
         """
-        self.tools = [] 
-        self.tools_names = [] 
-        self.tools_schemas = [] 
+        self._direct_tools = [] 
+        self._sub_bundles = []
         self.disable_tools = {} 
         self.tools_executor = tools_executor
         self.instance_name = name
 
-    def _add_single_tool(self, tool_obj: Tool, source_instance_name: str):
-        """
-        内部方法：将单个工具对象添加到当前容器中
-        """
-        # 获取该工具在当前容器层级的显示名称（逻辑名称）
-        logic_name = tool_obj.name
-        
-        # 核心修改：检测同名冲突
-        if logic_name in self.tools_names:
-            # 找到冲突的工具，抛出错误并提供建议
-            error_msg = (
-                f"检测到工具名称冲突: '{logic_name}' 已存在于当前工具集中。\n"
-                f"冲突源来自工具包: '{source_instance_name if source_instance_name else '未命名包'}'。\n"
-                f"建议解决方法: 在实例化 Tools 时设置 'name' 参数以启用自动命名空间（前缀），"
-                f"例如: Tools(name='my_plugin')"
-            )
-            raise ToolAlreadyExists(error_msg)
 
-        # 为了防止不同包之间的对象引用冲突，创建一个新的 Tool 实例进行属性封装
-        new_tool = Tool(
-            tool=tool_obj.tool,
-            description=tool_obj.description,
-            parameters=tool_obj.parameters,
-            required_parameters=tool_obj.required_parameters,
-            require_confirmation=tool_obj.require_confirmation,
-            require_persistence=tool_obj.require_persistence,
-            return_image=tool_obj.return_image,
-            return_audio=tool_obj.return_audio,
-            return_url=tool_obj.return_url,
-            schema=tool_obj.schema.copy(),
-            belongs_to=source_instance_name
-        )
-        
-        # 同步逻辑名称
-        new_tool.name = logic_name
-        if "function" in new_tool.schema:
-            new_tool.schema["function"]["name"] = logic_name
+    @property
+    def tools(self) -> List[Tool]:
+        """递归搜集所有本级及子包的工具对象"""
+        all_t = self._direct_tools.copy()
+        for bundle in self._sub_bundles:
+            all_t.extend(bundle.tools)
+        return all_t
 
-        self.tools.append(new_tool)
-        self.tools_names.append(logic_name)
-        self.tools_schemas.append(new_tool.schema)
+    @property
+    def tools_names(self) -> List[str]:
+        """动态生成当前所有工具的名称列表"""
+        return [t.name for t in self.tools]
 
-    def add_tools(self, other: "Tools") -> None:
-        self += other
+    @property
+    def tools_schemas(self) -> List[Dict]:
+        """动态生成当前所有工具的 JSON Schema 列表"""
+        return [t.schema for t in self.tools if t.name not in self.disable_tools]
 
-    def __iadd__(self, other):
+
+    def _check(self, other):
         if not isinstance(other, Tools):
-            raise ToolsAddError("只能与 Tools 类型的对象进行加法操作")
-        for t in other.tools:
-            self._add_single_tool(t, other.instance_name)
+            raise ToolsAddError()
+        if not self.instance_name or not other.instance_name:
+            raise ToolsNotNamed()
+
+    def __iadd__(self, other: "Tools"):
+        self._check(other)
+        if other not in self._sub_bundles:
+            # 检查同名冲突，保护命名空间
+            conflicts = set(self.tools_names) & set(other.tools_names)
+            if conflicts:
+                raise ToolAlreadyExists(f"挂载失败：工具 {conflicts} 已存在。")
+            self._sub_bundles.append(other)
         return self
 
-    def __add__(self, other):
-        if not isinstance(other, Tools):
-            raise ToolsAddError("只能与 Tools 类型的对象进行加法操作")
+    def __isub__(self, other: "Tools"):
+        self._check(other)
+        if other in self._sub_bundles:
+            self._sub_bundles.remove(other)
+        return self
+
+    def __add__(self, other: "Tools"):
+        self._check(other)
         combined = Tools(self.tools_executor, name=self.instance_name)
-        for t in self.tools:
-            combined._add_single_tool(t, self.instance_name)
-        for t in other.tools:
-            combined._add_single_tool(t, other.instance_name)
+        combined += self
+        combined += other
         return combined
 
-    def __sub__(self, other):
-        if not isinstance(other, Tools):
-            raise ToolsAddError()
+    def __sub__(self, other: "Tools"):
+        self._check(other)
         result = Tools(self.tools_executor, name=self.instance_name)
-        # 减法基于原始函数对象判断
-        other_funcs = {t.tool for t in other.tools}
-        for t in self.tools:
-            if t.tool not in other_funcs:
-                result._add_single_tool(t, t.belongs_to)
+        result += self
+        result -= other
         return result
+    
+    def add_tools(self, tools):
+        self+=tools
+    def sub_tools(self, tools):
+        self-=tools
 
-    def __isub__(self, other):
-        if not isinstance(other, Tools):
-            raise ToolsAddError()
-        other_funcs = {t.tool for t in other.tools}
-        for i in range(len(self.tools) - 1, -1, -1):
-            if self.tools[i].tool in other_funcs:
-                self.tools.pop(i)
-                self.tools_names.pop(i)
-                self.tools_schemas.pop(i)
-        return self
+    # --- 注册管理 ---
 
-    def register_no_function(self,
-                name: str,
-                description: str,
-                required_parameters: list, 
-                parameters: dict
-            ):
-        if not isinstance(name, str) or not name:
-            raise ValueError("函数名称必须是非空字符串")
-        
-        # 注册无函数工具时应用前缀规则
-        logic_name = name
-        if self.instance_name:
-            logic_name = f"{self.instance_name}_{name}"
-
-        schema = {
-            "type": "function",
-            "function": {
-                "name": logic_name,
-                "description": description,
-                "parameters": {
-                    "type": "object",
-                    "required": required_parameters,
-                    "properties": parameters
-                }
-            }
-        }
-        _tool = Tool(
-            tool=lambda **k: None,
-            description=description,
-            parameters=parameters,
-            required_parameters=required_parameters,
-            schema=schema
-        )
-        _tool.name = logic_name
-        self.tools.append(_tool)
-        self.tools_names.append(logic_name)
-        self.tools_schemas.append(schema)
-
-    def unregister(self, name: str):
-        if name not in self.tools_names:
-            raise ToolNotFound(name)
-        index = self.tools_names.index(name)
-        del self.tools_schemas[index]
-        del self.tools_names[index]
-        del self.tools[index]
-        return True
-
-    def register(self, description: str = None, require_confirmation: bool = False, require_persistence: bool = False, return_image: bool = False, return_audio: bool = False, return_url: bool = False):
+    def register(self, description: str = None, require_confirmation: bool = False, 
+                 require_persistence: bool = False, return_image: bool = False, 
+                 return_audio: bool = False, return_url: bool = False):
+        """
+        注册一个工具，只需要打上这个装饰器即可  
+        会自动解析你的注释  
+        @[你实例化的名称].register()
+        Args:
+            description (str): 工具的描述
+            require_confirmation (bool): 是否需要用户确认
+            require_persistence (bool): 是否需要持久化运行
+            return_image (bool): 是否返回图片 多模态Agent适用 会自动地把工具的图片提交给模型
+            return_audio (bool): 是否返回音频 多模态Agent适用 会自动地把工具的音频提交给模型
+            return_url (bool): 是否返回 URL 多模态Agent适用 会自动地把URL提交给模型
+        """
         def decorator(func):
-            self.register_tool(func, description, require_confirmation=require_confirmation, require_persistence=require_persistence, return_image=return_image, return_audio=return_audio, return_url=return_url)
+            self.register_tool(func, description, require_confirmation=require_confirmation, 
+                               require_persistence=require_persistence, return_image=return_image, 
+                               return_audio=return_audio, return_url=return_url)
             return func
         return decorator
 
-    def register_tool(self, tool: callable, description: str = None, require_confirmation: bool = False, require_persistence: bool = False, return_image: bool = False, return_audio: bool = False, return_url: bool = False) -> dict:
+    def register_tool(self, tool: Callable, description: str = None, require_confirmation: bool = False, 
+                      require_persistence: bool = False, return_image: bool = False, 
+                      return_audio: bool = False, return_url: bool = False) -> dict:
+        """
+        注册一个工具
+        会自动解析你的注释  
+        [你实例化的名称].register_tool(tool = )
+        Args:
+            description (str): 工具的描述
+            require_confirmation (bool): 是否需要用户确认
+            require_persistence (bool): 是否需要持久化运行
+            return_image (bool): 是否返回图片 多模态Agent适用 会自动地把工具的图片提交给模型
+            return_audio (bool): 是否返回音频 多模态Agent适用 会自动地把工具的音频提交给模型
+            return_url (bool): 是否返回 URL 多模态Agent适用 会自动地把URL提交给模型
+        """
         original_name = tool.__name__
-        
-        # 只有在 Tools(name="...") 显式命名时才强制加前缀
-        logic_name = original_name
-        if self.instance_name:
-            logic_name = f"{self.instance_name}_{original_name}"
+        logic_name = f"{self.instance_name}_{original_name}" if self.instance_name else original_name
 
-        if logic_name in self.tools_names:
+        if logic_name in [t.name for t in self._direct_tools]:
             return self.get_tool_info(logic_name)
         
+        # 参数与文档解析
         parameters_sig = inspect.signature(tool).parameters
         required_parameters = [p for p in parameters_sig if parameters_sig[p].default is inspect.Parameter.empty]
         p_doc = parse_docstring(tool.__doc__)
@@ -286,11 +244,22 @@ class Tools:
             belongs_to=self.instance_name
         )
         _tool.name = logic_name
-        
-        self.tools.append(_tool)
-        self.tools_names.append(logic_name)
-        self.tools_schemas.append(schema)
+        self._direct_tools.append(_tool)
         return schema
+
+    # --- 原有功能方法适配 ---
+
+    def unregister(self, name: str):
+        """
+        注销一个工具
+        Args:
+            name (str): 工具名称
+        """
+        for i, t in enumerate(self._direct_tools):
+            if t.name == name:
+                self._direct_tools.pop(i)
+                return True
+        raise ToolNotFound(name)
 
     def _get_description(self, tool, description):
         doc_content = tool.__doc__.strip() if tool.__doc__ else ""
@@ -298,31 +267,23 @@ class Tools:
         description_part = description_part.strip()
         return description if description is not None else description_part
 
-    def disable_tool(self, tool_name: str) -> bool:
-        if tool_name not in self.disable_tools:
-            for i, t in enumerate(self.tools_schemas):
-                if t["function"]["name"] == tool_name:
-                    self.disable_tools[tool_name] = t
-                    del self.tools_schemas[i]
-                    return True
-        return False
-        
-    def enable_tool(self, tool_name: str):
-        if tool_name in self.disable_tools:
-            self.tools_schemas.append(self.disable_tools.pop(tool_name))
-            return True
-        return False
-
     def execute(self, _tool_calls, _mcp_client=None, timeout=60, events=None) -> any:
+        """
+        执行工具 可以直接传递Tool_Calls列表
+        Args:
+            _tool_calls (list): 工具调用列表
+            _mcp_client (MCPClient): MCP客户端
+            timeout (int): 超时时间（秒）, 默认60秒
+        """
         return self.tools_executor.execute(_tool_calls, self, _mcp_client, timeout, events)
 
     async def aexecute(self, _tool_calls, _mcp_client=None, timeout=60, events=None) -> any:
         return await self.tools_executor.aexecute(_tool_calls, self, _mcp_client, timeout, events)
 
     def _get_tool_by_name(self, name: str) -> Tool:
-        if name not in self.tools_names:
-            raise ToolNotFound(name)
-        return self.tools[self.tools_names.index(name)]
+        for t in self.tools:
+            if t.name == name: return t
+        raise ToolNotFound(name)
 
     def get_require_confirmations(self, name: str):
         return self._get_tool_by_name(name).require_confirmation
@@ -348,4 +309,25 @@ class Tools:
         return True
     
     def get_tools(self) -> list:
+        """
+        获取所有工具的schema
+        """
         return self.tools_schemas
+
+    def __repr__(self):
+        name_str = f"'{self.instance_name}'" if self.instance_name else "Unnamed"
+        return f"<Tools {name_str}, direct={len(self._direct_tools)}, sub={len(self._sub_bundles)}>"
+
+    def __str__(self):
+        header = f"工具集: [{self.instance_name or '未命名'}]"
+        line = "=" * 40
+        result = f"\n{header}\n{line}\n"
+        all_tools = self.tools
+        if not all_tools:
+            return result + " (当前工具集为空)\n"
+        for tool in all_tools:
+            result += f"▶ 名称: {tool.name}\n"
+            result += f"   归属: [{tool.belongs_to or '直接注册'}]\n"
+            result += f"   描述: {tool.description}\n"
+            result += f"   {'-' * 20}\n"
+        return result

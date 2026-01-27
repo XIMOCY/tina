@@ -41,12 +41,12 @@ class BaseAPI():
                 role: str = "user"
                 ):
         self.logger = logger
-        self.env_reader = EnvReader(env_file=env_path)
         try:
+            self.env_reader = EnvReader(env_file=env_path)
             self.api_key = self.env_reader.getAPIKey() if api_key is None else api_key
             self.base_url = self.env_reader.getBaseUrl() if base_url is None else base_url
             self.model = self.env_reader.getModel() if model is None else model
-        except KeyError:
+        except Exception as e:
             logger.error("BaseAPI - env内参数名称错误：请检查")
             raise ValueError("env内参数名称错误：请检查")
 

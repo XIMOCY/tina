@@ -4,7 +4,7 @@ from ..agent import Agent
 
 def run_agent_in_cli(agent: Agent):
     """
-    提供更友好交互体验的 Tina CLI 运行环境
+    提供一个测试使用的cli
     """
     async def run():
 

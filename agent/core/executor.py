@@ -77,7 +77,7 @@ class ToolsExecutor:
                         raise NoConfirmationHanlder()
 
                     confirmation_handler = active_events.get_tool_confirmation_handler()
-                    # Events 默认把 on_tool_confirmation 初始化为内置 callable，需要特殊处理视为「未注册」
+
                     if confirmation_handler is None:
                         raise NoConfirmationHanlder()
 

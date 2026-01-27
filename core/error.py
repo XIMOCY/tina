@@ -19,6 +19,9 @@ class ToolsAddError(TinaError):
 class ToolAlreadyExists(TinaError):
     def __init__(self, message:str):
         super().__init__(message)
+class ToolsNotNamed(TinaError):
+    def __init__(self):
+        super().__init__("Tools not named. Please name your Tools instance. \n工具包没有命名，这会导致无法识别工具归属，删除失效，请在分发你的工具包时指定name参数。")
 class ToolParameterError(TinaError):
     def __init__(self, tool_name: str, parameter_name: str, parameter_type: str):
         super().__init__(f"{tool_name} parameter {parameter_name} should be {parameter_type}.")
