@@ -42,7 +42,7 @@ class Agent:
                   agent_runtime: BaseAgentRuntime = None,
 
                   max_tool_loop:int = 30,
-                  name:str="None"):
+                  name:str=None):
         """
         实例化一个Agent对象
         
@@ -84,6 +84,7 @@ class Agent:
             self.runtime = ToolCallingAgentRuntime(self.llm, self.tools, self.context_manager,self.events,max_tool_loop=max_tool_loop,mcp_client=mcp)
         else:
             self.runtime = agent_runtime
+        self.other_agents = []
     @property
     def state(self)-> str:
         """
@@ -146,7 +147,14 @@ class Agent:
         tool_name: str tool_arguments: dict
         """
         return self.events.on_tool_confirmation()
-
+    def add_event_handler(self, event_name: str, func):
+        """
+        添加事件处理函数
+        Args:
+            event_name:事件名称
+            func:事件处理函数
+        """
+        self.events.add_handler(event_name, func)
     def _mcp_to_tools(self, MCP):
         """如果传入了MCP，则将MCP的工具集加入到当前的工具集中"""
         try:
@@ -199,8 +207,31 @@ class Agent:
         获取当前Agent的提示词
         """
         return self.context_manager.get_system_message()
-    
-    def add_message(self, role: str = None, content: str = None) -> None:
+
+    def connect_agent(self,agent:"Agent" | list["Agent"]):
+        """
+        与另一个Agent共享消息列表
+        Args:
+            agent:Agent对象
+        """
+        if type(agent) == list:
+            for _agent in agent:
+                self.other_agents.append(_agent)
+        else:
+            self.other_agents.append(agent)
+
+    def disconnect_agent(self,agent:"Agent" | list["Agent"]):
+        """
+        与另一个Agent断开连接
+        Args:
+            agent:Agent对象
+        """
+        if type(agent) == list:
+            for _agent in agent:
+                self.other_agents.remove(_agent)
+        else:
+            self.other_agents.remove(agent)
+    def add_message(self, role: str = None, content: str = None,name:str=None) -> None:
         """
         添加消息
         """
@@ -210,7 +241,7 @@ class Agent:
             self.context_manager.add_user_message(content)
             return
         elif role == "assistant":
-            self.context_manager.add_assistant_message(content)
+            self.context_manager.add_assistant_message(content,name)
             return
         
     def add_messages(self,messages: list[dict[str,str]] = None) -> None:
@@ -222,8 +253,7 @@ class Agent:
             messages:消息列表，可以一次性添加多个消息,格式为[{"role": "user", "content": "你好，我是用户"}]，注意如果传入了messages，则role和content参数将被忽略
         """
         self.messages = self.context_manager.add_messages(messages)
-
-
+    
     def get_tools_call_result(self) -> list:
         """
         获取当前Agent的工具调用结果列表

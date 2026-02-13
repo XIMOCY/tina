@@ -6,7 +6,7 @@ from .tools import Tools
 from .context_manager import BaseContextManager
 from typing import Generator
 from .state import AgentState
-
+from .events import Events
 class BaseAgentRuntime():
     """
     Agent运行时环境，包含LLM、工具、系统提示等信息  
@@ -30,7 +30,7 @@ class BaseAgentRuntime():
         self.tools = tools
         self.context_manager = context_manager
         self.mcp_client = mcp_client
-        self.events = events
+        self.events:Events = events
         self.state = AgentState.IDLE
 
     def run_prediction_no_stream(self, instruction: str = None,
@@ -61,7 +61,7 @@ class BaseAgentRuntime():
                 top_k: int = 1,
                 min_p: float = 0.0,
                 ):
-        self._instruction(instruction)
+        await self._ainstruction(instruction)
 
     async def arun_prediction_stream(self, instruction: str = None,
                 temperature: float = 0.5,
@@ -69,16 +69,16 @@ class BaseAgentRuntime():
                 top_k: int = 1,
                 min_p: float = 0.0,
                 ):
-        self._instruction(instruction)
+        await self._ainstruction(instruction)
 
     def _instruction(self, instruction):
         if instruction is not None:
-            # 用户输入前事件（同步环境下仅支持同步 handler）
-            if self.events is not None:
-                for handler in self.events.get_handler("before_user_instruction"):
-                    handler(instruction)
+            instruction = self.events.trigger_before_user_instruction(user_message=instruction)
             self.context_manager.add_user_message(instruction)
-
+    async def _ainstruction(self, instruction):
+        if instruction is not None:
+            instruction = await self.events.atrigger_before_user_instruction(user_message=instruction)
+            self.context_manager.add_user_message(instruction)
     def _execute_tool(self, _tool_calls)-> str:
         """执行工具调用并返回结果"""
 
@@ -162,11 +162,10 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
 
                 continue
             else:
+                llm_response["content"] = self.events.trigger_after_user_instruction(user_message=instruction,assistant_message=llm_response["content"])
                 self.context_manager.add_assistant_message(llm_response["content"])
                 # 用户输入后事件（同步非流式）
-                if self.events is not None and instruction is not None:
-                    for handler in self.events.get_handler("after_user_instruction"):
-                        handler(instruction, llm_response["content"])
+                
                 return llm_response 
         self.state = AgentState.IDLE
         if counter > self.max_tool_loop: 
@@ -204,7 +203,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                 if "tool_name" in chunk or "tool_arguments" in chunk:
                     self.state = AgentState.TOOL_CALLING
                     yield chunk
-
+                # id用于检验这次的工具传输有没有断流 如果没有id则说明这次的工具调用是不完整的
                 elif "tool_calls" in chunk and chunk["id"] != '':
                     whole_content = "".join(content_parts)
 
@@ -240,11 +239,10 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
 
             whole_content = "".join(content_parts)
             if whole_content:
+                whole_content = self.events.trigger_after_user_instruction(user_message=instruction, assistant_message=whole_content)
                 self.context_manager.add_assistant_message(whole_content)
                 # 用户输入后事件（同步流式）
-                if self.events is not None and instruction is not None:
-                    for handler in self.events.get_handler("after_user_instruction"):
-                        handler(instruction, whole_content)
+                
 
             if tool_called:
                 continue
@@ -280,14 +278,10 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
 
                 continue
             else:
+                llm_result["content"] = await self.events.atrigger_after_user_instruction(user_message=instruction, assistant_message=llm_result["content"])
                 self.context_manager.add_assistant_message(llm_result["content"])
                 # 用户输入后事件（异步非流式）
-                if self.events is not None and instruction is not None:
-                    for handler in self.events.get_handler("after_user_instruction"):
-                        if inspect.iscoroutinefunction(handler):
-                            await handler(instruction, llm_result["content"])
-                        else:
-                            handler(instruction, llm_result["content"])
+                
                 return llm_result 
         if counter > self.max_tool_loop:  
             raise RuntimeError(f"超过了最大工具循环次数{self.max_tool_loop}")
@@ -356,15 +350,10 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
 
             whole_content = "".join(content_parts)
             if whole_content:
+                whole_content = await self.events.atrigger_after_user_instruction(user_message=instruction, assistant_message=whole_content)
                 self.context_manager.add_assistant_message(whole_content)
                 # 用户输入后事件（异步流式）
-                if self.events is not None and instruction is not None:
-                    for handler in self.events.get_handler("after_user_instruction"):
-                        if inspect.iscoroutinefunction(handler):
-                            await handler(instruction, whole_content)
-                        else:
-                            handler(instruction, whole_content)
-
+                
             if tool_called:
                 continue
             break
@@ -430,9 +419,8 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
             else:
                 self.context_manager.add_assistant_message(llm_response["content"])
                 # 用户输入后事件（同步非流式）
-                if self.events is not None and instruction is not None:
-                    for handler in self.events.get_handler("after_user_instruction"):
-                        handler(instruction, llm_response["content"])
+                llm_assistant_message = llm_response["content"]
+                llm_assistant_message = self.events.trigger_after_user_instruction(user_message=instruction, assistant_message=llm_assistant_message)
                 return llm_response 
         self.state = AgentState.IDLE
         if counter > self.max_tool_loop: 
@@ -509,11 +497,9 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
 
             whole_content = "".join(content_parts)
             if whole_content:
-                self.context_manager.add_assistant_message(whole_content)
                 # 用户输入后事件（同步流式）
-                if self.events is not None and instruction is not None:
-                    for handler in self.events.get_handler("after_user_instruction"):
-                        handler(instruction, whole_content)
+                whole_content = self.events.trigger_after_user_instruction(user_message=instruction, assistant_message=whole_content)
+                self.context_manager.add_assistant_message(whole_content)
 
             if tool_called:
                 continue
@@ -558,12 +544,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
             else:
                 self.context_manager.add_assistant_message(llm_result["content"])
                 # 用户输入后事件（异步非流式）
-                if self.events is not None and instruction is not None:
-                    for handler in self.events.get_handler("after_user_instruction"):
-                        if inspect.iscoroutinefunction(handler):
-                            await handler(instruction, llm_result["content"])
-                        else:
-                            handler(instruction, llm_result["content"])
+                llm_result["content"] = await self.events.atrigger_after_user_instruction(user_message=instruction, assistant_message=llm_result["content"])
                 return llm_result 
         if counter > self.max_tool_loop:  
             raise RuntimeError(f"超过了最大工具循环次数{self.max_tool_loop}")
@@ -640,14 +621,11 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
 
             whole_content = "".join(content_parts)
             if whole_content:
+                whole_content = await self.events.atrigger_after_user_instruction(user_message=instruction, assistant_message=whole_content)
+
                 self.context_manager.add_assistant_message(whole_content)
                 # 用户输入后事件（异步流式）
-                if self.events is not None and instruction is not None:
-                    for handler in self.events.get_handler("after_user_instruction"):
-                        if inspect.iscoroutinefunction(handler):
-                            await handler(instruction, whole_content)
-                        else:
-                            handler(instruction, whole_content)
+                
 
             if tool_called:
                 continue

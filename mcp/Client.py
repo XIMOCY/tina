@@ -1,907 +1,208 @@
-"""
-MCP客户端类
-用于管理MCP服务端工具，并与现有的Tools类集成
-"""
 import asyncio
 import json
 import uuid
 import threading
-from typing import Dict, List, Any, Optional, Union ,Tuple
+from typing import Dict, List, Any, Optional, Union, Tuple
 from contextlib import AsyncExitStack
 from datetime import datetime
-
+from ..core import logger # 假设你有统一的logger
 
 try:
-    from mcp import ClientSession,StdioServerParameters
-    from mcp.client.sse import sse_client
+    from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
+    from mcp.client.sse import sse_client
     MCP_AVAILABLE = True
 except ImportError:
     MCP_AVAILABLE = False
 
-
-
-
 class MCPClient:
-    """
-    MCP客户端类，用于管理与MCP服务端的连接和交互
-    
-    功能：
-    1. 从服务端获取工具
-    2. 配置和添加服务端
-    3. 将请求发送给服务端
-    4. 获取智能体请求的历史
-    5. 与现有的Tools类集成
-    """
-    
     def __init__(self):
-        """初始化MCP客户端"""
         if not MCP_AVAILABLE:
             raise ImportError("请先安装MCP依赖: pip install mcp-python")
             
-        self.servers = {}  # 存储服务端连接信息 {server_id: {session, tools, config}}
-        self.exit_stack = AsyncExitStack()
-        self.request_history = []  # 存储请求历史
+        self.servers = {}  # {server_id: {"session": s, "stack": stack, "tools": [], "config": {}}}
+        self.request_history = []
         self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
         self._loop_is_running = False
-        # 启动事件循环线程
+        self._lock = threading.Lock() # 保护 servers 字典的线程安全
+        
         self.start_loop_thread()
-    
+
     def start_loop_thread(self):
-        """启动一个专用线程来运行事件循环"""
+        """启动专用后台线程运行事件循环"""
         def run_event_loop():
             asyncio.set_event_loop(self.loop)
+            self._loop_is_running = True
             try:
                 self.loop.run_forever()
-            except Exception as e:
-                print(f"事件循环线程出错: {e}")
             finally:
-                # 确保循环关闭
-                try:
-                    pending_tasks = [t for t in asyncio.all_tasks(self.loop) 
-                                  if not t.done() and t is not asyncio.current_task(self.loop)]
-                    if pending_tasks:
-                        self.loop.run_until_complete(asyncio.gather(*pending_tasks, return_exceptions=True))
-                    self.loop.run_until_complete(self.loop.shutdown_asyncgens())
-                    if hasattr(self.loop, 'shutdown_default_executor'):
-                        self.loop.run_until_complete(self.loop.shutdown_default_executor())
-                except Exception:
-                    pass  # Ignore errors during cleanup
-                finally:
-                    self.loop.close()
-                    self._loop_is_running = False
+                # 最后的清理逻辑
+                self._loop_is_running = False
+                self.loop.close()
         
-        if not self._loop_is_running:
-            self._loop_is_running = True
-            thread = threading.Thread(target=run_event_loop, daemon=True)
-            thread.start()
-    
-    # 同步方法 - 用户主要使用的方法
-    
-    def add_server(self, server_id: str, config: Dict[str, Any], max_retries=3, timeout=90) -> bool:
-        """
-        添加MCP服务端（同步版本，带重试机制）
-        
-        Args:
-            server_id: 服务端唯一标识
-            config: 服务端配置，格式为:
-                   - SSE: {"type": "sse", "url": "https://example.com/sse"}
-                   - stdio: {"type": "stdio", "command": "python", "args": ["server.py"]}
-            max_retries: 最大重试次数
-            timeout: 每次尝试的超时时间（秒）
-        
-        Returns:
-            bool: 添加是否成功
-        """
-        for attempt in range(max_retries):
-            try:
-                if not self._loop_is_running:
-                    self.start_loop_thread()
-                
-                future = asyncio.run_coroutine_threadsafe(
-                    self._add_server_async(server_id, config), 
-                    self.loop
-                )
-                result = future.result(timeout=timeout)
-                if result:
-                    return True
-                elif attempt < max_retries - 1:
-                    import time
-                    time.sleep(2)
-                else:
-                    return False
-            except asyncio.TimeoutError:
-                if attempt < max_retries - 1:
-                    import time
-                    time.sleep(2)
-                else:
-                    return False
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    import time
-                    time.sleep(2)
-                else:
-                    return False
-        
-        return False
-    
-    def close_server(self, server_id: str, max_retries=2, timeout=30) -> bool:
-        """
-        关闭指定服务端连接（同步版本）
-        
-        Args:
-            server_id: 服务端唯一标识
-            max_retries: 最大重试次数
-            timeout: 每次尝试的超时时间（秒）
-        
-        Returns:
-            bool: 关闭是否成功
-        """
-        for attempt in range(max_retries):
-            try:
-                # 确保事件循环在运行
-                if not self._loop_is_running:
-                    self.start_loop_thread()
-                    
-                future = asyncio.run_coroutine_threadsafe(
-                    self._close_server_async(server_id), 
-                    self.loop
-                )
-                return future.result(timeout=timeout)
-            except asyncio.TimeoutError:
-                if attempt < max_retries - 1:
-                    import time
-                    time.sleep(1)
-                else:
-                    return False
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    import time
-                    time.sleep(1)
-                else:
-                    return False
-        
-        return False
-    
-    def remove_server(self, server_id: str) -> bool:
-        """
-        移除MCP服务端（同步版本）
-        
-        Args:
-            server_id: 服务端唯一标识
-        
-        Returns:
-            bool: 移除是否成功
-        """
-        return self.close_server(server_id)
-    def set_post_handler(self,called_function:callable,post_handler: callable) -> None:
-        """
-        设置一个函数，用于在每次请求后调用
-        Args:
-            fun: 函数，接受一个参数，参数为请求记录
-        Returns:
-            None
-        """
-        if not callable(called_function):
-            raise ValueError("called_function必须是一个可调用的函数")
-        if not callable(post_handler):
-            raise ValueError("post_handler必须是一个可调用的函数")
-        original_function = called_function
+        thread = threading.Thread(target=run_event_loop, daemon=True)
+        thread.start()
 
-        def wrapped_function(*args, **kwargs):
-            result = original_function(*args, **kwargs)
-            try:
-                post_handler(result)
-            except Exception as e:
-                print(f"Post handler error: {e}")
-            return result
+    # --- 核心内部异步实现 (解决资源残留) ---
 
-        # 替换原函数
-        if hasattr(original_function, '__self__') and original_function.__self__ is not None:
-            # 方法
-            setattr(original_function.__self__, original_function.__name__, wrapped_function)
-        else:
-            # 普通函数
-            globals()[original_function.__name__] = wrapped_function
-
-    def get_tools(self, server_id: Optional[str] = None, max_retries=2, timeout=30) -> List[Dict[str, Any]]:
-        """
-        获取服务端提供的工具（同步版本）
-        
-        Args:
-            server_id: 服务端唯一标识，如果为None，则返回所有服务端的工具
-            max_retries: 最大重试次数
-            timeout: 每次尝试的超时时间（秒）
-        
-        Returns:
-            List[Dict[str, Any]]: 工具列表
-        """
-        for attempt in range(max_retries):
-            try:
-                if attempt > 0:
-                    print(f"尝试获取工具 (尝试 {attempt+1}/{max_retries})...")
-                
-                # 确保事件循环在运行
-                if not self._loop_is_running:
-                    self.start_loop_thread()
-                    
-                future = asyncio.run_coroutine_threadsafe(
-                    self._get_tools_async(server_id), 
-                    self.loop
-                )
-                return future.result(timeout=timeout)
-            except asyncio.TimeoutError:
-                print(f"获取工具超时")
-                if attempt < max_retries - 1:
-                    print(f"将在1秒后重试...")
-                    import time
-                    time.sleep(1)
-                else:
-                    print(f"获取工具在 {max_retries} 次尝试后仍然超时")
-                    return []
-            except Exception as e:
-                print(f"获取工具调用失败: {e}")
-                if attempt < max_retries - 1:
-                    print(f"将在1秒后重试...")
-                    import time
-                    time.sleep(1)
-                else:
-                    return []
-        
-        return []
-    
-    def call_tool(self, tool_name: str, tool_args: Dict[str, Any], server_id: Optional[str] = None, max_retries=2, timeout=120) -> Dict[str, Any]:
-        """
-        调用工具（同步版本）
-        
-        Args:
-            tool_name: 工具名称
-            tool_args: 工具参数
-            server_id: 服务端唯一标识，如果为None，则在所有服务端中查找工具
-            max_retries: 最大重试次数
-            timeout: 每次尝试的超时时间（秒）
-        
-        Returns:
-            Dict[str, Any]: 工具调用结果
-        """
-        for attempt in range(max_retries):
-            try:
-                if attempt > 0:
-                    print(f"尝试调用工具 {tool_name} (尝试 {attempt+1}/{max_retries})...")
-                
-                # 确保事件循环在运行
-                if not self._loop_is_running:
-                    self.start_loop_thread()
-                    
-                future = asyncio.run_coroutine_threadsafe(
-                    self._call_tool_async(tool_name, tool_args, server_id), 
-                    self.loop
-                )
-                return future.result(timeout=timeout)
-            except asyncio.TimeoutError as e:
-                print(f"调用工具 {tool_name} 超时")
-                if attempt < max_retries - 1:
-                    print(f"将在1秒后重试...")
-                    import time
-                    time.sleep(1)
-                else:
-                    print(f"调用工具 {tool_name} 在 {max_retries} 次尝试后仍然超时")
-                    return {
-                        "success": False,
-                        "error": f"调用工具超时: {str(e)}"
-                    }
-            except Exception as e:
-                print(f"调用工具 {tool_name} 失败: {e}")
-                if attempt < max_retries - 1:
-                    print(f"将在1秒后重试...")
-                    import time
-                    time.sleep(1)
-                else:
-                    return {
-                        "success": False,
-                        "error": f"调用工具失败: {str(e)}"
-                    }
-        
-        return {
-            "success": False,
-            "error": "达到最大重试次数"
-        }
-    
-    def to_tina_tools(self):
-        """
-        将MCP工具转换为tina的Tools类实例（同步版本）
-        
-        Returns:
-            Tools: tina的Tools类实例
-        """
-        # 创建一个新的Tools实例
-        from ..agent.core.tools import Tools
-        tina_tools = Tools()
-        
-        # 获取所有MCP工具
-        try:
-            mcp_tools = self.get_tools()
-            
-            if not mcp_tools:
-                return tina_tools
-                
-            # 转换MCP工具为tina工具格式
-            for tool in mcp_tools:
-                name = tool["name"]
-                description = tool["description"]
-                server_id = tool["server_id"]
-                
-                # 解析输入模式获取参数
-                input_schema = tool["input_schema"]
-                required_parameters = input_schema.get("required", [])
-                properties = input_schema.get("properties", {})
-                
-                parameters = {}
-                for param_name, param_info in properties.items():
-                    parameters[param_name] = {
-                        "type": param_info.get("type", "str"),
-                        "description": param_info.get("description", "")
-                    }
-                
-                # 注册工具到tina的Tools实例
-                tina_tools.register_no_function(
-                    name=f"mcp_{server_id}_{name}",
-                    description=f"[MCP:{server_id}] {description}",
-                    required_parameters=required_parameters,
-                    parameters=parameters,
-                )
-            
-
-        except Exception as e:
-            print(f"转换MCP工具时出错: {e}")
-        
-        return tina_tools
-    
-    def update_tina_tools(self, tina_tools):
-        """
-        更新现有的tina Tools实例，添加MCP工具（同步版本）
-        
-        Args:
-            tina_tools: 现有的tina Tools实例
-        
-        Returns:
-            Tools: 更新后的tina Tools实例
-        """
-        # 获取MCP工具转换为tina工具格式
-        mcp_tina_tools = self.to_tina_tools()
-        
-        # 合并工具
-        combined_tools = tina_tools + mcp_tina_tools
-        
-        return combined_tools
-    
-    def close(self):
-        """关闭所有连接（同步版本）"""
-        try:
-            future = asyncio.run_coroutine_threadsafe(self._close_async(), self.loop)
-            return future.result(timeout=30)  # 30秒超时
-        except asyncio.TimeoutError:
-            print("关闭客户端超时，可能有资源未正确清理")
-            return False
-        except Exception as e:
-            print(f"关闭客户端调用失败: {e}")
-            return False
-    
-    def load_config(self, config_path: str) -> bool:
-        """
-        从配置文件加载服务端配置
-        
-        Args:
-            config_path: 配置文件路径
-        
-        Returns:
-            bool: 加载是否成功
-        """
-        try:
-            with open(config_path, 'r') as f:
-                config = json.load(f)
-            
-            if "mcpServers" in config:
-                for server_id, server_config in config["mcpServers"].items():
-                    self.add_server(server_id, server_config)
-                return True
-            else:
-                print("配置文件格式错误，缺少mcpServers字段")
-                return False
-        
-        except Exception as e:
-            print(f"加载配置文件失败: {e}")
-            return False
-    
-    def save_config(self, config_path: str) -> bool:
-        """
-        保存服务端配置到文件
-        
-        Args:
-            config_path: 配置文件路径
-        
-        Returns:
-            bool: 保存是否成功
-        """
-        try:
-            config = {
-                "mcpServers": {
-                    server_id: server_info["config"]
-                    for server_id, server_info in self.servers.items()
-                }
-            }
-            
-            with open(config_path, 'w') as f:
-                json.dump(config, f, indent=2)
-            
+    async def _add_server_async(self, server_id: str, config: Dict[str, Any]) -> bool:
+        if server_id in self.servers:
             return True
         
-        except Exception as e:
-            print(f"保存配置文件失败: {e}")
-            return False
-    
-    def get_request_history(self, limit: int = 100, filter_type: Optional[str] = None) -> List[Dict[str, Any]]:
-        """
-        获取请求历史
-        
-        Args:
-            limit: 返回的最大记录数
-            filter_type: 过滤记录类型，如"tool_call"
-        
-        Returns:
-            List[Dict[str, Any]]: 请求历史记录
-        """
-        if filter_type:
-            filtered_history = [record for record in self.request_history if record.get("type") == filter_type]
-            return filtered_history[-limit:]
-        else:
-            return self.request_history[-limit:]
-    
-    def get_server_info(self, server_id: Optional[str] = None) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
-        """
-        获取服务端信息
-        
-        Args:
-            server_id: 服务端唯一标识，如果为None，则返回所有服务端信息
-        
-        Returns:
-            Union[Dict[str, Any], List[Dict[str, Any]]]: 服务端信息
-        """
-        if server_id:
-            if server_id in self.servers:
-                server_info = self.servers[server_id]
-                return {
-                    "id": server_id,
-                    "config": server_info["config"],
-                    "tools_count": len(server_info["tools"]),
-                    "added_at": server_info["added_at"].isoformat()
-                }
-            else:
-                return {"error": f"服务端 {server_id} 不存在"}
-        else:
-            return [{
-                "id": sid,
-                "config": server_info["config"],
-                "tools_count": len(server_info["tools"]),
-                "added_at": server_info["added_at"].isoformat()
-            } for sid, server_info in self.servers.items()]
-    
-    # 异步方法
-    async def aadd_server(self, server_id: str, config: Dict[str, Any]) -> bool:
-        """
-        添加MCP服务端（异步版本）
-        
-        Args:
-            server_id: 服务端唯一标识
-            config: 服务端配置，格式为:
-                   - SSE: {"type": "sse", "url": "https://example.com/sse"}
-                   - stdio: {"type": "stdio", "command": "python", "args": ["server.py"]}
-        
-        Returns:
-            bool: 添加是否成功
-        """
-        return await self._add_server_async(server_id, config)
-    
-    async def aclose_server(self, server_id: str) -> bool:
-        """
-        关闭指定服务端连接（异步版本）
-        
-        Args:
-            server_id: 服务端唯一标识
-        
-        Returns:
-            bool: 关闭是否成功
-        """
-        return await self._close_server_async(server_id)
-    
-    async def aremove_server(self, server_id: str) -> bool:
-        """
-        移除MCP服务端（异步版本）
-        
-        Args:
-            server_id: 服务端唯一标识
-        
-        Returns:
-            bool: 移除是否成功
-        """
-        return await self._close_server_async(server_id)
-    
-    async def aget_tools(self, server_id: Optional[str] = None) -> List[Dict[str, Any]]:
-        """
-        获取服务端提供的工具（异步版本）
-        
-        Args:
-            server_id: 服务端唯一标识，如果为None，则返回所有服务端的工具
-        
-        Returns:
-            List[Dict[str, Any]]: 工具列表
-        """
-        return await self._get_tools_async(server_id)
-    
-    async def acall_tool(self, tool_name: str, tool_args: Dict[str, Any], server_id: Optional[str] = None) -> Dict[str, Any]:
-        """
-        调用工具（异步版本）
-        
-        Args:
-            tool_name: 工具名称
-            tool_args: 工具参数
-            server_id: 服务端唯一标识，如果为None，则在所有服务端中查找工具
-        
-        Returns:
-            Dict[str, Any]: 工具调用结果
-        """
-        return await self._call_tool_async(tool_name, tool_args, server_id)
-    
-    async def ato_tina_tools(self):
-        """
-        将MCP工具转换为tina的Tools类实例（异步版本）
-        
-        Returns:
-            Tools: tina的Tools类实例
-        """
-        # 创建一个新的Tools实例
-        from ..agent.core.tools import Tools
-        tina_tools = Tools()
-        
-        # 获取所有MCP工具
-        try:
-            mcp_tools = await self._get_tools_async()
-            
-            # 转换MCP工具为tina工具格式
-            for tool in mcp_tools:
-                name = tool["name"]
-                description = tool["description"]
-                server_id = tool["server_id"]
-                
-                # 解析输入模式获取参数
-                input_schema = tool["input_schema"]
-                required_parameters = input_schema.get("required", [])
-                properties = input_schema.get("properties", {})
-                
-                parameters = {}
-                for param_name, param_info in properties.items():
-                    parameters[param_name] = {
-                        "type": param_info.get("type", "str"),
-                        "description": param_info.get("description", "")
-                    }
-                
-                # 注册工具到tina的Tools实例
-                tina_tools.register(
-                    name=f"mcp_{server_id}_{name}",
-                    description=f"[MCP:{server_id}] {description}",
-                    required_parameters=required_parameters,
-                    parameters=parameters,
-                    path=f"mcp://{server_id}/{name}"
-                )
-            
-            
-        except Exception as e:
-            raise e
-        
-        return tina_tools
-    
-    async def aupdate_tina_tools(self, tina_tools):
-        """
-        更新现有的tina Tools实例，添加MCP工具（异步版本）
-        
-        Args:
-            tina_tools: 现有的tina Tools实例
-        
-        Returns:
-            Tools: 更新后的tina Tools实例
-        """
-        # 获取MCP工具转换为tina工具格式
-        mcp_tina_tools = await self.ato_tina_tools()
-        
-        # 合并工具
-        combined_tools = tina_tools + mcp_tina_tools
-        
-        return combined_tools
-    
-    async def aclose(self):
-        """关闭所有连接（异步版本）"""
-        return await self._close_async()
-    
-    
-    async def _add_server_async(self, server_id: str, config: Dict[str, Any]) -> Dict:
-        """
-        添加MCP服务端（内部异步实现）
-        
-        Args:
-            server_id: 服务端唯一标识
-            config: 服务端配置，格式为:
-                   - SSE: {"type": "sse", "url": "https://example.com/sse"}
-                   - stdio: {"type": "stdio", "command": "python", "args": ["server.py"]}
-        
-        Returns:
-            bool: 添加是否成功
-        """
-        if server_id in self.servers:
-            raise ValueError(f"服务端 {server_id} 已存在，请选择另一个名称")
-        
+        # 为每个 Server 创建独立的 Stack
+        stack = AsyncExitStack()
         try:
             server_type = config.get("type", "").lower()
-            
-            if server_type == "sse":
-                # SSE服务端
-                if "url" not in config:
-                    raise ValueError("SSE服务端配置缺少URL")
-                
-                transport = await self.exit_stack.enter_async_context(
-                    sse_client(config["url"])
-                )
-                read_stream, write_stream = transport  # 正确解包两个流
-                session = await self.exit_stack.enter_async_context(
-                    ClientSession(read_stream, write_stream)  # 提供两个必要的参数
-                )
-            
-            elif server_type == "stdio":
-                # stdio服务端
-                if "command" not in config:
-                    raise ValueError("stdio服务端配置缺少command")
-                
-                server_params = StdioServerParameters(
+            if server_type == "stdio":
+                params = StdioServerParameters(
                     command=config["command"],
                     args=config.get("args", []),
-                    env=config.get("env", None)
+                    env=config.get("env")
                 )
-                
-                stdio_transport = await self.exit_stack.enter_async_context(
-                    stdio_client(server_params)
-                )
-                stdin, stdout = stdio_transport
-                session = await self.exit_stack.enter_async_context(
-                    ClientSession(stdin, stdout)
-                )
-            
-            else:
-                raise ValueError(f"不支持的服务端类型: {server_type}")
-            
-            # 初始化会话
-            await session.initialize()
-            
-            # 获取可用工具
-            response = await session.list_tools()
-            tools = response.tools
-            
-            # 存储服务端信息
-            self.servers[server_id] = {
-                "session": session,
-                "tools": tools,
-                "config": config,
-                "added_at": datetime.now()
-            }
-            
-   
-            return {"status":True,"tools":[tool.name for tool in tools]}
-        
-        except Exception as e:
-            raise e
-    
-    async def _close_server_async(self, server_id: str) -> bool:
-        """
-        关闭指定服务端连接（内部异步实现）
-        
-        Args:
-            server_id: 服务端唯一标识
-        
-        Returns:
-            bool: 关闭是否成功
-        """
-        if server_id not in self.servers:
-            print(f"服务端 {server_id} 不存在")
-            return False
-        
-        try:
-            # 获取服务器配置类型
-            server_info = self.servers[server_id]
-            server_type = server_info["config"].get("type", "").lower()
-            
-            # 不同类型的服务端采用不同的关闭策略
-            if server_type == "stdio":
-                # stdio类型：尝试关闭session
-                session = server_info.get("session")
-                if session:
-                    try:
-                        # 标准关闭方法
-                        await session.close()
-                    except Exception as e:
-                        print(f"关闭stdio session时出错: {e}")
+                # 进入 stdio 上下文 (管理子进程)
+                transport = await stack.enter_async_context(stdio_client(params))
+                # 进入 session 上下文 (管理协议)
+                session = await stack.enter_async_context(ClientSession(transport[0], transport[1]))
             elif server_type == "sse":
-                session = server_info.get("session")
-                if session:
-                    try:
-                        pass
-                    except Exception as e:
-                        pass
-        finally:
-            if server_id in self.servers:  
-                del self.servers[server_id]
-                print(f"已关闭服务端 {server_id}")
+                transport = await stack.enter_async_context(sse_client(config["url"]))
+                session = await stack.enter_async_context(ClientSession(transport[0], transport[1]))
+            else:
+                raise ValueError(f"Unsupported server type: {server_type}")
+
+            await session.initialize()
+            res = await session.list_tools()
+
+            with self._lock:
+                self.servers[server_id] = {
+                    "session": session,
+                    "stack": stack, # 这里的 stack 包含了这个 server 的所有资源
+                    "tools": res.tools,
+                    "config": config,
+                    "added_at": datetime.now()
+                }
             return True
-    
-    async def _get_tools_async(self, server_id: Optional[str] = None) -> List[Dict[str, Any]]:
-        """
-        获取服务端提供的工具（内部异步实现）
-        
-        Args:
-            server_id: 服务端唯一标识，如果为None，则返回所有服务端的工具
-        
-        Returns:
-            List[Dict[str, Any]]: 工具列表
-        """
-        tools = []
-        
-        if server_id:
-            # 获取指定服务端的工具
-            if server_id in self.servers:
-                server_tools = self.servers[server_id]["tools"]
-                tools.extend([{
-                    "name": tool.name,
-                    "description": tool.description,
-                    "input_schema": tool.inputSchema,
-                    "server_id": server_id
-                } for tool in server_tools])
-            else:
-                print(f"服务端 {server_id} 不存在")
-        else:
-            # 获取所有服务端的工具
-            for sid, server_info in self.servers.items():
-                server_tools = server_info["tools"]
-                tools.extend([{
-                    "name": tool.name,
-                    "description": tool.description,
-                    "input_schema": tool.inputSchema,
-                    "server_id": sid
-                } for tool in server_tools])
-        
-        return tools
-    
-    async def _call_tool_async(self, tool_name: str, tool_args: Dict[str, Any], server_id: Optional[str] = None) -> Dict[str, Any]:
-        """
-        调用工具（内部异步实现）
-        
-        Args:
-            tool_name: 工具名称
-            tool_args: 工具参数
-            server_id: 服务端唯一标识，如果为None，则在所有服务端中查找工具
-        
-        Returns:
-            Dict[str, Any]: 工具调用结果
-        """
-        # 记录请求
-        request_id = str(uuid.uuid4())
-        request_record = {
-            "id": request_id,
-            "timestamp": datetime.now().isoformat(),
-            "type": "tool_call",
-            "tool_name": tool_name,
-            "tool_args": tool_args,
-            "server_id": server_id,
-            "status": "pending"
-        }
-        self.request_history.append(request_record)
-        
-        try:
-            if server_id:
-                # 在指定服务端调用工具
-                if server_id not in self.servers:
-                    raise ValueError(f"服务端 {server_id} 不存在")
-                
-                session = self.servers[server_id]["session"]
-                result = await session.call_tool(tool_name, tool_args)
-                
-                # 更新请求记录
-                request_record["status"] = "success"
-                request_record["result"] = result.content
-                
-                return {
-                    "success": True,
-                    "content": result.content,
-                    "request_id": request_id
-                }
-            else:
-                # 在所有服务端中查找工具
-                for sid, server_info in self.servers.items():
-                    tools = server_info["tools"]
-                    if any(tool.name == tool_name for tool in tools):
-                        session = server_info["session"]
-                        result = await session.call_tool(tool_name, tool_args)
-                        
-                        # 更新请求记录
-                        request_record["status"] = "success"
-                        request_record["result"] = result.content
-                        request_record["server_id"] = sid
-                        
-                        return {
-                            "success": True,
-                            "content": result.content,
-                            "server_id": sid,
-                            "request_id": request_id
-                        }
-                
-                # 没有找到工具
-                request_record["status"] = "failed"
-                request_record["error"] = f"未找到工具 {tool_name}"
-                
-                return {
-                    "success": False,
-                    "error": f"未找到工具 {tool_name}",
-                    "request_id": request_id
-                }
-        
         except Exception as e:
-            # 更新请求记录
-            request_record["status"] = "failed"
-            request_record["error"] = str(e)
+            await stack.aclose() # 出错时立即清理已打开的资源
+            logger.error(f"MCP Add Server Error [{server_id}]: {e}")
+            return False
+
+    async def _close_server_async(self, server_id: str) -> bool:
+        """物理杀掉子进程并移除服务器"""
+        with self._lock:
+            server_info = self.servers.pop(server_id, None)
             
-            return {
-                "success": False,
-                "error": str(e),
-                "request_id": request_id
+        if server_info:
+            # 这一步是关键：调用 stack.aclose() 会按相反顺序关闭 session 和 transport
+            # 对于 stdio 来说，这会发送信号给子进程并等待其退出
+            await server_info["stack"].aclose()
+            return True
+        return False
+
+    # --- 同步接口桥接 ---
+
+    def add_server(self, server_id: str, config: Dict[str, Any], timeout=30) -> bool:
+        future = asyncio.run_coroutine_threadsafe(self._add_server_async(server_id, config), self.loop)
+        try:
+            return future.result(timeout=timeout)
+        except Exception as e:
+            logger.error(f"Sync add_server timeout/error: {e}")
+            return False
+
+    def call_tool(self, tool_name: str, tool_args: Dict[str, Any], server_id: Optional[str] = None, timeout=60):
+        future = asyncio.run_coroutine_threadsafe(self._call_tool_async(tool_name, tool_args, server_id), self.loop)
+        return future.result(timeout=timeout)
+
+    # --- 异步接口 (a开头，保持Tina风格) ---
+
+    async def acall_tool(self, tool_name: str, tool_args: Dict[str, Any], server_id: Optional[str] = None):
+        return await self._call_tool_async(tool_name, tool_args, server_id)
+
+    async def _call_tool_async(self, tool_name: str, tool_args: Dict[str, Any], server_id: Optional[str] = None):
+        target_sid = server_id
+        # 自动寻址逻辑
+        if not target_sid:
+            with self._lock:
+                for sid, info in self.servers.items():
+                    if any(t.name == tool_name for t in info["tools"]):
+                        target_sid = sid
+                        break
+        
+        if not target_sid or target_sid not in self.servers:
+            return {"success": False, "error": f"Tool {tool_name} not found"}
+
+        session = self.servers[target_sid]["session"]
+        try:
+            # 记录历史
+            res = await session.call_tool(tool_name, tool_args)
+            # 这里统一处理结果，避免 TextContent 对象导致后续 JSON 序列化失败
+            processed_content = []
+            for item in res.content:
+                if hasattr(item, 'text'):
+                    processed_content.append({"type": "text", "text": item.text})
+                else:
+                    processed_content.append(str(item))
+
+            history_item = {
+                "id": str(uuid.uuid4()),
+                "timestamp": datetime.now().isoformat(),
+                "tool": tool_name,
+                "server": target_sid,
+                "success": True
             }
-    
-    async def _close_async(self):
-        """关闭所有连接（内部异步实现）"""
-        # 首先尝试关闭所有服务端连接
-        server_ids = list(self.servers.keys())
-        for server_id in server_ids:
-            try:
-                await self._close_server_async(server_id)
-            except Exception as e:
-                print(f"关闭服务端 {server_id} 时出错: {e}")
-        
-        # 清空服务端列表
-        self.servers.clear()
-        
-        # 确保事件循环中没有未完成的任务
-        tasks = [t for t in asyncio.all_tasks(self.loop) if t is not asyncio.current_task(self.loop)]
-        if tasks:
-            print(f"等待 {len(tasks)} 个未完成的任务...")
-            await asyncio.gather(*tasks, return_exceptions=True)
-            print("所有任务已完成")
+            self.request_history.append(history_item)
             
-        # 最后关闭exit_stack，确保在所有服务都关闭后再关闭
-        if self.exit_stack:
-            try:
-                await self.exit_stack.aclose()
-            except Exception as e:
-                print(f"关闭exit_stack时出错: {e}")
-                
-    def __del__(self):
-        """析构函数，确保资源被释放"""
-        try:
-            # 尝试关闭所有连接
-            if hasattr(self, 'loop') and self._loop_is_running:
-                asyncio.run_coroutine_threadsafe(self._close_async(), self.loop)
-            elif hasattr(self, 'servers') and self.servers:
-                # 如果事件循环没有运行，创建一个新的循环来关闭资源
-                loop = asyncio.new_event_loop()
-                try:
-                    loop.run_until_complete(self._close_async())
-                finally:
-                    loop.close()
+            return {"success": True, "content": res.content, "server_id": target_sid}
         except Exception as e:
-            print(f"析构函数中关闭资源时出错: {e}")
+            return {"success": False, "error": str(e)}
+
+    def to_tina_tools(self):
+        """
+        将当前已连接的所有 MCP 工具转换为 Tina 格式
+        确保指定 name="mcp" 以避免 ToolsNotNamed 异常
+        """
+        from ..agent.core.tools import Tools
+        
+        # 必须指定 name，这样 self.tools = _tools + self.tools 才能正常工作
+        tina_tools = Tools(name="mcp") 
+        
+        with self._lock:
+            for sid, info in self.servers.items():
+                for tool in info["tools"]:
+                    # 注意：Tina Tools 内部可能还会根据包名加一层前缀
+                    # 这里的 register_no_function 保持你习惯的格式
+                    tina_tools.register_no_function(
+                        name=f"{sid}_{tool.name}", # 外部包名是mcp，内部就是 mcp_sid_name
+                        description=f"[MCP:{sid}] {tool.description}",
+                        parameters={
+                            k: {
+                                "type": v.get("type", "str"), 
+                                "description": v.get("description", "")
+                            } 
+                            for k, v in tool.inputSchema.get("properties", {}).items()
+                        },
+                        required_parameters=tool.inputSchema.get("required", [])
+                    )
+        return tina_tools
+
+    def close(self):
+        """优雅关闭所有资源"""
+        if self._loop_is_running:
+            # 获取所有服务器 ID
+            with self._lock:
+                ids = list(self.servers.keys())
             
+            # 提交清理任务
+            tasks = [self._close_server_async(sid) for sid in ids]
+            future = asyncio.run_coroutine_threadsafe(asyncio.gather(*tasks), self.loop)
+            future.result(timeout=10)
+            
+            # 停止循环
+            self.loop.call_soon_threadsafe(self.loop.stop)
+
+    def __del__(self):
+        # 析构时尽量尝试静默关闭
+        try:
+            if hasattr(self, 'loop') and self.loop.is_running():
+                self.loop.call_soon_threadsafe(self.loop.stop)
+        except:
+            pass

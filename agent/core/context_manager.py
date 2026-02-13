@@ -164,8 +164,9 @@ class ContextManager(BaseContextManager):
         """
         return [str(item.get("result", "")) for item in self.tool_calls_result]
 
-    def add_assistant_message(self, message: str) -> list[dict[str, Any]]:
-        self.messages.append({"role": "assistant", "content": message})
+    def add_assistant_message(self, message: str,name:str=None) -> list[dict[str, Any]]:
+        
+        self.messages.append({"role": "assistant", "content": message} if name is None else {"role": "assistant", "content": message, "name":name})
         self.limit_messages()
         return self.messages
 

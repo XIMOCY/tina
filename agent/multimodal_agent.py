@@ -140,7 +140,14 @@ class MultimodalAgent:
         tool_name: str tool_arguments: dict
         """
         return self.events.on_tool_confirmation()
-
+    def add_event_handler(self, event_name: str, func) -> None:
+        """
+        添加事件处理函数
+        Args:
+            event_name:事件名称
+            func:事件处理函数
+        """
+        self.events.add_event_handler(event_name, func)
     def _mcp_to_tools(self, MCP):
         """如果传入了MCP，则将MCP的工具集加入到当前的工具集中"""
         try:

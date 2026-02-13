@@ -6,6 +6,8 @@
 包含：
 Tools类：用于管理大模型的工具，包括注册、查询、调用等功能
 """
+from __future__ import annotations
+
 import inspect
 import re
 from typing import Callable, List, Dict
@@ -30,6 +32,7 @@ class Tool:
 
     def __init__(self,
                  tool: Callable,
+                 name: str,
                  description: str,
                  parameters: dict = {},
                  required_parameters: list = [],
@@ -42,7 +45,7 @@ class Tool:
                  belongs_to: str = None
                  ):
         self.tool = tool
-        self.name = tool.__name__
+        self.name = name
         self.description = description
         self.parameters = parameters
         self.required_parameters = required_parameters
@@ -82,18 +85,20 @@ class Tools:
     _sub_bundles: List["Tools"]
     tools_executor: ToolsExecutor
 
-    def __init__(self, tools_executor: ToolsExecutor = ToolsExecutor(), name: str = None):
+    def __init__(self, tools_executor: ToolsExecutor = ToolsExecutor(), name: str = None,metadata: dict = None):
         """
         创建一个工具集对象
         Args:
             tools_executor (ToolsExecutor): 工具执行器对象
             name (str): 工具包名称 默认为空 当你需要分发你的工具包时 建议填写
+            metadata (dict): 描述工具包的元数据
         """
         self._direct_tools = [] 
         self._sub_bundles = []
         self.disable_tools = {} 
         self.tools_executor = tools_executor
         self.instance_name = name
+        self.metadata = metadata
 
 
     @property
@@ -151,9 +156,29 @@ class Tools:
         result -= other
         return result
     
-    def add_tools(self, tools):
+    def add_tools(self, tools:"Tools" | list["Tools"]):
+        """
+        添加工具包
+        Args:
+            tools (Tools): 工具包对象
+        """
+        if type(tools) is list:
+            for tool in tools:
+                self+= tool
+            return
+        
         self+=tools
-    def sub_tools(self, tools):
+
+    def sub_tools(self, tools:"Tools" | list["Tools"]):
+        """
+        减去工具包
+        Args:
+            tools (Tools): 减去工具包对象
+        """
+        if type(tools) is list:
+            for tool in tools:
+                self-=tool
+            return
         self-=tools
 
     # --- 注册管理 ---
@@ -232,6 +257,7 @@ class Tools:
         
         _tool = Tool(
             tool=tool,
+            name=logic_name,
             description=description,
             parameters=properties,
             required_parameters=required_parameters,
@@ -243,11 +269,56 @@ class Tools:
             schema=schema,
             belongs_to=self.instance_name
         )
-        _tool.name = logic_name
         self._direct_tools.append(_tool)
         return schema
 
-    # --- 原有功能方法适配 ---
+    def register_no_function(self,
+                name:str,
+                description:str,
+                required_parameters:list, 
+                parameters:dict
+            ):
+        """
+        注册工具，将工具信息添加到tools列表中
+        Args:
+            name (str): 函数的名称，一定要正确
+            description (str): 函数的描述，可以详细描述函数的功能
+            required_parameters (list): 一定要有输入的参数列表
+            parameters (dict): 参数的详细信息，所有的参数都要有类型和描述
+                格式：
+                    {
+                    "参数名": {
+                        "type": "参数类型",
+                        "description": "参数描述"
+                        }
+                    }
+        Raises:
+            ValueError: 如果输入参数不符合要求
+        """
+        _logic_name = f"{self.instance_name}_{name}" if self.instance_name else name
+        _shcema = {
+            "type": "function",
+            "function": {
+                "name": _logic_name,
+                "description": description,
+                "parameters": {
+                    "type": "object",
+                    "required": required_parameters,
+                    "properties": parameters
+                }
+            }
+        }
+        _tool = Tool(
+            tool=None,
+            description=description,
+            parameters=parameters,
+            required_parameters=required_parameters,
+            name=_logic_name,
+            schema=_shcema,
+            belongs_to=self.instance_name
+        )
+        self._direct_tools.append(_tool)
+
 
     def unregister(self, name: str):
         """
