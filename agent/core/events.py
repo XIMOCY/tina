@@ -1,6 +1,6 @@
 import inspect
 from ...core import logger
-from ...core.error import NoConfirmationHanlder
+from ...core.error import NoConfirmationHandler
 from copy import deepcopy
 class Events:
     def __init__(self):
@@ -239,7 +239,7 @@ class Events:
                     changed_assistant_message = result[1]
                 
             
-        return changed_user_message,changed_assistant_message
+        return changed_assistant_message
     
 
     def trigger_before_tool_call(self,tool_name:str,tool_arguments:dict):
@@ -319,7 +319,7 @@ class Events:
         func = self.event_handler['on_tool_confirmation']
         if func is None: 
             logger.error("Events - 没有设置on_tool_confirmation处理器")
-            raise NoConfirmationHanlder()
+            raise NoConfirmationHandler()
         if inspect.iscoroutinefunction(func):
             logger.warning(f"Events - 异步事件on_tool_confirmation处理器{func.__name__}在同步调用中被忽略")
             return False

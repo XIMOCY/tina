@@ -13,7 +13,7 @@ import asyncio
 import inspect
 from ...core import logger
 from ...mcp.MCPToolExecutor import MCPToolExecutor
-from ...core.error import NoConfirmationHanlder
+from ...core.error import NoConfirmationHandler
 
 from .events import Events
 
@@ -53,7 +53,7 @@ class ToolsExecutor:
             
             try:
                 _tool_args = json.loads(_tool_args_raw)
-                # 直接调用，如果 active_events 为 None 会在这里触发异常
+
                 _tool_name, _tool_args = active_events.trigger_before_tool_call(tool_name=_tool_name, tool_arguments=_tool_args)
 
                 with self.sync_semaphore:
@@ -189,4 +189,6 @@ class ToolsExecutor:
         return await self._async_dispatch(_tool_name, _tool_args, _tool, timeout)
 
     def _tool_call_result(self, _tool_result, _tool_id, _tool_name):
+        if isinstance(_tool_result,str) != True:
+            _tool_result = str(_tool_result)
         return {"role": "tool", "content": _tool_result, "tool_call_id": _tool_id, "tool_name": _tool_name}

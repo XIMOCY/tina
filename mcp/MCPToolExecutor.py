@@ -29,12 +29,9 @@ class MCPToolExecutor:
             result = mcp_client.call_tool(actual_tool_name, _tool_args, server_id)
 
             if result["success"]:
-                tool_result = ""
-                for text_content in result["content"]:
-                    if text_content.type == "text":
-                        tool_result += text_content.text
+
                 logger.debug(f"MCPToolExecutor - 工具 '{_tool_name}' 执行结果: {result}：参数 {_tool_args}")
-                return tool_result
+                return result['content']
             else:
                 logger.error(f"MCPToolExecutor - 工具'{_tool_name}' 执行错误: {result.get('error', '未知错误')}")
                 return f"工具调用失败: {result.get('error', '未知错误')}"
@@ -48,12 +45,8 @@ class MCPToolExecutor:
             server_id,actual_tool_name = MCPToolExecutor._parse_name(_tool_name)
             result = mcp_client.call_tool(actual_tool_name, _tool_args, server_id)
             if result["success"]:
-                tool_result = ""
-                for text_content in result["content"]:
-                    if text_content.type == "text":
-                        tool_result += text_content.text
                 logger.debug(f"MCPToolExecutor - 工具 '{_tool_name}' 执行结果: {result}：参数 {_tool_args}")
-                return tool_result
+                return result['content']
             else:
                 logger.error(f"MCPToolExecutor - 工具'{_tool_name}' 执行错误: {result.get('error', '未知错误')}")
                 return f"工具调用失败: {result.get('error', '未知错误')}"
