@@ -4,7 +4,7 @@ tina.agent.state 的 Docstring
 """
 from enum import Enum
 
-class AgentState(Enum):
+class AgentState(str,Enum):
     IDLE = "idle"                    # 待机
     RESPONDING = "responding"          # 输出中
     THINKING = "thinking"            # 思考

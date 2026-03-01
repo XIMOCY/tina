@@ -5,7 +5,6 @@
 功能：Agent类，实现了智能体的功能。
 包含：
 Agent类：基础智能体类，默认支持API调用
-AgentByLocalModel类：本地模型智能体类，继承自Agent
 """
 from __future__ import annotations
 
@@ -17,7 +16,7 @@ from ..mcp.Client import MCPClient
 from .core.prompt import Prompt
 from .core.context_manager import ContextManager
 from .core.agent_runtime import ToolCallingAgentRuntime,BaseAgentRuntime
-from .core.events import Events
+from .core.events import AgentEvents
 from ..core.error import TinaError
 from .core.parser import local_model_llama_cpp_parser 
 
@@ -38,6 +37,7 @@ class Agent:
                   tools: Tools, 
                   system_prompt: str = None, 
                   mcp: MCPClient = None,
+                  events: AgentEvents = None,
                   context_manager:ContextManager=None,
                   agent_runtime: BaseAgentRuntime = None,
 
@@ -50,7 +50,6 @@ class Agent:
             LLM: tina.BaseAPI类型，调用的LLM对象
             tools: tina.Tools类型，工具集
             sys_prompt: str 系统提示词
-            isExecute: bool 是否执行工具，默认为True，关闭后智能体不在执行工具并返回结果和大模型回复。
             MCP: tina.MCPClient类型，MCP客户端对象，如果不传入，则不进行MCP调用。
             context_length: int 最大上下文长度，超过该长度则删除旧消息，保留最近的消息。
             context_limit: int 上下文限制，使用大模型来总结你的上下文，数字为0时不触发
@@ -72,7 +71,7 @@ class Agent:
             self.context_manager = context_manager
         # 初始化MCP
         self._mcp_to_tools(mcp)
-        self.events = Events()
+        self.events = AgentEvents() if events is None else events
         if system_prompt is not None:
             self.context_manager.set_system_message(system_prompt)
         else:

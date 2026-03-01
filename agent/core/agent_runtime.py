@@ -6,7 +6,7 @@ from .tools import Tools
 from .context_manager import BaseContextManager
 from typing import Generator
 from .state import AgentState
-from .events import Events
+from .events import AgentEvents
 class BaseAgentRuntime():
     """
     Agent运行时环境，包含LLM、工具、系统提示等信息  
@@ -30,7 +30,7 @@ class BaseAgentRuntime():
         self.tools = tools
         self.context_manager = context_manager
         self.mcp_client = mcp_client
-        self.events:Events = events
+        self.events:AgentEvents = events
         self.state = AgentState.IDLE
 
     def run_prediction_no_stream(self, instruction: str = None,
@@ -202,6 +202,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
 
                 if "tool_name" in chunk or "tool_arguments" in chunk:
                     self.state = AgentState.TOOL_CALLING
+                    self.events.trigger_on_agent_stream_chunk(chunk)
                     yield chunk
                 # id用于检验这次的工具传输有没有断流 如果没有id则说明这次的工具调用是不完整的
                 elif "tool_calls" in chunk and chunk["id"] != '':
@@ -218,6 +219,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                     
                     results = self._execute_tool(chunk["tool_calls"])
                     for result in results:
+                        self.events.trigger_on_agent_stream_chunk(result)
                         yield result
 
                     counter += 1
@@ -230,12 +232,16 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                     reasoning_content = chunk.get("reasoning_content", "")
                     if reasoning_content:
                         reasoning_buffer += reasoning_content
-                        yield {"role": "assistant", "reasoning_content": reasoning_content, "content": ""}                
+                        reasoning_content_chunk = {"role": "assistant", "reasoning_content": reasoning_content, "content": ""}
+                        self.events.trigger_on_agent_stream_chunk(reasoning_content_chunk)
+                        yield reasoning_content_chunk            
                 else:
                     content = chunk.get("content", "")
                     if content:
                         content_parts.append(content)
-                        yield {"role": "assistant", "content": content}    
+                        content_chunk = {"role": "assistant", "content": content}
+                        self.events.trigger_on_agent_stream_chunk(content_chunk)
+                        yield content_chunk
 
             whole_content = "".join(content_parts)
             if whole_content:
@@ -314,6 +320,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                     chunk["content"] = ""
 
                 if "tool_name" in chunk or "tool_arguments" in chunk:
+                    await self.events.atrigger_on_agent_stream_chunk(chunk)
                     yield chunk
 
                 elif "tool_calls" in chunk and chunk["id"] != '':
@@ -330,6 +337,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                     
                     results = await self._aexecute_tool(chunk["tool_calls"])
                     for result in results:
+                        await self.events.atrigger_on_agent_stream_chunk(result)
                         yield result
 
                     counter += 1
@@ -341,16 +349,20 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                     reasoning_content = chunk.get("reasoning_content", "")
                     if reasoning_content:
                         reasoning_buffer += reasoning_content
-                        yield {"role": "assistant", "reasoning_content": reasoning_content, "content": ""}                
+                        reasoning_content_chunk = {"role": "assistant", "reasoning_content": reasoning_content, "content": ""}
+                        await self.events.atrigger_on_agent_stream_chunk(reasoning_content_chunk)
+                        yield reasoning_content_chunk                
                 else:
                     content = chunk.get("content", "")
                     if content:
                         content_parts.append(content)
-                        yield {"role": "assistant", "content": content}    
+                        content_chunk = {"role": "assistant", "content": content}
+                        await self.events.atrigger_on_agent_stream_chunk(content_chunk)
+                        yield content_chunk
 
             whole_content = "".join(content_parts)
             if whole_content:
-                whole_content = await self.events.atrigger_after_user_instruction(user_message=instruction, assistant_message=whole_content)
+                _,whole_content = await self.events.atrigger_after_user_instruction(user_message=instruction, assistant_message=whole_content)
                 self.context_manager.add_assistant_message(whole_content)
                 # 用户输入后事件（异步流式）
                 
@@ -462,6 +474,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                     chunk["content"] = ""
 
                 if "tool_name" in chunk or "tool_arguments" in chunk:
+                    self.events.trigger_on_agent_stream_chunk(chunk)
                     yield chunk
 
                 elif "tool_calls" in chunk and chunk["id"] != '':
@@ -477,6 +490,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
     
                     results = self._execute_tool(chunk["tool_calls"])
                     for result in results:
+                        self.events.trigger_on_agent_stream_chunk(result)
                         yield result
 
                     counter += 1
@@ -488,12 +502,16 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                     reasoning_content = chunk.get("reasoning_content", "")
                     if reasoning_content:
                         reasoning_buffer += reasoning_content
-                        yield {"role": "assistant", "reasoning_content": reasoning_content, "content": ""}                
+                        reasoning_content_chunk = {"role": "assistant", "reasoning_content": reasoning_content, "content": ""}
+                        self.events.trigger_on_agent_stream_chunk(reasoning_content_chunk)
+                        yield reasoning_content_chunk                
                 else:
                     content = chunk.get("content", "")
                     if content:
                         content_parts.append(content)
-                        yield {"role": "assistant", "content": content}    
+                        content_chunk = {"role": "assistant", "content": content}
+                        self.events.trigger_on_agent_stream_chunk(content_chunk)
+                        yield content_chunk
 
             whole_content = "".join(content_parts)
             if whole_content:
@@ -585,6 +603,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                     chunk["content"] = ""
 
                 if "tool_name" in chunk or "tool_arguments" in chunk:
+                    await self.events.atrigger_on_agent_stream_chunk(chunk)
                     yield chunk
 
                 elif "tool_calls" in chunk and chunk["id"] != '':
@@ -601,6 +620,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                     
                     results = await self._aexecute_tool(chunk["tool_calls"])
                     for result in results:
+                        await self.events.atrigger_on_agent_stream_chunk(result)
                         yield result
 
                     counter += 1
@@ -612,12 +632,16 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                     reasoning_content = chunk.get("reasoning_content", "")
                     if reasoning_content:
                         reasoning_buffer += reasoning_content
-                        yield {"role": "assistant", "reasoning_content": reasoning_content, "content": ""}                
+                        reasoning_content_chunk = {"role": "assistant", "reasoning_content": reasoning_content, "content": ""}
+                        await self.events.atrigger_on_agent_stream_chunk(reasoning_content_chunk)
+                        yield reasoning_content_chunk                
                 else:
                     content = chunk.get("content", "")
                     if content:
                         content_parts.append(content)
-                        yield {"role": "assistant", "content": content}    
+                        content_chunk = {"role": "assistant", "content": content}
+                        await self.events.atrigger_on_agent_stream_chunk(content_chunk)
+                        yield content_chunk
 
             whole_content = "".join(content_parts)
             if whole_content:

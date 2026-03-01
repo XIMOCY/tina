@@ -17,7 +17,7 @@ from ..mcp.Client import MCPClient
 from .core.prompt import Prompt
 from .core.context_manager import MultimodalContextManager
 from .core.agent_runtime import BaseAgentRuntime,ToolCallingMutilemodalAgentRuntime
-from .core.events import Events
+from .core.events import AgentEvents
 from ..core.error import TinaError
 
 
@@ -37,6 +37,7 @@ class MultimodalAgent:
                   system_prompt: str = None, 
                   execute_tool: bool = True, 
                   mcp: MCPClient = None,
+                  events: AgentEvents = None,
                   context_manager:MultimodalContextManager=None,
                   agent_runtime: BaseAgentRuntime = None,
                   max_tool_loop:int = 30,
@@ -71,7 +72,7 @@ class MultimodalAgent:
             self.context_manager = context_manager
         # 初始化MCP
         self._mcp_to_tools(mcp)
-        self.events = Events()
+        self.events = AgentEvents() if events is None else events
         if system_prompt is not None:
             self.context_manager.set_system_message(system_prompt)
         else:

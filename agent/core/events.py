@@ -2,7 +2,7 @@ import inspect
 from ...core import logger
 from ...core.error import NoConfirmationHanlder
 from copy import deepcopy
-class Events:
+class AgentEvents:
     def __init__(self):
         """
         事件管理器
@@ -28,6 +28,8 @@ class Events:
             'after_user_instruction':[],
             # 如果工具需要验证的情况，请监听此事件
             'on_tool_confirmation':None,
+            # 处理流式输出的每一个chunk
+            'on_agent_stream_chunk':[]
 
         }
 
@@ -68,6 +70,11 @@ class Events:
                 'min_params': 2,
                 'param_types': [str,str]
             },
+            'on_agent_stream_chunk':{
+                'min_params': 1,
+                'param_types': [dict]
+            }
+            ,
             'on_tool_confirmation': {
                 'min_params': 2,
                 'param_types': [str,dict]
@@ -92,6 +99,17 @@ class Events:
             self.event_handler['on_tool_confirmation'] = func
         else:
             self.event_handler[event_name].append(func)
+
+    def on_agent_stream_chunk(self):
+        """
+        在大模型处理用户输入时，每处理一个chunk，都会调用此函数  
+        需要事件处理函数接受下面的参数：  
+        chunk: dict[str,str]
+        """
+        def wrapper(func):
+            self._validate_event_handler_signature('on_agent_stream_chunk',func)
+            self.add_handler('on_agent_stream_chunk',func)
+        return wrapper
 
     def before_tool_call(self):
         """
@@ -338,3 +356,21 @@ class Events:
         if isinstance(result,bool):
             return result
         return False
+    def trigger_on_agent_stream_chunk(self,chunk:dict):
+        changed_chunk = deepcopy(chunk)
+
+        for func in self.event_handler['on_agent_stream_chunk']:
+            if inspect.iscoroutinefunction(func):
+                logger.warning(f"Events - 异步事件on_agent_stream_chunk处理器{func.__name__}在同步调用中被忽略")
+                continue
+            result = func(changed_chunk)
+            logger.debug(f"Events - on_agent_stream_chunk处理器{func.__name__}返回结果{result}")
+
+    async def atrigger_on_agent_stream_chunk(self,chunk:dict):
+        changed_chunk = deepcopy(chunk)
+        for func in self.event_handler['on_agent_stream_chunk']:
+            if inspect.iscoroutinefunction(func):
+                result = await func(changed_chunk)
+            else:
+                result = func(changed_chunk)
+            logger.debug(f"Events - on_agent_stream_chunk处理器{func.__name__}返回结果{result}")

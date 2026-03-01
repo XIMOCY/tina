@@ -15,7 +15,7 @@ from ...core import logger
 from ...mcp.MCPToolExecutor import MCPToolExecutor
 from ...core.error import NoConfirmationHanlder
 
-from .events import Events
+from .events import AgentEvents
 
 
 class ToolsExecutor:
@@ -25,12 +25,12 @@ class ToolsExecutor:
 
     def __init__(self, max_workers: int = 5):
         # 事件系统由外部注入，此处强制要求后续 active_events 有效
-        self.events: Events = None
+        self.events: AgentEvents = None
         self.sync_semaphore = threading.Semaphore(max_workers)
         self._async_semaphore = None  
         self.max_workers = max_workers
 
-    def execute(self, _tool_calls: list[dict], _tools, _mcp_client=None, timeout=60, events: Events=None, **kwargs):
+    def execute(self, _tool_calls: list[dict], _tools, _mcp_client=None, timeout=60, events: AgentEvents=None, **kwargs):
         """
         执行工具调用
         """
@@ -78,7 +78,7 @@ class ToolsExecutor:
 
         return [res for res in _tool_calls_result if res is not None]
 
-    async def aexecute(self, _tool_calls, _tools, _mcp_client=None, timeout=60, events: Events=None, **kwargs) -> any:
+    async def aexecute(self, _tool_calls, _tools, _mcp_client=None, timeout=60, events: AgentEvents=None, **kwargs) -> any:
         if not _tool_calls:
             return []
 
