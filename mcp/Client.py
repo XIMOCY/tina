@@ -135,12 +135,6 @@ class MCPClient:
             # 记录历史
             res = await session.call_tool(tool_name, tool_args)
             # 这里统一处理结果，避免 TextContent 对象导致后续 JSON 序列化失败
-            processed_content = []
-            for item in res.content:
-                if hasattr(item, 'text'):
-                    processed_content.append({"type": "text", "text": item.text})
-                else:
-                    processed_content.append(str(item))
 
             history_item = {
                 "id": str(uuid.uuid4()),
