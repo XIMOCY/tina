@@ -359,7 +359,7 @@ class AgentEvents:
         func = self.event_handler['on_tool_confirmation']
         if func is None: 
             logger.error("Events - 没有设置on_tool_confirmation处理器")
-            raise NoConfirmationHanlder()
+            raise NoConfirmationHandler()
         if inspect.iscoroutinefunction(func):
             result = await func(tool_name,tool_arguments)
         else:
