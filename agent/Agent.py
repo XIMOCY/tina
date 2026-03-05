@@ -146,6 +146,15 @@ class Agent:
         tool_name: str tool_arguments: dict
         """
         return self.events.on_tool_confirmation()
+    
+    def on_stream_chunk(self):
+        """
+        当大模型生成一个结果时，会触发此事件  
+        需要事件处理函数接受下面的参数：  
+        chunk: dict
+        """
+        return self.events.on_stream_chunk()
+    
     def add_event_handler(self, event_name: str, func):
         """
         添加事件处理函数

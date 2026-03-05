@@ -89,6 +89,7 @@ def stream_generator_parser(base_url, payload, headers, timeout):
                                                 "role": "assistant",
                                                 "content": "",
                                                 "tool_arguments": new_args,
+                                                "tool_name":current["function"]["name"],
                                                 "tool_index": index
                                             }
                                     else:
@@ -207,6 +208,7 @@ async def astream_generator_parser(
                                                     "role": "assistant",
                                                     "content": "",
                                                     "tool_arguments": new_args,
+                                                    "tool_name": current["function"]["name"],
                                                     "tool_index": index
                                                 }
                                         else:

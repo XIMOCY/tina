@@ -13,7 +13,6 @@ import asyncio
 import inspect
 from ...core import logger
 from ...mcp.MCPToolExecutor import MCPToolExecutor
-from ...core.error import NoConfirmationHanlder
 
 from .events import AgentEvents
 
@@ -24,7 +23,6 @@ class ToolsExecutor:
     """
 
     def __init__(self, max_workers: int = 5):
-        # 事件系统由外部注入，此处强制要求后续 active_events 有效
         self.events: AgentEvents = None
         self.sync_semaphore = threading.Semaphore(max_workers)
         self._async_semaphore = None  
@@ -107,8 +105,8 @@ class ToolsExecutor:
                         _tool = _tools.get_tool(name=_tool_name)
                         if _tools.get_require_confirmations(_tool_name):
                             confirmed = await active_events.atrigger_on_tool_confirmation(_tool_name, _tool_args)
-                            if confirmed is False:
-                                result = f"用户阻止了{_tool_name}的运行"
+                            if confirmed[0] is False:
+                                result = confirmed[1]
                             else:
                                 result = await self._async_dispatch(_tool_name, _tool_args, _tool, timeout)
                         else:
@@ -167,8 +165,9 @@ class ToolsExecutor:
         if _tool is None: return f"工具 '{_tool_name}' 未找到"
         
         if _tools.get_require_confirmations(_tool_name):
-            if active_events.trigger_on_tool_confirmation(_tool_name, _tool_args) is False:
-                return f"用户阻止了{_tool_name}的运行"
+            confirmed = active_events.trigger_on_tool_confirmation(_tool_name, _tool_args)
+            if confirmed[0] is False:
+                return confirmed[1]
 
         res = [f"工具执行超时（{timeout}秒）: {_tool_name}"]
         def target():

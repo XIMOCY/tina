@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import inspect
+from types import MappingProxyType
 from ...core import logger
 from ...core.error import NoConfirmationHanlder
 from copy import deepcopy
@@ -29,9 +32,11 @@ class AgentEvents:
             # 如果工具需要验证的情况，请监听此事件
             'on_tool_confirmation':None,
             # 处理流式输出的每一个chunk
-            'on_agent_stream_chunk':[]
+            'on_stream_chunk':[]
 
         }
+    def add_events(self,events:"AgentEvents" | list["AgentEvents"]):
+        pass
 
     def get_handler(self,event_name:str):
         return self.event_handler[event_name]
@@ -70,7 +75,7 @@ class AgentEvents:
                 'min_params': 2,
                 'param_types': [str,str]
             },
-            'on_agent_stream_chunk':{
+            'on_stream_chunk':{
                 'min_params': 1,
                 'param_types': [dict]
             }
@@ -100,15 +105,15 @@ class AgentEvents:
         else:
             self.event_handler[event_name].append(func)
 
-    def on_agent_stream_chunk(self):
+    def on_stream_chunk(self):
         """
         在大模型处理用户输入时，每处理一个chunk，都会调用此函数  
         需要事件处理函数接受下面的参数：  
         chunk: dict[str,str]
         """
         def wrapper(func):
-            self._validate_event_handler_signature('on_agent_stream_chunk',func)
-            self.add_handler('on_agent_stream_chunk',func)
+            self._validate_event_handler_signature('on_stream_chunk',func)
+            self.add_handler('on_stream_chunk',func)
         return wrapper
 
     def before_tool_call(self):
@@ -343,21 +348,31 @@ class AgentEvents:
             return False
 
         result = func(tool_name,tool_arguments)
+        
         if isinstance(result,bool):
-            return result
-        return False
+            return (result,"用户阻止了该工具的运行")
+        elif isinstance(result,tuple):
+            return (result[0],result[1])
+        return (False,"用户阻止了该工具的运行")
     
     async def atrigger_on_tool_confirmation(self,tool_name:str,tool_arguments:dict):
         func = self.event_handler['on_tool_confirmation']
+        if func is None: 
+            logger.error("Events - 没有设置on_tool_confirmation处理器")
+            raise NoConfirmationHanlder()
         if inspect.iscoroutinefunction(func):
             result = await func(tool_name,tool_arguments)
         else:
             result = func(tool_name,tool_arguments)
+        
         if isinstance(result,bool):
-            return result
-        return False
+            return (result,"用户阻止了该工具的运行")
+        elif isinstance(result,tuple):
+            return (result[0],result[1])
+        return (False,"用户阻止了该工具的运行")
+    
     def trigger_on_agent_stream_chunk(self,chunk:dict):
-        changed_chunk = deepcopy(chunk)
+        changed_chunk = MappingProxyType(chunk)
 
         for func in self.event_handler['on_agent_stream_chunk']:
             if inspect.iscoroutinefunction(func):
@@ -367,7 +382,7 @@ class AgentEvents:
             logger.debug(f"Events - on_agent_stream_chunk处理器{func.__name__}返回结果{result}")
 
     async def atrigger_on_agent_stream_chunk(self,chunk:dict):
-        changed_chunk = deepcopy(chunk)
+        changed_chunk = MappingProxyType(chunk)
         for func in self.event_handler['on_agent_stream_chunk']:
             if inspect.iscoroutinefunction(func):
                 result = await func(changed_chunk)
