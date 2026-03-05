@@ -20,7 +20,6 @@ from .core.context_manager import ContextManager
 from .core.agent_runtime import ToolCallingAgentRuntime,BaseAgentRuntime
 from .core.events import AgentEvents
 from ..core.error import TinaError
-from .core.parser import local_model_llama_cpp_parser 
 
 
 class BaseAgent:

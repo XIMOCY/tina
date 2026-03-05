@@ -374,18 +374,18 @@ class AgentEvents:
     def trigger_on_agent_stream_chunk(self,chunk:dict):
         changed_chunk = MappingProxyType(chunk)
 
-        for func in self.event_handler['on_agent_stream_chunk']:
+        for func in self.event_handler['on_stream_chunk']:
             if inspect.iscoroutinefunction(func):
-                logger.warning(f"Events - 异步事件on_agent_stream_chunk处理器{func.__name__}在同步调用中被忽略")
+                logger.warning(f"Events - 异步事件on_stream_chunk处理器{func.__name__}在同步调用中被忽略")
                 continue
             result = func(changed_chunk)
-            logger.debug(f"Events - on_agent_stream_chunk处理器{func.__name__}返回结果{result}")
+            logger.debug(f"Events - on_stream_chunk处理器{func.__name__}返回结果{result}")
 
     async def atrigger_on_agent_stream_chunk(self,chunk:dict):
         changed_chunk = MappingProxyType(chunk)
-        for func in self.event_handler['on_agent_stream_chunk']:
+        for func in self.event_handler['on_stream_chunk']:
             if inspect.iscoroutinefunction(func):
                 result = await func(changed_chunk)
             else:
                 result = func(changed_chunk)
-            logger.debug(f"Events - on_agent_stream_chunk处理器{func.__name__}返回结果{result}")
+            logger.debug(f"Events - on_stream_chunk处理器{func.__name__}返回结果{result}")
