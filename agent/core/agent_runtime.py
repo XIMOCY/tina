@@ -272,7 +272,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                 continue
             else:
                 self.state = AgentState.RESPONDING
-                llm_result["content"] = await self.events.atrigger_after_user_instruction(user_message=instruction, assistant_message=llm_result["content"])
+                _,llm_result["content"] = await self.events.atrigger_after_user_instruction(user_message=instruction, assistant_message=llm_result["content"])
                 self.context_manager.add_assistant_message(llm_result["content"])
                 # 用户输入后事件（异步非流式）
                 
@@ -574,7 +574,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                 self.state = AgentState.RESPONDING
                 self.context_manager.add_assistant_message(llm_result["content"])
                 # 用户输入后事件（异步非流式）
-                llm_result["content"] = await self.events.atrigger_after_user_instruction(user_message=instruction, assistant_message=llm_result["content"])
+                _,llm_result["content"] = await self.events.atrigger_after_user_instruction(user_message=instruction, assistant_message=llm_result["content"])
                 return llm_result 
         self.state = AgentState.IDLE
         if counter > self.max_tool_loop:  
@@ -661,7 +661,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
 
             whole_content = "".join(content_parts)
             if whole_content:
-                whole_content = await self.events.atrigger_after_user_instruction(user_message=instruction, assistant_message=whole_content)
+                _,whole_content = await self.events.atrigger_after_user_instruction(user_message=instruction, assistant_message=whole_content)
 
                 self.context_manager.add_assistant_message(whole_content)
                 # 用户输入后事件（异步流式）

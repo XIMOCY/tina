@@ -13,11 +13,11 @@ from tina.llm import BaseAPI
 
 llm=BaseAPI() #使用了tina.env
 tools=Tools()
-agent = Agent（
+agent = Agent(
     llm=llm,
     tools=tools,
     system_prompt="你是一个优秀的助手..."
-）
+)
 ```
 Agent的实例化参数十分丰富，它分为下面几种:
 1. 必要的参数，agent的基础 ；
@@ -34,10 +34,16 @@ Agent的实例化参数十分丰富，它分为下面几种:
 |  events |  tina.AgentEvents |None|Agent的事件管理类| 
 |  context_manager |  tina.ContextManager |None|上下文管理器，不传入时使用开发者设置的system_prompt来自动初始化| 
 |  max_tool_loop |  int |30|自带的runtime支持的最大工具执行循环| 
-| agent_runtime |  tina.AgentRuntime |tina.ToolCallingAgentRuntime|Agent运行的逻辑类| 
-|  name |  str |None|Agent的名字| 
+|  max_context_length |  int |100000|最大的上下文长度|
+|  max_tool_result_length | int |6000|最大的工具结果返回长度| 
+| agent_runtime | tina.AgentRuntime |tina.ToolCallingAgentRuntime|Agent运行的逻辑类| 
+|  name |  str |None|Agent的名字|   
+
 mcp参数在这里你可以一样视为Tools，他们都是可以被Agent调用的工具包  
 上面提到的 context_manager，agent_runtime可以看专门的文档  
+`Agent`默认实现的ContextManager是滚动窗口式的上下文管理  
+它会根据你实例化时的指定的max_context_length参数，会自动进行滚动窗口式上下文管理  
+当然，它不会清理你的system_prompt参数,它会锚定你的system_prompt参数在第一个消息，并且当上下文超过max_context_length参数时会把除了system_prompt参数以外的内容进行清理
 ### 状态 state 属性
 你可以直接访问Agent的状态属性
 ```python
@@ -350,9 +356,280 @@ def on_stream(chunk):
 * **特性**：**无法修改参数**。用于观测模型本次决策的所有计划动作。
 
 ---
+## MultimodalAgent类
+它是一个多模态的Agent类，继承自Agent类。  
+主要是在predict方法中添加了额外的参数，  
+其他的例如事件管理，都是一致的
+### 实例化一个MutlimodalAgent
+只有llm的参数支持的不一样，在多模态的agent中，你需要传递多模态的llm
+```python
+from tina import MultimodalAgent,Tools
+from tina.llm import BaseMultimodalAPI
+mllm = BaseMultimodalAPI() #一样可以使用tina.env文件
+tools = Tools()
+
+magent = MultimodalAgent(
+    llm=mllm,
+    tools=tools
+)
+```
+### 使用MultimodalAgent输出 predict apredict
+和Agent类的方法名称是一致的，但是参数多出了以下的参数：
+| 参数名称 | 类型 | 默认值 | 描述 |
+| :--- | :--- | :--- | :--- |
+| **`image`** | `str`|`list[str]` | `None` | **图片路径**。图片的本地路径 |
+| **`audio`** | `str`|`list[str]` | `None` | **音频路径**。音频的本地路径 |
+| **`url`** | `str`|`list[str]` | `None` | **url** 多模态内容的url |
+在`tina`中，你输入的路径会被自动化的转化为base64编码，然后传递给llm，  
+输出值和Agent类一致
+### 多模态工具
+在MutlimodalAgent中，可以使用多模态的工具，  
+多模态工具可以参考Tools类文档，指的是下面这样的工具：
+```python
+from tina import Tools,MultimodalAgent
+from tina.llm import BaseMultimodalAPI
+mllm = BaseMultimodalAPI()
+tools = Tools()
+# 在注册时指定返回参数
+@tools.register(return_image=True)
+async def read_image(image_path):
+    """
+    读取图片
+    """
+    return image_path
+agent = MultimodalAgent(
+    llm=mllm,
+    tools=tools
+)
+```
+当你在注册工具的时候指定了下面的参数的时候，`tina`会自动地帮你把返回地图片路径转化为base64编码，并传递给llm，如果说你地路径出现了问题 ，也不需要担心，只有合法的路径才会被转化
+| **`return_image`** | `bool` | `False` | **图片回传**。针对多模态 Agent。若工具返回图片路径，Tina 会自动将图片转为 Base64 并喂给模型“观看”。 |
+| **`return_audio`** | `bool` | `False` | **音频回传**。针对多模态 Agent。工具返回的音频数据会自动提交给支持音频分析的模型。 |
+| **`return_url`** | `bool` | `False` | **URL 回传**。针对多模态 Agent。自动将工具返回的资源 URL 链接给模型进行进一步访问。 |
+> **注意：**：请不要同时指定多个返回参数
+
 
 ## AgentEvents 类
+AgentEvents 类用于管理 Agent 的事件。
+你可以使用这个类，在展示不需要实例化`Agent`的时候使用，
+它包含的事件和Agent类的一致，以下是一个示例：
+```python
+from tina import AgentEvents,Agent,Tools
+from tina.llm import BaseAPI
+events = AgentEvents()
+@events.on_stream_chunk()
+def on_stream(chunk):
+    print(chunk)
+agent = Agent(
+    llm = BaseAPI(),
+    tools = Tools(),
+    events = events,
+)
+```
+
 ## AgentState 类
+`AgentState`是字符枚举类，其状态定义可以参考`Agent`类里面的说明
+它的主要使用方法如下：
+```python
+from tina import AgentState
+
+from tina import Agent,Tools
+from tina.llm import BaseAPI
+
+agent = Agent(
+    llm = BaseAPI(),
+    tools = Tools(),
+)
+if agent.state == AgentState.IDLE:
+    ...
+elif agent.state == AgentState.RESPONDING:
+    ...
+elif agent.state == AgentState.THINKING:
+    ...
+elif agent.state == AgentState.TOOL_CALLING:
+    ...
+elif agent.state == AgentState.ON_TOOL_CONFIRM:
+    ...
+elif agent.state == AgentState.ERROR:
+    ...
+# 如果你不想导入tina.AgentState，你可以使用以下方法：
+if agent.state == 'idle':
+    ...
+elif agent.state == 'responding':
+    ...
+elif agent.state == 'thinking':
+    ...
+elif agent.state == 'tool_calling':
+    ...
+elif agent.state == 'on_tool_confirm':
+    ...
+elif agent.state == 'error':
+    ...
+```
+## ContextManager 上下文管理器类
+`天啊，写文档真是太累了，所以我小小的使用一下ai来帮我写吧`  
+在 `tina` 中，`ContextManager` 是 Agent 的“记忆中枢”。它负责维护对话历史消息列表 (`messages`)，处理工具调用的记录，并自动执行**滚动窗口策略**以防止上下文超出模型限制。
+
+当你创建 `Agent` 时，如果不传 `context_manager` 参数，Tina 会自动实例化一个默认的 `ContextManager`。
+*   **自动锚定 System Prompt**：无论上下文如何清理，第一条 `system` 消息（索引 0）永远被优先保留。
+*   **智能截断**：当消息总字符数超过 `max_length` (默认 100,000) 时，它会自动从最早的非系统消息开始删除。
+*   **工具调用对保护**：删除时会自动识别 `assistant (tool_calls)` 和紧随其后的 `tool (result)` 消息，将它们作为**一个整体**删除，避免留下孤立的工具结果导致模型报错。
+*   **结果长度限制**：工具返回结果若超过 `max_tool_result_length` (默认 10,000)，会自动截断并添加 `...`。
+
+### 核心参数
+
+| 参数名 | 类型 | 默认值 | 描述 |
+| :--- | :--- | :--- | :--- |
+| `max_length` | `int` | `100000` | **最大上下文长度** (字符数)。当总长度超过此值时触发清理逻辑。 |
+| `max_tool_result_length` | `int` | `10000` | **单个工具结果最大长度**。超过此长度的工具返回值会被自动截断。 |
+
+### 主要方法
+
+#### 1. 消息管理基础
+这些方法用于直接操作消息列表。
+
+*   **`set_messages(messages: list)`**: 重置整个消息列表。通常用于初始化或加载历史存档。
+*   **`get_messages() -> list`**: 获取当前完整的消息列表。这是 Agent 在每次调用 LLM 前会调用的方法。
+*   **`add_messages(messages: list)`**: 批量追加消息列表。会自动校验 `role` 和 `content` 字段是否存在，并触发长度限制检查。
+*   **`clear_messages()`**: 清空所有对话历史（包括 system prompt、tool_calls 记录等），让 Agent 重新开始。
+
+#### 2. 结构化消息添加
+Tina 提供了专门的方法来添加不同类型的消息，确保格式符合 OpenAI 标准。
+
+*   **`add_user_message(message: str)`**:
+    *   添加一条用户消息 `{"role": "user", "content": ...}`。
+    *   自动触发 `limit_messages()` 检查。
+*   **`add_assistant_message(message: str, name: str = None)`**:
+    *   添加一条助手回复。
+    *   支持 `name` 参数（用于多 Agent 场景标识身份）。
+    *   自动触发长度检查。
+*   **`add_tool_calls(tool_calls: list)`**:
+    *   记录模型发出的工具调用请求。
+    *   **自动补全 ID**：如果 `tool_call` 中有 `id` 但缺少 `tool_call_id`，会自动复制填充。
+    *   生成一条 `role: assistant` 且包含 `tool_calls` 字段的消息（content 通常为空）。
+*   **`add_tool_calls_result(results: list)`** / **`add_tool_call_result(...)`**:
+    *   记录工具执行后的结果。
+    *   **自动截断**：如果结果字符串超过 `max_tool_result_length`，自动截断。
+    *   生成一条 `role: tool` 的消息，并关联 `tool_call_id`。
+    *   同时内部维护 `tool_calls_result` 列表，方便后续通过 `get_tools_result()` 查询完整历史记录。
+
+#### 3. 系统提示词管理
+*   **`get_system_message() -> str`**: 获取当前的系统提示词内容。如果第一条消息不是 system 或列表为空，返回空字符串。
+*   **`set_system_message(message: str)`**:
+    *   如果列表为空，创建一条 system 消息。
+    *   如果第一条消息不是 system，**强制替换**第一条消息为 system。
+    *   如果第一条已经是 system，更新其 content。
+    *   *注意：这保证了 system prompt 始终锚定在索引 0 的位置。*
+
+#### 4. 高级查询
+*   **`get_tool_calls() -> list`**: 获取本轮或历史所有的工具调用请求原始数据。
+*   **`get_tools_result() -> list`**: 获取完整的工具执行结果列表（包含 `tool_name`, `result`, `tool_call_id` 等详细信息），而不仅仅是发送给 LLM 的简略版。
+*   **`get_tool_result_contents() -> list[str]`**: 仅提取工具结果的纯文本内容列表，方便快速打印或日志记录。
 
 
+## BaseContextManager 基础上下文管理器类
 
+`BaseContextManager` 是 Tina 中所有上下文管理器的**抽象基类 (Abstract Base Class)**。它定义了 Agent 如何存储、检索和管理对话历史消息的标准接口。
+
+如果你需要实现自定义的记忆策略（例如：将历史记录存入数据库、使用向量检索 RAG、或实现基于语义的自动摘要），你需要继承此类并实现所有标记为 `@abstractmethod` 的方法。
+
+### 导入方式
+
+```python
+from tina import BaseContextManager
+```
+
+### 类结构定义
+
+```python
+from typing import Any
+from abc import ABC, abstractmethod
+
+class BaseContextManager(ABC):
+    # 存储消息的主列表，格式需符合 OpenAI 标准
+    messages: list[dict[str, Any]]
+
+    @abstractmethod
+    def set_messages(self, messages: list[dict[str, Any]]) -> None:
+        """初始化或重置整个消息列表"""
+        pass
+
+    @abstractmethod
+    def get_messages(self) -> list[dict[str, Any]]:
+        """获取当前完整的消息列表（发送给 LLM 前调用）"""
+        pass
+    
+    def add_user_message(self, message: str) -> list[dict[str, Any]]:
+        """添加一条用户消息（默认实现可能为空，建议子类重写）"""
+        pass
+
+    @abstractmethod
+    def add_tool_calls(self, tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """记录模型发出的工具调用请求"""
+        pass
+
+    @abstractmethod
+    def add_tool_calls_result(self, tool_calls_result: list[dict[str, Any]]) -> None:
+        """批量添加工具执行结果"""
+        pass
+
+    @abstractmethod
+    def add_assistant_message(self, message: str) -> list[dict[str, Any]]:
+        """添加一条助手回复消息"""
+        pass
+
+    @abstractmethod
+    def clear_messages(self) -> None:
+        """清空所有消息历史"""
+        pass
+```
+
+### 核心接口
+
+你必须在你自定义的子类中实现以下所有抽象方法：
+
+#### 1. `set_messages(messages)`
+*   **作用**：初始化或完全替换当前的消息列表。通常在 Agent 初始化或加载历史存档时调用。
+*   **参数**：
+    *   `messages` (`list[dict[str, Any]]`): 符合 OpenAI 格式的消息列表。
+*   **返回值**: `None`
+
+#### 2. `get_messages()`
+*   **作用**：获取当前准备发送给大模型的完整消息列表。Agent 在每次调用 `llm.predict` 之前都会调用此方法。
+*   **参数**: 无
+*   **返回值**: `list[dict[str, Any]]` - 消息列表。
+*   **注意**: 你可以在这里进行动态过滤（例如：临时隐藏某些敏感消息）。
+
+#### 3. `add_tool_calls(tool_calls)`
+*   **作用**：记录大模型发出的工具调用请求。
+*   **参数**：
+    *   `tool_calls` (`list[dict[str, Any]]`): 模型返回的工具调用列表（包含 `id`, `function`, `type` 等字段）。
+*   **返回值**: `list[dict[str, Any]]` - 通常返回处理后的 tool_calls 列表。
+*   **实现提示**: 通常需要构建一条 `role: "assistant"` 且包含 `tool_calls` 字段的消息并加入列表。
+
+#### 4. `add_tool_calls_result(tool_calls_result)`
+*   **作用**：批量添加工具执行后的结果。
+*   **参数**：
+    *   `tool_calls_result` (`list[dict[str, Any]]`): 包含工具执行结果的列表。每个元素通常包含 `tool_call_id`, `name`, `result` (或 `content`)。
+*   **返回值**: `None`
+*   **实现提示**: 需要为每个结果构建一条 `role: "tool"` 的消息并加入列表。在此处可实施结果长度截断逻辑。
+
+#### 5. `add_user_message(message)`
+*   **作用**：添加一条用户消息。你可能注意到它没有被@abstractmethod，这是因为如果你需要重写多模态的上下文管理器事，参数不是固定为message的  
+*   **参数**: `message` (`str`) - 用户输入的文本。
+*   **返回值**: `list[dict[str, Any]]` - 更新后的消息列表。
+
+#### 6. `add_assistant_message(message)`
+*   **作用**：添加一条助手的普通文本回复（非工具调用场景）。
+*   **参数**：
+    *   `message` (`str`): 助手回复的文本内容。
+*   **返回值**: `list[dict[str, Any]]` - 更新后的消息列表。
+*   **实现提示**: 构建 `role: "assistant", content: message` 的消息。
+
+#### 7. `clear_messages()`
+*   **作用**：清空所有对话历史。
+*   **参数**: 无
+*   **返回值**: `None`
+*   **注意**: 具体实现需决定是否保留 `system` 消息。Tina 的默认实现通常会清空所有内容，由 Agent 层重新注入 system prompt。
+
+## AgentRuntime

@@ -33,7 +33,6 @@ class MultimodalAgent(Agent):
                   llm: BaseMultimodalAPI, 
                   tools: Tools, 
                   system_prompt: str = None, 
-                  execute_tool: bool = True, 
                   mcp: MCPClient = None,
                   events: AgentEvents = None,
                   context_manager:MultimodalContextManager=None,
@@ -49,11 +48,11 @@ class MultimodalAgent(Agent):
             LLM: tina.BaseAPI类型，调用的LLM对象
             tools: tina.Tools类型，工具集
             sys_prompt: str 系统提示词
-            isExecute: bool 是否执行工具，默认为True，关闭后智能体不在执行工具并返回结果和大模型回复。
             MCP: tina.MCPClient类型，MCP客户端对象，如果不传入，则不进行MCP调用。
-            context_length: int 最大上下文长度，超过该长度则删除旧消息，保留最近的消息。
-            context_limit: int 上下文限制，使用大模型来总结你的上下文，数字为0时不触发
-            max_tool_loop: int 最大工具调用次数，超过该次数则停止调用工具
+            events: tina.AgentEvents类型，事件管理器，用于管理事件，
+            context_manager: tina.ContextManager类型，上下文管理器，
+            agent_runtime: tina.BaseAgentRuntime类型，运行时，
+            max_tool_loop: int 默认30，最多循环次数
             name: str 智能体名字，用于多Agent区分
         """
         # 智能体的名称
@@ -61,10 +60,10 @@ class MultimodalAgent(Agent):
 
         # 运行需要的实例
         self.llm = llm
-        self.tools = tools
+        self._init_tools(tools, name)
+
         self.tools_call_result = []
         self.tools_call = []
-        self.is_execute = execute_tool
         self.mcp_client = mcp
         if context_manager is None:
             self.context_manager = MultimodalContextManager(tools=self.tools,max_length=max_context_length,max_tool_result_length=max_tool_result_length)

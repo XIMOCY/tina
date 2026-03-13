@@ -33,11 +33,11 @@ def build_multimodal_message(input_text:str=None,
                     "type": "image_url",
                     "image_url": {
                         "url": f"data:image/{mime_type};base64,{_encode_file(img_path)}",
-                        "detail": image_detail # 显式设置 detail 以获得更稳定的表现
+                        "detail": image_detail 
                     }
                 })
 
-    # 3. 网络 URL 列表处理 (通常 URL 默认为图片)
+    
     if input_url:
         urls = [input_url] if isinstance(input_url, str) else input_url
         for url in urls:
@@ -46,7 +46,7 @@ def build_multimodal_message(input_text:str=None,
     # 4. 本地音频列表处理
     if input_audio:
         audios = [input_audio] if isinstance(input_audio, str) else input_audio
-        # 目前主流模型(如 GPT-4o-audio)支持: wav, mp3, ogg, aac, m4a
+        
         allowed_audios = {'wav', 'mp3', 'ogg', 'm4a', 'aac'}
         for aud_path in audios:
             aud_path = normalize_path(aud_path)
@@ -62,7 +62,7 @@ def build_multimodal_message(input_text:str=None,
                     }
                 })
 
-    return {"role": role, "content": user_message}
+    return {"role": role, "content": user_message} if user_message else None
 
 def _encode_file(file_path: str) -> str:
     try:

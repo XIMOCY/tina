@@ -11,7 +11,7 @@ class BaseContextManager(ABC):
     @abstractmethod
     def get_messages(self) -> list[dict[str, Any]]:
         pass
-    
+
     def add_user_message(self, message: str) -> list[dict[str, Any]]:
         pass
 
@@ -26,7 +26,7 @@ class BaseContextManager(ABC):
         pass
     @abstractmethod
     def clear_messages(self) -> None:
-        pass
+        pass 
 
 
     
@@ -289,6 +289,8 @@ class MultimodalContextManager(ContextManager):
             input_url=url,
             role="user",
         )
+        if user_content is None:
+            return self.messages
         self.messages.append(user_content)
         return self.messages
 
