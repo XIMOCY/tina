@@ -1,6 +1,6 @@
 """
 编写者：王出日
-日期：2024，12，1
+日期：2026，3，13
 版本 0.5.0
 功能：Agent类，实现了智能体的功能。
 包含：
@@ -8,23 +8,19 @@ Agent类：基础智能体类，默认支持API调用
 """
 from __future__ import annotations
 
-from typing import List, Union, Generator, Iterator, Dict, Any, AsyncGenerator
+from typing import List, Union, Generator, Dict, Any, AsyncGenerator
 
 from tina.agent.core.state import AgentState
 
-from ..llm.BaseAPI import BaseAPI
+from ..llm.base_api import BaseAPI
 from .core.tools import Tools
-from ..mcp.Client import MCPClient
+from ..mcp.client import MCPClient
 from .core.prompt import Prompt
 from .core.context_manager import ContextManager
 from .core.agent_runtime import ToolCallingAgentRuntime,BaseAgentRuntime
 from .core.events import AgentEvents
 from ..core.error import TinaError
 
-
-class BaseAgent:
-    """
-    """
 
 class Agent:
     """
@@ -35,7 +31,7 @@ class Agent:
     tools: Tools  
     def __init__(self,
                   llm: BaseAPI, 
-                  tools: Tools, 
+                  tools: Tools | list[Tools] =None, 
                   system_prompt: str = None, 
                   mcp: MCPClient = None,
                   events: AgentEvents = None,
@@ -43,6 +39,8 @@ class Agent:
                   agent_runtime: BaseAgentRuntime = None,
 
                   max_tool_loop:int = 30,
+                  max_context_length: int = 100000,
+                  max_tool_result_length: int = 6000,
                   name:str=None):
         """
         实例化一个Agent对象
@@ -62,12 +60,13 @@ class Agent:
 
         # 运行需要的实例
         self.llm = llm
-        self.tools = tools
+        self._init_tools(tools, name)
+
         self.tools_call_result = []
         self.tools_call = []
         self.mcp_client = mcp
         if context_manager is None:
-            self.context_manager = ContextManager()
+            self.context_manager = ContextManager(max_length=max_context_length, max_tool_result_length=max_tool_result_length)
         else:
             self.context_manager = context_manager
         # 初始化MCP
@@ -77,20 +76,39 @@ class Agent:
             self.context_manager.set_system_message(system_prompt)
         else:
             self.context_manager.set_system_message(Prompt("tina").prompt)
-        # 初始化消息，可以直接使用context_manager来修改messages
-        self.messages = self.context_manager.get_messages()
 
+        self.messages = self.context_manager.get_messages()
         if agent_runtime is None:
             self.runtime = ToolCallingAgentRuntime(self.llm, self.tools, self.context_manager,self.events,max_tool_loop=max_tool_loop,mcp_client=mcp)
         else:
             self.runtime = agent_runtime
         self.other_agents = []
+
+    def _init_tools(self, tools, name):
+        if tools is None or isinstance(tools, list): 
+            self.tools = Tools(
+            name="_self",
+            metadata={
+            "name":name,
+            "description":"Agent自己的工具包，实例化时指定的工具包会被添加到这个工具包里面"
+            }
+        )
+            self.tools.add_tools(tools)
+        elif isinstance(tools, Tools): 
+            self.tools = tools
+
+    
     @property
     def state(self)-> AgentState:
         """
         获取当前Agent的状态
         """
         return self.runtime.state
+    def add_tools(self, tools: Tools | list[Tools]) -> None:
+        """
+        添加工具包
+        """
+        self.tools.add_tools(tools)
     # 事件管理（对外公开 Events 的装饰器接口）
     def before_tool_call(self):
         """
@@ -172,38 +190,16 @@ class Agent:
         """
 
         self.events.add_handler(event_name, func)
+
     def _mcp_to_tools(self, MCP):
         """如果传入了MCP，则将MCP的工具集加入到当前的工具集中"""
         try:
             if MCP is not None:
                 self.mcp_client = MCP
                 _tools = self.mcp_client.to_tina_tools()
-                new_tools = Tools(name=self.tools.instance_name)
-                new_tools = self.tools + _tools
-                old_tools = self.tools
-                self.tools = new_tools
-                del old_tools
-                del _tools
+                self.tools.add_tools(_tools)
         except Exception as e:
             raise e
-
-    def disable_tool(self, tool_names: list) -> bool:
-        """
-        禁用工具
-        Args:
-            tool_name:工具名称
-        """
-        for tool_name in tool_names:
-            self.tools.disable_tool(tool_name)
-        return True
-    
-    def enable_tool(self, tool_name: str) -> bool:
-        """
-        启用工具
-        Args:
-            tool_name:工具名称
-        """
-        return self.tools.enable_tool(tool_name)
     
     def get_messages(self) -> list:
         """
@@ -211,6 +207,7 @@ class Agent:
         Agent会在当前运行状态维护一个自己的消息列表，可以通过该方法获取
         """
         return self.messages
+    
     def clear_messages(self) -> None:
         """
         清理当前Agent的消息列表，只保留前三个系统消息

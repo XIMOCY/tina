@@ -1,6 +1,4 @@
-import json
-import inspect
-from ...llm.BaseAPI import BaseAPI,BaseMultimodalAPI
+from ...llm.base_api import BaseAPI,BaseMultimodalAPI
 from ...mcp import MCPClient
 from .tools import Tools
 from .context_manager import BaseContextManager
@@ -83,42 +81,27 @@ class BaseAgentRuntime():
         """执行工具调用并返回结果"""
 
         # before_tool_calls 事件
-        if self.events is not None:
-            for handler in self.events.get_handler("before_tool_calls"):
-                handler(_tool_calls)
+        self.events.trigger_before_tool_calls(_tool_calls)
 
         # 默认工具执行方式
         tool_result = self.tools.execute(_tool_calls,self.mcp_client,events=self.events)
         self.context_manager.add_tool_calls_result(tool_result)
 
         # after_tool_calls 事件
-        if self.events is not None:
-            for handler in self.events.get_handler("after_tool_calls"):
-                handler(tool_result)
+        self.events.trigger_after_tool_calls(tool_result)
 
         return tool_result
     
     async def _aexecute_tool(self, _tool_calls) -> str:
         """异步执行工具调用并返回结果"""
 
-        # before_tool_calls 事件（异步环境下支持异步 / 同步 handler）
-        if self.events is not None:
-            for handler in self.events.get_handler("before_tool_calls"):
-                if inspect.iscoroutinefunction(handler):
-                    await handler(_tool_calls)
-                else:
-                    handler(_tool_calls)
+        await self.events.atrigger_before_tool_calls(_tool_calls)
 
         tool_result = await self.tools.aexecute(_tool_calls,self.mcp_client,events=self.events)
         self.context_manager.add_tool_calls_result(tool_result)
 
         # after_tool_calls 事件
-        if self.events is not None:
-            for handler in self.events.get_handler("after_tool_calls"):
-                if inspect.iscoroutinefunction(handler):
-                    await handler(tool_result)
-                else:
-                    handler(tool_result)
+        await self.events.atrigger_after_tool_calls(tool_result)
 
         return tool_result
     
@@ -163,7 +146,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                 continue
             else:
                 self.state = AgentState.RESPONDING
-                llm_response["content"] = self.events.trigger_after_user_instruction(user_message=instruction,assistant_message=llm_response["content"])
+                _,llm_response["content"] = self.events.trigger_after_user_instruction(user_message=instruction,assistant_message=llm_response["content"])
                 self.context_manager.add_assistant_message(llm_response["content"])
                 # 用户输入后事件（同步非流式）
                 
@@ -246,7 +229,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
 
             whole_content = "".join(content_parts)
             if whole_content:
-                whole_content = self.events.trigger_after_user_instruction(user_message=instruction, assistant_message=whole_content)
+                _,whole_content = self.events.trigger_after_user_instruction(user_message=instruction, assistant_message=whole_content)
                 self.context_manager.add_assistant_message(whole_content)
                 # 用户输入后事件（同步流式）
                 
@@ -444,7 +427,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                 self.context_manager.add_assistant_message(llm_response["content"])
                 # 用户输入后事件（同步非流式）
                 llm_assistant_message = llm_response["content"]
-                llm_assistant_message = self.events.trigger_after_user_instruction(user_message=instruction, assistant_message=llm_assistant_message)
+                _,llm_assistant_message = self.events.trigger_after_user_instruction(user_message=instruction, assistant_message=llm_assistant_message)
                 return llm_response 
         self.state = AgentState.IDLE
         if counter > self.max_tool_loop: 
@@ -536,7 +519,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
             whole_content = "".join(content_parts)
             if whole_content:
                 # 用户输入后事件（同步流式）
-                whole_content = self.events.trigger_after_user_instruction(user_message=instruction, assistant_message=whole_content)
+                _,whole_content = self.events.trigger_after_user_instruction(user_message=instruction, assistant_message=whole_content)
                 self.context_manager.add_assistant_message(whole_content)
 
             if tool_called:

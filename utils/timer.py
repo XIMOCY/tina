@@ -1,8 +1,8 @@
 import time
 import functools
-from tina.core import logger  # 用全局 logger 实例
+from tina.core import logger 
 
-# 一般同步函数 / 方法计时
+
 def timer(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -16,13 +16,13 @@ def timer(func):
     return wrapper
 
 
-# 同步“流式”（返回同步生成器 / 可迭代）的计时
+
 def stream_timer(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         name = func.__qualname__
         start = time.time()
-        result = func(*args, **kwargs)  # 这里期望是生成器或可迭代对象
+        result = func(*args, **kwargs) 
 
         def generator():
             try:

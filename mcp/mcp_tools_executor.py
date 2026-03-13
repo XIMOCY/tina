@@ -1,4 +1,4 @@
-from .Client import MCPClient
+from .client import MCPClient
 from ..core import logger
 from typing import Dict, Any
 class MCPToolExecutor:

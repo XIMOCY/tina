@@ -2,10 +2,11 @@ from setuptools import setup, find_packages
 
 setup(
 name='tina-python',
-version='0.5.0-pre',
+version='0.5.0',
 packages=find_packages(),
 install_requires=[
     'httpx',
+    'python-dotenv'
 ],
  
 description='tina is in your computer!',

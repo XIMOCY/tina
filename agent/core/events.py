@@ -244,7 +244,7 @@ class AgentEvents:
                     changed_assistant_message = result[1]
                 
             
-        return changed_assistant_message
+        return changed_user_message,changed_assistant_message
     
     async def atrigger_after_user_instruction(self,user_message:str,assistant_message:str):
         changed_user_message = user_message
@@ -262,7 +262,7 @@ class AgentEvents:
                     changed_assistant_message = result[1]
                 
             
-        return changed_assistant_message
+        return changed_user_message,changed_assistant_message
     
 
     def trigger_before_tool_call(self,tool_name:str,tool_arguments:dict):
@@ -338,6 +338,39 @@ class AgentEvents:
             else:
                 continue
         return changed_tool_name,changed_tool_arguments,changed_tool_result
+    
+    def trigger_after_tool_calls(self,tool_calls:list[dict]):
+        changed_tool_calls = deepcopy(tool_calls)
+        for func in self.event_handler['after_tool_calls']:
+            if inspect.iscoroutinefunction(func):
+                logger.warning(f"Events - 异步事件after_tool_calls处理器{func.__name__}在同步调用中被忽略")
+                continue
+            result = func(changed_tool_calls)
+
+    async def atrigger_after_tool_calls(self,tool_calls:list[dict]):
+        changed_tool_calls = deepcopy(tool_calls)
+        for func in self.event_handler['after_tool_calls']:
+            if inspect.iscoroutinefunction(func):
+                await func(changed_tool_calls)
+            else:
+                func(changed_tool_calls)
+
+    def trigger_before_tool_calls(self,tool_calls:list[dict]):
+        changed_tool_calls = deepcopy(tool_calls)
+        for func in self.event_handler['before_tool_calls']:
+            if inspect.iscoroutinefunction(func):
+                logger.warning(f"Events - 异步事件before_tool_calls处理器{func.__name__}在同步调用中被忽略")
+                continue
+            func(changed_tool_calls)
+
+    async def atrigger_before_tool_calls(self,tool_calls:list[dict]):
+        changed_tool_calls = deepcopy(tool_calls)
+        for func in self.event_handler['before_tool_calls']:
+            if inspect.iscoroutinefunction(func):
+                await func(changed_tool_calls)
+            else:
+                func(changed_tool_calls)
+
     def trigger_on_tool_confirmation(self,tool_name:str,tool_arguments:dict):
         func = self.event_handler['on_tool_confirmation']
         if func is None: 

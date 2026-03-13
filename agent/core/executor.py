@@ -7,14 +7,13 @@
 import io
 from contextlib import redirect_stdout, redirect_stderr
 import threading
-import time
 import json
 import asyncio
 import inspect
-from ...core import logger
-from ...mcp.MCPToolExecutor import MCPToolExecutor
+from ...mcp.mcp_tools_executor import MCPToolExecutor
 
 from .events import AgentEvents
+from ...core import logger
 
 
 class ToolsExecutor:

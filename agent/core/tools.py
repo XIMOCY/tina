@@ -18,6 +18,7 @@ from ...utils.type_mapper import convert_tools_for_llm
 
 class Tool:
     name: str
+    metadata: dict
     tool: Callable
     description: str
     required_parameters: list
@@ -34,6 +35,7 @@ class Tool:
                  tool: Callable,
                  name: str,
                  description: str,
+                 metadata: dict = {},
                  parameters: dict = {},
                  required_parameters: list = [],
                  require_confirmation: bool = False,
@@ -56,6 +58,7 @@ class Tool:
         self.return_url = return_url
         self.schema = schema
         self.belongs_to = belongs_to
+        self.metadata = metadata
 
     def get_tool(self):
         return self.tool
@@ -144,7 +147,7 @@ class Tools:
 
     def __add__(self, other: "Tools"):
         self._check(other)
-        combined = Tools(self.tools_executor, name=self.instance_name)
+        combined = Tools(self.tools_executor, name=self.instance_name,metadata=self.metadata)
         combined += self
         combined += other
         return combined
@@ -258,6 +261,7 @@ class Tools:
         _tool = Tool(
             tool=tool,
             name=logic_name,
+            metadata=self.metadata,
             description=description,
             parameters=properties,
             required_parameters=required_parameters,
@@ -391,8 +395,9 @@ class Tools:
 
     def __str__(self):
         header = f"工具集: [{self.instance_name or '未命名'}]"
+        metadata = self.metadata if self.metadata else "无"
         line = "=" * 40
-        result = f"\n{header}\n{line}\n"
+        result = f"\n{header}\n{metadata}\n{line}\n"
         all_tools = self.tools
         if not all_tools:
             return result + " (当前工具集为空)\n"

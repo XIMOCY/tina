@@ -26,19 +26,19 @@ class EnvReader:
         :return: Value of the environment variable.
         """
         return os.getenv(key)
-    def getAPIKey(self):
+    def get_api_key(self):
         """
         Returns the value of the LLM environment variable.
         :return: Value of the LLM environment variable.
         """
         return self.get_env("LLM_API_KEY")
-    def getBaseUrl(self):
+    def get_base_url(self):
         """
         Returns the value of the BASE_URL environment variable.
         :return: Value of the BASE_URL environment variable.
         """
         return self.get_env("BASE_URL")
-    def getModel(self):
+    def get_model(self):
         """
         Returns the value of the MODEL environment variable.
         :return: Value of the MODEL environment variable.

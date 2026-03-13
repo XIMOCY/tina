@@ -1,5 +1,5 @@
 import httpx
-from .BaseAPI import BaseAPI
+from .base_api import BaseAPI
 
 class OllamaAPI(BaseAPI):
     def __init__(

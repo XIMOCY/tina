@@ -1,4 +1,4 @@
-from .Agent import Agent
+from .agent import Agent
 from .multimodal_agent import MultimodalAgent
 from .core.tools import Tools
 from .core.context_manager import ContextManager,BaseContextManager

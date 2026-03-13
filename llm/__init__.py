@@ -1,5 +1,5 @@
 from .ollama_api import OllamaAPI
-from .BaseAPI import BaseAPI, BaseMultimodalAPI
+from .base_api import BaseAPI, BaseMultimodalAPI
 
 
 

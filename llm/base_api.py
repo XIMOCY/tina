@@ -1,19 +1,18 @@
 """
 编写者：王出日
-日期：2025，5，20
-版本 0.4.2
+日期：2026，3，13
+版本 0.5.0
 描述：使用httpx库实现的API调用类，包含了API请求、token管理、工具调用等功能
 
 包含：
 - BaseAPI: 基础API类，所有使用openai api访问大模型的类都继承自此类
-- BaseAPI_multimodal: 多模态API类，继承自BaseAPI，增加了图片参数
+- BaseMultimodalAPI: 多模态API类，继承自BaseAPI，用于多模态的API请求，如图片、音频、视频等
 """
-import base64
 import httpx
 import json
 import os
 from typing import AsyncGenerator, Union, Generator
-from ..utils.envReader import EnvReader
+from ..utils.env_reader import EnvReader
 from ..core.error import APIRequestFailed
 from ..utils.output_parser import stream_generator_parser
 from ..utils.multimodal_formatter import build_multimodal_message
@@ -41,14 +40,26 @@ class BaseAPI():
                 role: str = "user"
                 ):
         self.logger = logger
-        try:
-            self.env_reader = EnvReader(env_file=env_path)
-            self.api_key = self.env_reader.getAPIKey() if api_key is None else api_key
-            self.base_url = self.env_reader.getBaseUrl() if base_url is None else base_url
-            self.model = self.env_reader.getModel() if model is None else model
-        except Exception as e:
-            logger.error("BaseAPI - env内参数名称错误：请检查")
-            raise ValueError("env内参数名称错误：请检查")
+        
+        self.api_key = api_key
+        self.base_url = base_url
+        self.model = model
+        
+        params_to_load = any(param is None for param in [model, api_key, base_url])
+        
+        if params_to_load:
+            try:
+                self.env_reader = EnvReader(env_file=env_path)
+                
+                if api_key is None:
+                    self.api_key = self.env_reader.get_api_key()
+                if base_url is None:
+                    self.base_url = self.env_reader.get_base_url()
+                if model is None:
+                    self.model = self.env_reader.get_model()
+            except Exception as e:
+                logger.error("BaseAPI - env内参数名称错误：请检查")
+                raise ValueError("env内参数名称错误：请检查")
 
         if not self.api_key:
             self.logger.warning(f"BaseAPI - 未找到API key，请检查环境变量'{self.API_ENV_VAR_NAME}'和{env_path}")
@@ -60,10 +71,18 @@ class BaseAPI():
             self.logger.warning(f"BaseAPI - 未找到模型名称，请检查环境变量'MODEL_NAME'和{os.path.join(env_path, '.env')}")
             raise ValueError(f"模型名称并没有在环境变量'MODEL_NAME'和{os.path.join(env_path, '.env')}中找到，要么请你设置一下，要么输入model参数")
         
-        self.MAX_INPUT = self.env_reader.getMaxInput() if not self.env_reader.getMaxInput() is None else 8000
-
-
-        self.temperature = self.env_reader.getTemperature() if not self.env_reader.getTemperature() is None else 1.0
+        self.MAX_INPUT = None
+        self.temperature = None
+        try:
+            self.env_reader = EnvReader(env_file=env_path)
+            self.MAX_INPUT = self.env_reader.getMaxInput()
+            self.temperature = self.env_reader.getTemperature()
+        except:
+            pass  # 即使环境配置文件中没有这些参数也不影响程序运行
+            
+        self.MAX_INPUT = self.MAX_INPUT if self.MAX_INPUT is not None else 8000
+        self.temperature = self.temperature if self.temperature is not None else 1.0
+        
         self.logger.info(f"BaseAPI - 当前模型名称为：{self.model}，当前模型支持的最大输入长度为：{self.MAX_INPUT}，当前模型温度为：{self.temperature}")
         self.logger.debug(f"BaseAPI - BaseAPI初始化完成，base_url: {self.base_url}, model: {self.model}")
 
@@ -146,7 +165,6 @@ class BaseAPI():
         if tools:
             payload["tools"] = tools
         
-        # 扩展参数仍然支持
         payload.update(kwargs)
         return payload
 
