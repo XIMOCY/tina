@@ -1,3 +1,10 @@
 __pycache__/
 *.pyc
 *.pyo
+test/*
+HUTBFight/
+monika.py
+my_little_cat_girl.py
+*.env
+*.ini
+*.ico

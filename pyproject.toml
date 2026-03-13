@@ -25,19 +25,13 @@ dependencies = [
 [project.urls]
 Homepage = "https://gitee.com/wang-churi/tina"
 Repository = "https://gitee.com/wang-churi/tina.git"
+GitHub = "https://github.com/XIMOCY/tina.git"
 
-# 如果你需要定义 MCP 等可选依赖 (对应之前的 pip install tina-python[mcp])
 [project.optional-dependencies]
 mcp = [
     "mcp-python", 
     # 这里可以添加其他 MCP 相关的依赖
 ]
-dev = [
-    "pytest",
-    "black",
-    "flake8"
-]
-
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["tina*"]
