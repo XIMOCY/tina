@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tina-python"
+version = "0.5.0"
+description = "tina is in your computer!"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+license = { text = "Apache Software License" }
+authors = [
+    { name = "王出日", email = "wangchuri@163.com" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "httpx",
+    "python-dotenv",
+]
+
+[project.urls]
+Homepage = "https://gitee.com/wang-churi/tina"
+Repository = "https://gitee.com/wang-churi/tina.git"
+
+# 如果你需要定义 MCP 等可选依赖 (对应之前的 pip install tina-python[mcp])
+[project.optional-dependencies]
+mcp = [
+    "mcp-python", 
+    # 这里可以添加其他 MCP 相关的依赖
+]
+dev = [
+    "pytest",
+    "black",
+    "flake8"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tina*"]
