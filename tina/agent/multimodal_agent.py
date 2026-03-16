@@ -9,7 +9,7 @@ AgentByLocalModel类：本地模型智能体类，继承自Agent
 """
 from __future__ import annotations
 
-from typing import List, Union, Generator, Iterator, Dict, Any, AsyncGenerator
+from typing import List, Literal, Union, Generator, Iterator, Dict, Any, AsyncGenerator, overload
 
 from ..llm.base_api import BaseMultimodalAPI
 from .core.tools import Tools
@@ -20,7 +20,7 @@ from .core.agent_runtime import BaseAgentRuntime,ToolCallingMutilemodalAgentRunt
 from .core.events import AgentEvents
 
 from .agent import Agent
-
+from .core.agent_response import AgentResponse
 
 class MultimodalAgent(Agent):
     """
@@ -83,7 +83,13 @@ class MultimodalAgent(Agent):
             self.runtime = ToolCallingMutilemodalAgentRuntime(self.llm, self.tools, self.context_manager,self.events,max_tool_loop=max_tool_loop,mcp_client=mcp)
         else:
             self.runtime = agent_runtime
- 
+    @overload
+    def predict(self, instruction: str = None,image: str|list[str] = None,audio: str|list[str] = None,url: str|list[str] = None,temperature: float = 0.5, top_p: float = 0.9, 
+                top_k: int = 1, min_p: float = 0.0, stream: Literal[True] = True) -> Generator[AgentResponse, None, None]: ...
+
+    @overload
+    def predict(self, instruction: str = None,image: str|list[str] = None,audio: str|list[str] = None,url: str|list[str] = None, temperature: float = 0.5, top_p: float = 0.9, 
+                top_k: int = 1, min_p: float = 0.0, stream: Literal[False] = False) -> AgentResponse: ...
     def predict(self, 
                 instruction: str = None,
                 image: str|list[str] = None,
@@ -93,7 +99,7 @@ class MultimodalAgent(Agent):
                 top_p: float = 0.9,
                 top_k: int = 1,
                 min_p: float = 0.0,
-                stream: bool = True) -> Union[str, Generator[str, None, None]]:
+                stream: bool = True):
         """
         调用agent进行生成文本回复，默认流式输出
         """
@@ -132,13 +138,33 @@ class MultimodalAgent(Agent):
         top_p: float = 0.9,
         top_k: int = 1,
         min_p: float = 0.0,
-        stream: bool = True,
-    ) -> Union[str, AsyncGenerator[Dict[str, Any], None]]:
+    ) -> AsyncGenerator[AgentResponse, None]:
         """
         异步版本的 predict，默认流式输出
         """
-        if stream:
-            return self.runtime.arun_prediction_stream(
+        async for chunk in self.runtime.arun_prediction_stream(
+                instruction,
+                image,
+                audio,
+                url,
+                temperature,
+                top_p,
+                top_k,
+                min_p,
+            ):
+            yield AgentResponse(**chunk)
+    async def apredict_no_stream(
+        self,
+        instruction: str = None,
+        image: str | list[str] = None,
+        audio: str | list[str] = None,
+        url: str | list[str] = None,
+        temperature: float = 0.5,
+        top_p: float = 0.9,
+        top_k: int = 1,
+        min_p: float = 0.0,
+        ) -> AgentResponse:
+            result = await self.runtime.arun_prediction_no_stream(
                 instruction,
                 image,
                 audio,
@@ -148,15 +174,5 @@ class MultimodalAgent(Agent):
                 top_k,
                 min_p,
             )
-        else:
-            return await self.runtime.arun_prediction_no_stream(
-                instruction,
-                image,
-                audio,
-                url,
-                temperature,
-                top_p,
-                top_k,
-                min_p,
-            )
+            return AgentResponse(**result)
         

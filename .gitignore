@@ -8,3 +8,4 @@ my_little_cat_girl.py
 *.env
 *.ini
 *.ico
+logs/

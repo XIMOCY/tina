@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import inspect
 from types import MappingProxyType
+from typing import Any, Awaitable, Callable, Protocol, Union
 from ...core import logger
 from ...core.error import NoConfirmationHandler
 from copy import deepcopy
+from .agent_response import AgentResponse
+
+
+
 class AgentEvents:
     def __init__(self):
         """
@@ -105,16 +110,17 @@ class AgentEvents:
         else:
             self.event_handler[event_name].append(func)
 
-    def on_stream_chunk(self):
+    def on_stream_chunk(self) :
         """
         在大模型处理用户输入时，每处理一个chunk，都会调用此函数  
         需要事件处理函数接受下面的参数：  
-        chunk: dict[str,str]
+        chunk: dict[str,str] or AgentResponse
         """
-        def wrapper(func):
+        def decorator(func) :
             self._validate_event_handler_signature('on_stream_chunk',func)
             self.add_handler('on_stream_chunk',func)
-        return wrapper
+            return func
+        return decorator
 
     def before_tool_call(self):
         """
@@ -122,11 +128,11 @@ class AgentEvents:
         需要事件处理函数接受下面的参数：  
         tool_name: str,tool_arguments: dict,
         """
-        def wrapper(func):
+        def decorator(func):
             self._validate_event_handler_signature('before_tool_call',func)
             self.add_handler('before_tool_call',func)
             return func
-        return wrapper
+        return decorator
     
     def after_tool_call(self):
         """
@@ -146,11 +152,11 @@ class AgentEvents:
         需要事件处理函数接受下面的参数：  
         tool_calls: list[dict[str,str]]
         """
-        def wrapper(func):
+        def decorator(func):
             self._validate_event_handler_signature('before_tool_calls',func)
             self.add_handler('before_tool_calls',func)
             return func
-        return wrapper
+        return decorator
     
     def after_tool_calls(self):
         """
@@ -158,11 +164,11 @@ class AgentEvents:
         需要事件处理函数接受下面的参数：  
         tool_calls: list[dict[str,str]]
         """
-        def wrapper(func):
+        def decorator(func):
             self._validate_event_handler_signature('after_tool_calls',func)
             self.add_handler('after_tool_calls',func)
             return func
-        return wrapper
+        return decorator
     
     def on_tool_confirmation(self):
         """
@@ -170,11 +176,11 @@ class AgentEvents:
         需要事件处理函数接受下面的参数：  
         tool_name: str tool_arguments: dict
         """
-        def wrapper(func):
+        def decorator(func):
             self._validate_event_handler_signature("on_tool_confirmation",func)
             self.event_handler["on_tool_confirmation"] = func
             return func
-        return wrapper
+        return decorator
     
     def before_user_instruction(self):
         """
@@ -182,10 +188,10 @@ class AgentEvents:
         需要事件处理函数接受下面的参数：  
         user_message: str
         """
-        def wrapper(func):
+        def decorator(func):
             self.add_handler('before_user_instruction',func)
             return func
-        return wrapper
+        return decorator
     
     def after_user_instruction(self):
         """
@@ -193,10 +199,10 @@ class AgentEvents:
         需要事件处理函数接受下面的参数：  
         user_message: str assistant_message: str
         """
-        def wrapper(func):
+        def decorator(func):
             self.add_handler('after_user_instruction',func)
             return func
-        return wrapper
+        return decorator
     
     def trigger_before_user_instruction(self,user_message:str):
         changed_message = user_message
@@ -404,9 +410,9 @@ class AgentEvents:
             return (result[0],result[1])
         return (False,"用户阻止了该工具的运行")
     
-    def trigger_on_agent_stream_chunk(self,chunk:dict):
+    def trigger_on_stream_chunk(self,chunk:dict):
         changed_chunk = MappingProxyType(chunk)
-
+        changed_chunk = AgentResponse(**chunk)
         for func in self.event_handler['on_stream_chunk']:
             if inspect.iscoroutinefunction(func):
                 logger.warning(f"Events - 异步事件on_stream_chunk处理器{func.__name__}在同步调用中被忽略")
@@ -414,8 +420,9 @@ class AgentEvents:
             result = func(changed_chunk)
             logger.debug(f"Events - on_stream_chunk处理器{func.__name__}返回结果{result}")
 
-    async def atrigger_on_agent_stream_chunk(self,chunk:dict):
+    async def atrigger_on_stream_chunk(self,chunk:dict):
         changed_chunk = MappingProxyType(chunk)
+        changed_chunk = AgentResponse(**chunk)
         for func in self.event_handler['on_stream_chunk']:
             if inspect.iscoroutinefunction(func):
                 result = await func(changed_chunk)

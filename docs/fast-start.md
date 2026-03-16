@@ -44,6 +44,7 @@ while True:
     user_input = input("请输入你的问题：")
     result = agent.predict(instruction = user_input,stream=True)
     for chunk in result:
-        print(chunk["content"], end="", flush=True)
+        # print(chunk["content"], end="", flush=True) 你也可以这样做，因为返回值本质是一个dict 但是下面的方法有语法提示
+        print(chunk.content, end="", flush=True)
 ```
 在后面的文档我会一一介绍里面的用法 Have Fun!

@@ -8,8 +8,9 @@ Agent类：基础智能体类，默认支持API调用
 """
 from __future__ import annotations
 
-from typing import List, Union, Generator, Dict, Any, AsyncGenerator
+from typing import List, Literal, Union, Generator, Dict, Any, AsyncGenerator, overload
 
+from tina.agent.core.agent_response import AgentResponse
 from tina.agent.core.state import AgentState
 
 from ..llm.base_api import BaseAPI
@@ -170,7 +171,7 @@ class Agent:
         """
         当大模型生成一个结果时，会触发此事件  
         需要事件处理函数接受下面的参数：  
-        chunk: dict
+        chunk: dict 或者 AgentResponse
         """
         return self.events.on_stream_chunk()
     
@@ -316,6 +317,14 @@ class Agent:
             return self.mcp_client.get_server_info(server_id)
         else:
             raise ValueError("MCP客户端未初始化，请先初始化MCP客户端")
+        
+    @overload
+    def predict(self, instruction: str = None, temperature: float = 0.5, top_p: float = 0.9, 
+                top_k: int = 1, min_p: float = 0.0, stream: Literal[True] = True) -> Generator[AgentResponse, None, None]: ...
+
+    @overload
+    def predict(self, instruction: str = None, temperature: float = 0.5, top_p: float = 0.9, 
+                top_k: int = 1, min_p: float = 0.0, stream: Literal[False] = False) -> AgentResponse: ...
     
     def predict(self, 
                 instruction: str = None,
@@ -323,26 +332,33 @@ class Agent:
                 top_p: float = 0.9,
                 top_k: int = 1,
                 min_p: float = 0.0,
-                stream: bool = True) -> Union[str, Generator[str, None, None]]:
+                stream: bool = True):
         """
         调用agent进行生成文本回复，默认流式输出
         """
         if stream:
-            return self.runtime.run_prediction_stream(
+            def gen():
+                for chunk in self.runtime.run_prediction_stream(
+                    instruction,
+                    temperature,
+                    top_p,
+                    top_k,
+                    min_p,
+                ):
+                    yield AgentResponse(
+                        **chunk
+                    )
+            return gen()
+        else:
+            result = self.runtime.run_prediction_no_stream(
                 instruction,
                 temperature,
                 top_p,
                 top_k,
                 min_p,
             )
-        else:
-            
-            return self.runtime.run_prediction_no_stream(
-                instruction,
-                temperature,
-                top_p,
-                top_k,
-                min_p,
+            return AgentResponse(
+                **result
             )
 
 
@@ -353,24 +369,34 @@ class Agent:
         top_p: float = 0.9,
         top_k: int = 1,
         min_p: float = 0.0,
-        stream: bool = True,
-    ) -> Union[str, AsyncGenerator[Dict[str, Any], None]]:
+    )-> AsyncGenerator[AgentResponse, None]:
         """
-        异步版本的 predict，默认流式输出
+        异步版本的 predict，流式输出,如果需要非流式的输出，请使用 apredict_no_stream
         """
-        if stream:
-            return self.runtime.arun_prediction_stream(
-                instruction,
-                temperature,
-                top_p,
-                top_k,
-                min_p,
-            )
-        else:
-            return await self.runtime.arun_prediction_no_stream(
-                instruction,
-                temperature,
-                top_p,
-                top_k,
-                min_p,
-            )
+        async for chunk in self.runtime.arun_prediction_stream(
+            instruction,
+            temperature,
+            top_p,
+            top_k,
+            min_p,
+        ):
+            yield AgentResponse(**chunk)
+    async def apredict_no_stream(
+        self,
+        instruction: str = None,
+        temperature: float = 0.5,
+        top_p: float = 0.9,
+        top_k: int = 1,
+        min_p: float = 0.0,
+    ) -> AgentResponse:
+        """
+        异步版本的 predict，非流式输出,如果需要流式的输出，请使用 apredict
+        """
+        result = await self.runtime.arun_prediction_no_stream(
+            instruction,
+            temperature,
+            top_p,
+            top_k,
+            min_p,
+        )
+        return AgentResponse(**result)

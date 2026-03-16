@@ -37,11 +37,12 @@ class BaseAPI():
                 base_url: str = None,
                 env_path:str = os.path.join(os.getcwd(), "tina.env"),
                 name: str = None,
-                role: str = "user"
+                role: str = "user",
+                timeout: int = 180,
                 ):
         self.logger = logger
         
-        self.api_key = api_key
+        self.__api_key = api_key
         self.base_url = base_url
         self.model = model
         
@@ -52,7 +53,7 @@ class BaseAPI():
                 self.env_reader = EnvReader(env_file=env_path)
                 
                 if api_key is None:
-                    self.api_key = self.env_reader.get_api_key()
+                    self.__api_key = self.env_reader.get_api_key()
                 if base_url is None:
                     self.base_url = self.env_reader.get_base_url()
                 if model is None:
@@ -61,7 +62,7 @@ class BaseAPI():
                 logger.error("BaseAPI - env内参数名称错误：请检查")
                 raise ValueError("env内参数名称错误：请检查")
 
-        if not self.api_key:
+        if not self.__api_key:
             self.logger.warning(f"BaseAPI - 未找到API key，请检查环境变量'{self.API_ENV_VAR_NAME}'和{env_path}")
             raise ValueError(f"API key并没有在环境变量'{self.API_ENV_VAR_NAME}'和{env_path}中找到，要么请你设置一下，要么输入api_key参数")
         if not self.base_url:
@@ -91,7 +92,43 @@ class BaseAPI():
 
         self._name = name
         self._role = role
+        self._async_client = None
+        self._timeout = timeout
 
+        del self.env_reader
+    @property
+    def aclient(self) -> httpx.AsyncClient:
+        """
+        只有在第一次调用时，才会根据当前的事件循环创建 Client
+        """
+        if self._async_client is None or self._async_client.is_closed:
+            self._async_client = httpx.AsyncClient(timeout=self._timeout)
+            self.logger.debug(f"BaseAPI - 异步客户端已在当前 Loop 中创建")
+        return self._async_client
+    
+    def __repr__(self):
+        return f"<BaseAPI model={self.model} base url={self.base_url}>"
+
+    def __str__(self):
+        return self.__repr__()    
+    def __getattribute__(self, name):
+        if name == "__dict__":
+            original_dict = super().__getattribute__("__dict__")
+            clean_dict = {
+                k: v for k, v in original_dict.items() 
+                if "api_key" not in k
+            }
+            return clean_dict
+        if "api_key" in name:
+            return "*" * len(name)
+
+        return super().__getattribute__(name)
+    def __dir__(self):
+        all_attrs = super().__dir__()
+        return [attr for attr in all_attrs if "api_key" not in attr]
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self._async_client.aclose()
     @timer   
     def get_models(self) -> list:
         """返回支持的模型列表"""
@@ -171,7 +208,7 @@ class BaseAPI():
     def _prepare_headers(self) -> dict:
         """准备请求头的通用方法"""
         return {
-            "Authorization": f"Bearer {self.api_key}",
+            "Authorization": f"Bearer {super().__getattribute__('_BaseAPI__api_key')}",
             "Content-Type": "application/json"
         }
     
@@ -562,7 +599,7 @@ class BaseAPI():
             
             # 使用异步流式解析器
             from ..utils.output_parser import astream_generator_parser
-            return astream_generator_parser(self.base_url, payload, headers, timeout)
+            return astream_generator_parser(self.aclient,self.base_url, payload, headers, timeout)
     @timer
     async def apredict_no_stream(self,
                                  input_text: str = None,
@@ -618,29 +655,29 @@ class BaseAPI():
         )
         headers = self._prepare_headers()
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(f"{self.base_url}", json=payload, headers=headers, timeout=timeout)
-            if response.status_code != 200:
-                rep = response.read()
-                raise APIRequestFailed(
-                    url=self.base_url,
-                    status_code=response.status_code,
-                    error_details=json.loads(rep.decode('utf-8'))["error"]["message"]
-                )
 
-            response_data = response.json()
-            self.tokens += response_data.get("usage", {}).get("total_tokens", 0)
+        response = await self.aclient.post(f"{self.base_url}", json=payload, headers=headers, timeout=timeout)
+        if response.status_code != 200:
+            rep = response.read()
+            raise APIRequestFailed(
+                url=self.base_url,
+                status_code=response.status_code,
+                error_details=json.loads(rep.decode('utf-8'))["error"]["message"]
+            )
 
-            result = {"role": "assistant", "content": response_data["choices"][0]["message"]["content"]}
+        response_data = response.json()
+        self.tokens += response_data.get("usage", {}).get("total_tokens", 0)
 
-            # 如果包含工具调用，添加 tool_calls
-            if "tool_calls" in response_data["choices"][0]["message"]:
-                tool_calls = response_data["choices"][0]["message"].get("tool_calls", [])
-                # 修改为需要的格式，开发者可以**直接**将这个工具使用追加到消息列表
-                if tool_calls:
-                    result["tool_calls"] = tool_calls
+        result = {"role": "assistant", "content": response_data["choices"][0]["message"]["content"]}
 
-            return result
+        # 如果包含工具调用，添加 tool_calls
+        if "tool_calls" in response_data["choices"][0]["message"]:
+            tool_calls = response_data["choices"][0]["message"].get("tool_calls", [])
+            # 修改为需要的格式，开发者可以**直接**将这个工具使用追加到消息列表
+            if tool_calls:
+                result["tool_calls"] = tool_calls
+
+        return result
 
 class BaseMultimodalAPI(BaseAPI):
     """
