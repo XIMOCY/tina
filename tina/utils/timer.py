@@ -1,6 +1,6 @@
 import time
 import functools
-from tina.core import logger 
+from tina.core import logger
 
 
 def timer(func):
@@ -13,8 +13,8 @@ def timer(func):
         finally:
             end = time.time()
             logger.info(f"{name} 耗时: {end - start:.2f}秒")
-    return wrapper
 
+    return wrapper
 
 
 def stream_timer(func):
@@ -22,7 +22,7 @@ def stream_timer(func):
     def wrapper(*args, **kwargs):
         name = func.__qualname__
         start = time.time()
-        result = func(*args, **kwargs) 
+        result = func(*args, **kwargs)
 
         def generator():
             try:
@@ -31,7 +31,9 @@ def stream_timer(func):
             finally:
                 end = time.time()
                 logger.info(f"{name} 流式耗时: {end - start:.2f}秒")
+
         return generator()
+
     return wrapper
 
 
@@ -51,5 +53,7 @@ def async_stream_timer(func):
             finally:
                 end = time.time()
                 logger.info(f"{name} 异步流式耗时: {end - start:.2f}秒")
+
         return agen()
+
     return wrapper

@@ -2,14 +2,17 @@ import asyncio
 import os
 import sys
 
+
 async def ainput(prompt: str) -> str:
     _input = asyncio.to_thread(input, prompt)
     return await _input
+
 
 def run_agent_in_cli(agent):
     """
     tina 终端快速测试控制台
     """
+
     async def run():
         os.system("cls" if os.name == "nt" else "clear")
         print("\033[92m" + " tina 交互控制台 " + "\033[0m")
@@ -19,10 +22,12 @@ def run_agent_in_cli(agent):
         while True:
             try:
                 user_input = await ainput("\n\033[1;34m>>> 用户:\033[0m ")
-                if not user_input.strip(): continue
-                
+                if not user_input.strip():
+                    continue
+
                 cmd = user_input.lower().strip()
-                if cmd in ["exit", "quit", "退出"]: break
+                if cmd in ["exit", "quit", "退出"]:
+                    break
                 if cmd == "#context":
                     print(f"\n\033[2m{agent.context_manager.get_messages()}\033[0m")
                     continue
@@ -33,7 +38,7 @@ def run_agent_in_cli(agent):
                 print("\033[1;35m>>> Agent:\033[0m ", end="", flush=True)
 
                 # 使用 tool_name 作为 key 的追踪字典
-                active_tools = {} 
+                active_tools = {}
                 last_role = None
 
                 async for chunk in agent.apredict(instruction=user_input):
@@ -44,7 +49,8 @@ def run_agent_in_cli(agent):
 
                     # 1. 处理普通对话文本
                     if role == "assistant" and content and not t_name:
-                        if last_role == "tool": print("\n")
+                        if last_role == "tool":
+                            print("\n")
                         print(content, end="", flush=True)
                         last_role = "assistant"
 
@@ -68,17 +74,18 @@ def run_agent_in_cli(agent):
                         # 清理追踪
                         target_name = chunk.get("tool_name")
                         active_tools.pop(target_name, None)
-                        
+
                         print(f"\n\033[1;32m✅ [执行结果 ({target_name})]:\033[0m")
                         res = chunk.get("content", "")
                         display_res = (res[:200] + "...") if len(res) > 200 else res
                         print(f"   \033[3m{display_res}\033[0m")
                         last_role = "tool"
 
-    
                     if chunk.get("usage"):
                         u = chunk["usage"]
-                        print(f"\n\033[90m[Tokens: {u.get('total_tokens')} (P:{u.get('prompt_tokens')} C:{u.get('completion_tokens')})]\033[0m")
+                        print(
+                            f"\n\033[90m[Tokens: {u.get('total_tokens')} (P:{u.get('prompt_tokens')} C:{u.get('completion_tokens')})]\033[0m"
+                        )
 
                 print("\n" + "─" * 50)
 

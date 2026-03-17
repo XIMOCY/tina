@@ -34,10 +34,8 @@ class AgentResponse(dict):
     def tool_calls(self) -> List[Dict[str, Any]]:
         return self.get("tool_calls", None)
 
-
-    
     def __setattr__(self, name, value):
 
-        raise AttributeError(f"AgentResponse的属性是只读的 请不要修改'{name}'的值通过属性赋值 而是应该使用['{name}'] = {value} ")
-
-    
+        raise AttributeError(
+            f"AgentResponse的属性是只读的 请不要修改'{name}'的值通过属性赋值 而是应该使用['{name}'] = {value} "
+        )

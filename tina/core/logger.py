@@ -23,9 +23,9 @@ class Logger:
     def __init__(
         self,
         log_file: str = "logs/tina.log",
-        level: str = "DEBUG",           # 日志系统整体最低级别（通常 DEBUG）
+        level: str = "DEBUG",  # 日志系统整体最低级别（通常 DEBUG）
         console: bool = True,
-        console_level: str = "ERROR",   # 控制台默认只打印 ERROR+
+        console_level: str = "ERROR",  # 控制台默认只打印 ERROR+
     ):
         if Logger._initialized:
             return

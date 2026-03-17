@@ -251,7 +251,7 @@ def shot_down_system() -> None:
         print("取消关机")
     else:
         print("输入错误，取消关机")
-    
+
 
 @system_tools.register()
 def delay(seconds: int, why: str = "延迟响应") -> str:
@@ -329,8 +329,11 @@ def run_python(code: str) -> str:
 
     return output.strip() or "代码已执行，但没有输出"
 
+
 @system_tools.register(require_confirmation=True)
-def replace_code_by_lines(path: str, start_line: int, end_line: int, new_content: str) -> str:
+def replace_code_by_lines(
+    path: str, start_line: int, end_line: int, new_content: str
+) -> str:
     """
     按行范围替换代码块
     Args:

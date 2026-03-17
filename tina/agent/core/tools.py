@@ -6,6 +6,7 @@
 包含：
 Tools类：用于管理大模型的工具，包括注册、查询、调用等功能
 """
+
 from __future__ import annotations
 
 import inspect
@@ -15,6 +16,7 @@ from .executor import ToolsExecutor
 from ...utils.doc_parser import parse_docstring
 from ...core.error import ToolNotFound, ToolsAddError, ToolAlreadyExists, ToolsNotNamed
 from ...utils.type_mapper import convert_tools_for_llm
+
 
 class Tool:
     name: str
@@ -31,21 +33,22 @@ class Tool:
     schema: dict
     belongs_to: str
 
-    def __init__(self,
-                 tool: Callable,
-                 name: str,
-                 description: str,
-                 metadata: dict = {},
-                 parameters: dict = {},
-                 required_parameters: list = [],
-                 require_confirmation: bool = False,
-                 require_persistence: bool = False,
-                 return_image: bool = False,
-                 return_audio: bool = False,
-                 return_url: bool = False,
-                 schema: dict = {},
-                 belongs_to: str = None
-                 ):
+    def __init__(
+        self,
+        tool: Callable,
+        name: str,
+        description: str,
+        metadata: dict = {},
+        parameters: dict = {},
+        required_parameters: list = [],
+        require_confirmation: bool = False,
+        require_persistence: bool = False,
+        return_image: bool = False,
+        return_audio: bool = False,
+        return_url: bool = False,
+        schema: dict = {},
+        belongs_to: str = None,
+    ):
         self.tool = tool
         self.name = name
         self.description = description
@@ -62,16 +65,22 @@ class Tool:
 
     def get_tool(self):
         return self.tool
+
     def get_description(self):
         return self.description
+
     def get_parameters(self):
         return self.parameters
+
     def get_require_confirmation(self):
         return self.require_confirmation
+
     def get_require_persistence(self):
         return self.require_persistence
+
     def execute(self, **kargs: dict) -> str:
         return self.tool(**kargs)
+
     def get_return_type(self):
         if self.return_image:
             return "image"
@@ -80,15 +89,22 @@ class Tool:
         if self.return_url:
             return "url"
         return "text"
+
     def get_schema(self):
         return self.schema
+
 
 class Tools:
     _direct_tools: List[Tool]
     _sub_bundles: List["Tools"]
     tools_executor: ToolsExecutor
 
-    def __init__(self, tools_executor: ToolsExecutor = ToolsExecutor(), name: str = None,metadata: dict = None):
+    def __init__(
+        self,
+        tools_executor: ToolsExecutor = ToolsExecutor(),
+        name: str = None,
+        metadata: dict = None,
+    ):
         """
         创建一个工具集对象
         Args:
@@ -96,13 +112,12 @@ class Tools:
             name (str): 工具包名称 默认为空 当你需要分发你的工具包时 建议填写
             metadata (dict): 描述工具包的元数据
         """
-        self._direct_tools = [] 
+        self._direct_tools = []
         self._sub_bundles = []
-        self.disable_tools = {} 
+        self.disable_tools = {}
         self.tools_executor = tools_executor
         self.instance_name = name
         self.metadata = metadata
-
 
     @property
     def tools(self) -> List[Tool]:
@@ -121,7 +136,6 @@ class Tools:
     def tools_schemas(self) -> List[Dict]:
         """动态生成当前所有工具的 JSON Schema 列表"""
         return [t.schema for t in self.tools if t.name not in self.disable_tools]
-
 
     def _check(self, other):
         if not isinstance(other, Tools):
@@ -147,7 +161,9 @@ class Tools:
 
     def __add__(self, other: "Tools"):
         self._check(other)
-        combined = Tools(self.tools_executor, name=self.instance_name,metadata=self.metadata)
+        combined = Tools(
+            self.tools_executor, name=self.instance_name, metadata=self.metadata
+        )
         combined += self
         combined += other
         return combined
@@ -158,8 +174,8 @@ class Tools:
         result += self
         result -= other
         return result
-    
-    def add_tools(self, tools:"Tools" | list["Tools"]):
+
+    def add_tools(self, tools: "Tools" | list["Tools"]):
         """
         添加工具包
         Args:
@@ -167,12 +183,12 @@ class Tools:
         """
         if type(tools) is list:
             for tool in tools:
-                self+= tool
+                self += tool
             return
-        
-        self+=tools
 
-    def sub_tools(self, tools:"Tools" | list["Tools"]):
+        self += tools
+
+    def sub_tools(self, tools: "Tools" | list["Tools"]):
         """
         减去工具包
         Args:
@@ -180,18 +196,24 @@ class Tools:
         """
         if type(tools) is list:
             for tool in tools:
-                self-=tool
+                self -= tool
             return
-        self-=tools
+        self -= tools
 
     # --- 注册管理 ---
 
-    def register(self, description: str = None, require_confirmation: bool = False, 
-                 require_persistence: bool = False, return_image: bool = False, 
-                 return_audio: bool = False, return_url: bool = False):
+    def register(
+        self,
+        description: str = None,
+        require_confirmation: bool = False,
+        require_persistence: bool = False,
+        return_image: bool = False,
+        return_audio: bool = False,
+        return_url: bool = False,
+    ):
         """
-        注册一个工具，只需要打上这个装饰器即可  
-        会自动解析你的注释  
+        注册一个工具，只需要打上这个装饰器即可
+        会自动解析你的注释
         @[你实例化的名称].register()
         Args:
             description (str): 工具的描述
@@ -201,19 +223,34 @@ class Tools:
             return_audio (bool): 是否返回音频 多模态Agent适用 会自动地把工具的音频提交给模型
             return_url (bool): 是否返回 URL 多模态Agent适用 会自动地把URL提交给模型
         """
+
         def decorator(func):
-            self.register_tool(func, description, require_confirmation=require_confirmation, 
-                               require_persistence=require_persistence, return_image=return_image, 
-                               return_audio=return_audio, return_url=return_url)
+            self.register_tool(
+                func,
+                description,
+                require_confirmation=require_confirmation,
+                require_persistence=require_persistence,
+                return_image=return_image,
+                return_audio=return_audio,
+                return_url=return_url,
+            )
             return func
+
         return decorator
 
-    def register_tool(self, tool: Callable, description: str = None, require_confirmation: bool = False, 
-                      require_persistence: bool = False, return_image: bool = False, 
-                      return_audio: bool = False, return_url: bool = False) -> dict:
+    def register_tool(
+        self,
+        tool: Callable,
+        description: str = None,
+        require_confirmation: bool = False,
+        require_persistence: bool = False,
+        return_image: bool = False,
+        return_audio: bool = False,
+        return_url: bool = False,
+    ) -> dict:
         """
         注册一个工具
-        会自动解析你的注释  
+        会自动解析你的注释
         [你实例化的名称].register_tool(tool = )
         Args:
             description (str): 工具的描述
@@ -224,26 +261,37 @@ class Tools:
             return_url (bool): 是否返回 URL 多模态Agent适用 会自动地把URL提交给模型
         """
         original_name = tool.__name__
-        logic_name = f"{self.instance_name}_{original_name}" if self.instance_name else original_name
+        logic_name = (
+            f"{self.instance_name}_{original_name}"
+            if self.instance_name
+            else original_name
+        )
 
         if logic_name in [t.name for t in self._direct_tools]:
             return self.get_tool_info(logic_name)
-        
+
         # 参数与文档解析
         parameters_sig = inspect.signature(tool).parameters
-        required_parameters = [p for p in parameters_sig if parameters_sig[p].default is inspect.Parameter.empty]
+        required_parameters = [
+            p
+            for p in parameters_sig
+            if parameters_sig[p].default is inspect.Parameter.empty
+        ]
         p_doc = parse_docstring(tool.__doc__)
-        
+
         properties = {}
         from ...utils.type_mapper import TypeMapper
+
         for p_name, p in parameters_sig.items():
-            param_type = p.annotation if p.annotation != inspect.Parameter.empty else str
+            param_type = (
+                p.annotation if p.annotation != inspect.Parameter.empty else str
+            )
             json_schema = TypeMapper.map_type(param_type)
             properties[p_name] = {
-                "type": json_schema["type"], 
-                "description": p_doc[0].get(p_name, "")
+                "type": json_schema["type"],
+                "description": p_doc[0].get(p_name, ""),
             }
-            
+
         description = self._get_description(tool, description)
         schema = {
             "type": "function",
@@ -253,11 +301,11 @@ class Tools:
                 "parameters": {
                     "type": "object",
                     "required": required_parameters,
-                    "properties": properties
-                }
-            }
+                    "properties": properties,
+                },
+            },
         }
-        
+
         _tool = Tool(
             tool=tool,
             name=logic_name,
@@ -271,17 +319,14 @@ class Tools:
             return_audio=return_audio,
             return_url=return_url,
             schema=schema,
-            belongs_to=self.instance_name
+            belongs_to=self.instance_name,
         )
         self._direct_tools.append(_tool)
         return schema
 
-    def register_no_function(self,
-                name:str,
-                description:str,
-                required_parameters:list, 
-                parameters:dict
-            ):
+    def register_no_function(
+        self, name: str, description: str, required_parameters: list, parameters: dict
+    ):
         """
         注册工具，将工具信息添加到tools列表中
         Args:
@@ -308,9 +353,9 @@ class Tools:
                 "parameters": {
                     "type": "object",
                     "required": required_parameters,
-                    "properties": parameters
-                }
-            }
+                    "properties": parameters,
+                },
+            },
         }
         _tool = Tool(
             tool=None,
@@ -319,10 +364,9 @@ class Tools:
             required_parameters=required_parameters,
             name=_logic_name,
             schema=_shcema,
-            belongs_to=self.instance_name
+            belongs_to=self.instance_name,
         )
         self._direct_tools.append(_tool)
-
 
     def unregister(self, name: str):
         """
@@ -338,7 +382,9 @@ class Tools:
 
     def _get_description(self, tool, description):
         doc_content = tool.__doc__.strip() if tool.__doc__ else ""
-        description_part = re.sub(r'\s*Args:\s*.*?(?=\n\s*\w+:|$)', '', doc_content, flags=re.DOTALL)
+        description_part = re.sub(
+            r"\s*Args:\s*.*?(?=\n\s*\w+:|$)", "", doc_content, flags=re.DOTALL
+        )
         description_part = description_part.strip()
         return description if description is not None else description_part
 
@@ -350,39 +396,46 @@ class Tools:
             _mcp_client (MCPClient): MCP客户端
             timeout (int): 超时时间（秒）, 默认60秒
         """
-        return self.tools_executor.execute(_tool_calls, self, _mcp_client, timeout, events)
+        return self.tools_executor.execute(
+            _tool_calls, self, _mcp_client, timeout, events
+        )
 
-    async def aexecute(self, _tool_calls, _mcp_client=None, timeout=60, events=None) -> any:
-        return await self.tools_executor.aexecute(_tool_calls, self, _mcp_client, timeout, events)
+    async def aexecute(
+        self, _tool_calls, _mcp_client=None, timeout=60, events=None
+    ) -> any:
+        return await self.tools_executor.aexecute(
+            _tool_calls, self, _mcp_client, timeout, events
+        )
 
     def _get_tool_by_name(self, name: str) -> Tool:
         for t in self.tools:
-            if t.name == name: return t
+            if t.name == name:
+                return t
         raise ToolNotFound(name)
 
     def get_require_confirmations(self, name: str):
         return self._get_tool_by_name(name).require_confirmation
-    
+
     def get_require_persistence(self, name: str):
         return self._get_tool_by_name(name).require_persistence
-    
+
     def get_multimodal_type(self, name: str):
         return self._get_tool_by_name(name).get_return_type()
-    
+
     def get_tools_for_llm(self) -> list:
         return convert_tools_for_llm(self)
-    
+
     def get_tool_info(self, tool_name: str) -> dict:
         return self._get_tool_by_name(tool_name).schema
 
     def get_tool(self, name: str) -> callable:
         return self._get_tool_by_name(name).tool
-    
+
     def check_tools(self, name: str) -> bool:
         if name not in self.tools_names:
             raise ToolNotFound(name)
         return True
-    
+
     def get_tools(self) -> list:
         """
         获取所有工具的schema

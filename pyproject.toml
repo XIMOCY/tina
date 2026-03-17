@@ -30,7 +30,6 @@ GitHub = "https://github.com/XIMOCY/tina.git"
 [project.optional-dependencies]
 mcp = [
     "mcp-python", 
-    # 这里可以添加其他 MCP 相关的依赖
 ]
 [tool.setuptools.packages.find]
 where = ["."]

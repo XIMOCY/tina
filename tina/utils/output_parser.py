@@ -5,6 +5,7 @@ import time
 from typing import AsyncGenerator, Dict, Any
 from ..core import logger
 
+
 def stream_generator_parser(base_url, payload, headers, timeout):
     tool_calls_buffer = {}
     final_tool_calls = None
@@ -13,11 +14,17 @@ def stream_generator_parser(base_url, payload, headers, timeout):
     reasoning_buffer = ""
     usage = None  # 新增：缓存 usage
 
-    with httpx.stream("POST", f"{base_url}", json=payload, headers=headers, timeout=timeout) as response:
+    with httpx.stream(
+        "POST", f"{base_url}", json=payload, headers=headers, timeout=timeout
+    ) as response:
 
         if response.status_code != 200:
-            logger.error(f"BaseAPI - 在发送请求时收到错误状态码：{response.status_code}，错误信息：{response.read()}，请求信息：{payload}")
-            raise Exception(f"请求失败了，状态码：{response.status_code}, 错误信息：{response.read()}")
+            logger.error(
+                f"BaseAPI - 在发送请求时收到错误状态码：{response.status_code}，错误信息：{response.read()}，请求信息：{payload}"
+            )
+            raise Exception(
+                f"请求失败了，状态码：{response.status_code}, 错误信息：{response.read()}"
+            )
 
         for line in response.iter_lines():
             line = line.strip()
@@ -43,7 +50,7 @@ def stream_generator_parser(base_url, payload, headers, timeout):
                                 yield {
                                     "role": "assistant",
                                     "reasoning_content": reasoning_content,
-                                    "content": ""
+                                    "content": "",
                                 }
 
                         if "tool_calls" in delta:
@@ -57,7 +64,7 @@ def stream_generator_parser(base_url, payload, headers, timeout):
                                         "index": index,
                                         "function": {"arguments": ""},
                                         "type": "",
-                                        "id": ""
+                                        "id": "",
                                     }
 
                                 if tool_call.get("id") and index not in received_ids:
@@ -65,20 +72,25 @@ def stream_generator_parser(base_url, payload, headers, timeout):
 
                                 current = tool_calls_buffer[index]
                                 current["id"] = received_ids.get(index, "")
-                                current["type"] = tool_call.get("type") or current["type"]
+                                current["type"] = (
+                                    tool_call.get("type") or current["type"]
+                                )
 
                                 if tool_call.get("function"):
                                     func = tool_call["function"]
-                                    current["function"]["name"] = (
-                                        func.get("name") or current["function"].get("name", "")
-                                    )
+                                    current["function"]["name"] = func.get(
+                                        "name"
+                                    ) or current["function"].get("name", "")
 
-                                    if current["function"].get("name") and index not in tool_name_sent:
+                                    if (
+                                        current["function"].get("name")
+                                        and index not in tool_name_sent
+                                    ):
                                         tool_name_sent.add(index)
                                         yield {
                                             "role": "assistant",
                                             "content": "",
-                                            "tool_name": current["function"]["name"]
+                                            "tool_name": current["function"]["name"],
                                         }
 
                                     if func.get("arguments") is not None:
@@ -89,27 +101,29 @@ def stream_generator_parser(base_url, payload, headers, timeout):
                                                 "role": "assistant",
                                                 "content": "",
                                                 "tool_arguments": new_args,
-                                                "tool_name":current["function"]["name"],
-                                                "tool_index": index
+                                                "tool_name": current["function"][
+                                                    "name"
+                                                ],
+                                                "tool_index": index,
                                             }
                                     else:
                                         current["function"]["arguments"] += (
-                                            func.get("arguments", "") if func.get("arguments") else ""
+                                            func.get("arguments", "")
+                                            if func.get("arguments")
+                                            else ""
                                         )
 
-                            final_tool_calls = [v for k, v in sorted(tool_calls_buffer.items())]
+                            final_tool_calls = [
+                                v for k, v in sorted(tool_calls_buffer.items())
+                            ]
 
                 except GeneratorExit:
-                    return 
+                    return
                 except json.JSONDecodeError:
                     continue
 
-
         if final_tool_calls or usage is not None:
-            last = {
-                "role": "assistant",
-                "content": ""
-            }
+            last = {"role": "assistant", "content": ""}
             if final_tool_calls:
                 last["tool_calls"] = final_tool_calls
                 last["id"] = final_tool_calls[0]["id"]
@@ -121,11 +135,11 @@ def stream_generator_parser(base_url, payload, headers, timeout):
 
 
 async def astream_generator_parser(
-    client:httpx.AsyncClient,
+    client: httpx.AsyncClient,
     base_url: str,
     payload: Dict[str, Any],
     headers: Dict[str, str],
-    timeout: int
+    timeout: int,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     异步流式解析器，用于处理异步API调用返回的流式数据
@@ -137,10 +151,13 @@ async def astream_generator_parser(
     reasoning_buffer = ""
     usage = None  # 新增：缓存 usage
 
-    
-    async with client.stream("POST", f"{base_url}", json=payload, headers=headers, timeout=timeout) as response:
+    async with client.stream(
+        "POST", f"{base_url}", json=payload, headers=headers, timeout=timeout
+    ) as response:
         if response.status_code != 200:
-            logger.error(f"BaseAPI - 在发送请求时收到错误状态码：{response.status_code}，错误信息：{await response.aread()}，请求信息：{payload}")
+            logger.error(
+                f"BaseAPI - 在发送请求时收到错误状态码：{response.status_code}，错误信息：{await response.aread()}，请求信息：{payload}"
+            )
             raise Exception(f"请求失败了，状态码：{response.status_code}")
 
         async for line in response.aiter_lines():
@@ -167,7 +184,7 @@ async def astream_generator_parser(
                                 yield {
                                     "role": "assistant",
                                     "reasoning_content": reasoning_content,
-                                    "content": ""
+                                    "content": "",
                                 }
 
                         if "tool_calls" in delta:
@@ -179,7 +196,7 @@ async def astream_generator_parser(
                                         "index": index,
                                         "function": {"arguments": ""},
                                         "type": "",
-                                        "id": ""
+                                        "id": "",
                                     }
 
                                 if tool_call.get("id") and index not in received_ids:
@@ -187,20 +204,25 @@ async def astream_generator_parser(
 
                                 current = tool_calls_buffer[index]
                                 current["id"] = received_ids.get(index, "")
-                                current["type"] = tool_call.get("type") or current["type"]
+                                current["type"] = (
+                                    tool_call.get("type") or current["type"]
+                                )
 
                                 if tool_call.get("function"):
                                     func = tool_call["function"]
-                                    current["function"]["name"] = (
-                                        func.get("name") or current["function"].get("name", "")
-                                    )
+                                    current["function"]["name"] = func.get(
+                                        "name"
+                                    ) or current["function"].get("name", "")
 
-                                    if current["function"].get("name") and index not in tool_name_sent:
+                                    if (
+                                        current["function"].get("name")
+                                        and index not in tool_name_sent
+                                    ):
                                         tool_name_sent.add(index)
                                         yield {
                                             "role": "assistant",
                                             "content": "",
-                                            "tool_name": current["function"]["name"]
+                                            "tool_name": current["function"]["name"],
                                         }
 
                                     if func.get("arguments") is not None:
@@ -211,25 +233,28 @@ async def astream_generator_parser(
                                                 "role": "assistant",
                                                 "content": "",
                                                 "tool_arguments": new_args,
-                                                "tool_name": current["function"]["name"],
-                                                "tool_index": index
+                                                "tool_name": current["function"][
+                                                    "name"
+                                                ],
+                                                "tool_index": index,
                                             }
                                     else:
                                         current["function"]["arguments"] += (
-                                            func.get("arguments", "") if func.get("arguments") else ""
+                                            func.get("arguments", "")
+                                            if func.get("arguments")
+                                            else ""
                                         )
 
-                            final_tool_calls = [v for k, v in sorted(tool_calls_buffer.items())]
+                            final_tool_calls = [
+                                v for k, v in sorted(tool_calls_buffer.items())
+                            ]
                 except GeneratorExit:
-                    return 
+                    return
                 except json.JSONDecodeError:
                     continue
 
         if final_tool_calls or usage is not None:
-            last = {
-                "role": "assistant",
-                "content": ""
-            }
+            last = {"role": "assistant", "content": ""}
             if final_tool_calls:
                 last["tool_calls"] = final_tool_calls
                 last["id"] = final_tool_calls[0]["id"]

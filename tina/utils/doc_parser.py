@@ -1,4 +1,6 @@
 import re
+
+
 def parse_docstring(doc):
     """
     解析Google风格docstring，返回参数描述和返回值描述
@@ -8,7 +10,7 @@ def parse_docstring(doc):
     if not doc:
         return param_desc, return_desc
 
-    lines = doc.split('\n')
+    lines = doc.split("\n")
     in_args = False
     in_returns = False
     for line in lines:
@@ -28,7 +30,7 @@ def parse_docstring(doc):
             if m:
                 # 提取参数名，移除类型信息（括号内的内容）
                 full_param = m.group(1)
-                param_name = re.sub(r'\s*\([^)]*\)', '', full_param).strip()
+                param_name = re.sub(r"\s*\([^)]*\)", "", full_param).strip()
                 param_desc[param_name] = m.group(2)
         if in_returns and line:
             return_desc += line + " "

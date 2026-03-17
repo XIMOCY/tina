@@ -2,8 +2,10 @@ from typing import Any
 from abc import ABC, abstractmethod
 from ...utils.multimodal_formatter import build_multimodal_message
 
+
 class BaseContextManager(ABC):
     messages: list[dict[str, Any]]
+
     @abstractmethod
     def set_messages(self, messages: list[dict[str, Any]]) -> None:
         pass
@@ -18,18 +20,19 @@ class BaseContextManager(ABC):
     @abstractmethod
     def add_tool_calls(self, tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
         pass
+
     @abstractmethod
     def add_tool_calls_result(self, tool_calls_result: list[dict[str, Any]]) -> None:
         pass
+
     @abstractmethod
     def add_assistant_message(self, message: str) -> list[dict[str, Any]]:
         pass
+
     @abstractmethod
     def clear_messages(self) -> None:
-        pass 
+        pass
 
-
-    
 
 class ContextManager(BaseContextManager):
     max_length: int
@@ -38,12 +41,14 @@ class ContextManager(BaseContextManager):
     tool_calls: list[dict[str, Any]]
     messages: list[dict[str, Any]]
 
-    def __init__(self, max_length: int = 100000, max_tool_result_length: int = 10000) -> None:
+    def __init__(
+        self, max_length: int = 100000, max_tool_result_length: int = 10000
+    ) -> None:
         self.max_length = max_length
         self.max_tool_result_length = max_tool_result_length
-        self.tool_calls = []          # 初始化 tool_calls
-        self.tool_calls_result = []   # 初始化 tool_calls_result
-        self.messages = []            # 初始化 messages，确保每个实例都有独立的列表
+        self.tool_calls = []  # 初始化 tool_calls
+        self.tool_calls_result = []  # 初始化 tool_calls_result
+        self.messages = []  # 初始化 messages，确保每个实例都有独立的列表
 
     def set_messages(self, messages: list[dict[str, Any]]) -> None:
         self.messages = messages
@@ -78,7 +83,7 @@ class ContextManager(BaseContextManager):
 
         for tool_call in tool_calls:
             if "tool_call_id" not in tool_call and "id" in tool_call:
-                
+
                 tool_call["tool_call_id"] = tool_call["id"]
 
         self.tool_calls.extend(tool_calls)
@@ -103,9 +108,9 @@ class ContextManager(BaseContextManager):
         """
         for item in tool_calls_result:
             # 确保有 result 字段
-            
+
             item["result"] = item.get("content", "") or ""
-            item["tool_name"]= item.get("tool_name", None)
+            item["tool_name"] = item.get("tool_name", None)
             self.tool_calls_result.append(item)
 
             # 同时追加到 messages 中（作为 tool 消息）
@@ -123,7 +128,9 @@ class ContextManager(BaseContextManager):
 
         self.limit_messages()
 
-    def add_tool_call_result(self, tool_result: str | None, tool_call_id: str, tool_call: dict[str, Any]) -> None:
+    def add_tool_call_result(
+        self, tool_result: str | None, tool_call_id: str, tool_call: dict[str, Any]
+    ) -> None:
         if tool_result is None:
             tool_result = ""
 
@@ -164,9 +171,15 @@ class ContextManager(BaseContextManager):
         """
         return [str(item.get("result", "")) for item in self.tool_calls_result]
 
-    def add_assistant_message(self, message: str,name:str=None) -> list[dict[str, Any]]:
-        
-        self.messages.append({"role": "assistant", "content": message} if name is None else {"role": "assistant", "content": message, "name":name})
+    def add_assistant_message(
+        self, message: str, name: str = None
+    ) -> list[dict[str, Any]]:
+
+        self.messages.append(
+            {"role": "assistant", "content": message}
+            if name is None
+            else {"role": "assistant", "content": message, "name": name}
+        )
         self.limit_messages()
         return self.messages
 
@@ -234,24 +247,28 @@ class ContextManager(BaseContextManager):
             if len(content) > self.max_length:
                 sys_msg["content"] = content[: self.max_length - 3] + "..."
 
+
 class MultimodalContextManager(ContextManager):
     """
     多模态上下文管理器，继承自基础上下文管理器
     目前与基础上下文管理器功能相同，但可以根据需要扩展多
     """
+
     max_length: int
     max_tool_result_length: int
     tool_calls_result: list[dict[str, Any]]
     tool_calls: list[dict[str, Any]]
     messages: list[dict[str, Any]]
 
-    def __init__(self, tools,max_length: int = 100000, max_tool_result_length: int = 6000) -> None:
+    def __init__(
+        self, tools, max_length: int = 100000, max_tool_result_length: int = 6000
+    ) -> None:
         self.max_length = max_length
         self.tools = tools
         self.max_tool_result_length = max_tool_result_length
-        self.tool_calls = []          # 初始化 tool_calls
-        self.tool_calls_result = []   # 初始化 tool_calls_result
-        self.messages = []            # 初始化 messages，确保每个实例都有独立的列表
+        self.tool_calls = []  # 初始化 tool_calls
+        self.tool_calls_result = []  # 初始化 tool_calls_result
+        self.messages = []  # 初始化 messages，确保每个实例都有独立的列表
 
     def set_messages(self, messages: list[dict[str, Any]]) -> None:
         self.messages = messages
@@ -276,14 +293,15 @@ class MultimodalContextManager(ContextManager):
             # 如果第一条不是 system，也强制替换为 system
             self.messages[0] = {"role": "system", "content": message}
 
-    def add_user_message(self, 
-                        instruction: str,
-                        image : str | list[str],
-                        audio :str | list[str],
-                        url : str | list[str],
-                        ) -> list[dict[str, Any]]:
+    def add_user_message(
+        self,
+        instruction: str,
+        image: str | list[str],
+        audio: str | list[str],
+        url: str | list[str],
+    ) -> list[dict[str, Any]]:
         user_content = build_multimodal_message(
-            input_text= instruction,
+            input_text=instruction,
             input_image=image,
             input_audio=audio,
             input_url=url,
@@ -299,7 +317,7 @@ class MultimodalContextManager(ContextManager):
 
         for tool_call in tool_calls:
             if "tool_call_id" not in tool_call and "id" in tool_call:
-                
+
                 tool_call["tool_call_id"] = tool_call["id"]
 
         self.tool_calls.extend(tool_calls)
@@ -328,9 +346,8 @@ class MultimodalContextManager(ContextManager):
             audios = []
             urls = []
             item["result"] = item.get("content", "") or ""
-            item["tool_name"]= item.get("tool_name", None)
+            item["tool_name"] = item.get("tool_name", None)
             self.tool_calls_result.append(item)
-
 
             # 同时追加到 messages 中（作为 tool 消息）
             content = str(item.get("result", ""))
@@ -363,14 +380,15 @@ class MultimodalContextManager(ContextManager):
             elif isinstance(item["result"], list):
                 urls.extend(item["result"])
         self.add_user_message(
-                instruction=f"工具{item['tool_name']}的结果",
-                image=images,
-                audio=audios,
-                url=urls,
-            )
+            instruction=f"工具{item['tool_name']}的结果",
+            image=images,
+            audio=audios,
+            url=urls,
+        )
 
-
-    def add_tool_call_result(self, tool_result: str | None, tool_call_id: str, tool_call: dict[str, Any]) -> None:
+    def add_tool_call_result(
+        self, tool_result: str | None, tool_call_id: str, tool_call: dict[str, Any]
+    ) -> None:
         if tool_result is None:
             tool_result = ""
 
@@ -393,7 +411,6 @@ class MultimodalContextManager(ContextManager):
                 "tool_call_id": tool_call_id,
             }
         )
-
 
     def get_tool_calls(self) -> list[dict[str, Any]]:
         return self.tool_calls
@@ -431,6 +448,3 @@ class MultimodalContextManager(ContextManager):
         self.messages.extend(messages)
 
         return self.messages
-
-
-
