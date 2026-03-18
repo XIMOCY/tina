@@ -39,8 +39,6 @@ class AgentEvents:
             "on_stream_chunk": [],
         }
 
-    def add_events(self, events: "AgentEvents" | list["AgentEvents"]):
-        pass
 
     def get_handler(self, event_name: str):
         return self.event_handler[event_name]
@@ -104,6 +102,20 @@ class AgentEvents:
 
         return decorator
 
+    def add_on_stream_chunk_handler(self, func: callable | list[callable]):
+        """
+        在大模型处理用户输入时，每处理一个chunk，都会调用此函数
+        需要事件处理函数接受下面的参数：
+        chunk: dict[str,str] or AgentResponse
+        """
+        if isinstance(func, list):
+            for f in func:
+                self._validate_event_handler_signature("on_stream_chunk", f)
+                self.add_handler("on_stream_chunk", f)
+        else:
+            self._validate_event_handler_signature("on_stream_chunk", func)
+            self.add_handler("on_stream_chunk", func)
+
     def before_tool_call(self):
         """
         在执行工具调用之 前
@@ -117,6 +129,20 @@ class AgentEvents:
             return func
 
         return decorator
+
+    def add_before_tool_call_handler(self, func: callable | list[callable]):
+        """
+        在执行工具调用之 前
+        需要事件处理函数接受下面的参数：
+        tool_name: str,tool_arguments: dict,
+        """
+        if isinstance(func, list):
+            for f in func:
+                self._validate_event_handler_signature("before_tool_call", f)
+                self.add_handler("before_tool_call", f)
+        else:
+            self._validate_event_handler_signature("before_tool_call", func)
+            self.add_handler("before_tool_call", func)
 
     def after_tool_call(self):
         """
@@ -132,6 +158,21 @@ class AgentEvents:
 
         return wrapper
 
+    def add_after_tool_call_handler(self, func: callable | list[callable]):
+        """
+        在执行工具调用之 后
+        需要事件处理函数接受下面的参数：
+        tool_name: str,tool_arguments: dict,tool_result: any
+        """
+        if isinstance(func, list):
+            for f in func:
+                self._validate_event_handler_signature("after_tool_call", f)
+                self.add_handler("after_tool_call", f)
+        else:
+            self._validate_event_handler_signature("after_tool_call", func)
+
+            self.add_handler("after_tool_call", func)
+
     def before_tool_calls(self):
         """
         在工具调用被大模型处理之前
@@ -145,6 +186,21 @@ class AgentEvents:
             return func
 
         return decorator
+
+    def add_before_tool_calls_handler(self, func: callable | list[callable]):
+        """
+        在工具调用被大模型处理之前
+        需要事件处理函数接受下面的参数：
+        tool_calls: list[dict[str,str]]
+        """
+        if isinstance(func, list):
+            for f in func:
+                self._validate_event_handler_signature("before_tool_calls", f)
+                self.add_handler("before_tool_calls", f)
+        else:
+            self._validate_event_handler_signature("before_tool_calls", func)
+
+            self.add_handler("before_tool_calls", func)
 
     def after_tool_calls(self):
         """
@@ -160,6 +216,20 @@ class AgentEvents:
 
         return decorator
 
+    def add_after_tool_calls_handler(self, func: callable | list[callable]):
+        """
+        在工具调用被大模型处理之后
+        需要事件处理函数接受下面的参数：
+        tool_calls: list[dict[str,str]]
+        """
+        if isinstance(func, list):
+            for f in func:
+                self._validate_event_handler_signature("after_tool_calls", f)
+                self.add_handler("after_tool_calls", f)
+        else:
+            self._validate_event_handler_signature("after_tool_calls", func)
+            self.add_handler("after_tool_calls", func)
+
     def on_tool_confirmation(self):
         """
         如果一个工具被登记为需要验证猜可以运行，请监听此事件
@@ -174,6 +244,17 @@ class AgentEvents:
 
         return decorator
 
+    def add_on_tool_confirmation_handler(self, func: callable):
+        """
+        如果一个工具被登记为需要验证猜可以运行，请监听此事件
+        需要事件处理函数接受下面的参数：
+        tool_name: str tool_arguments: dict
+        """
+
+        self._validate_event_handler_signature("on_tool_confirmation", func)
+
+        self.add_handler("on_tool_confirmation", func)
+
     def before_user_instruction(self):
         """
         在用户输入被大模型处理之前
@@ -182,10 +263,25 @@ class AgentEvents:
         """
 
         def decorator(func):
+            self._validate_event_handler_signature("before_user_instruction", func)
             self.add_handler("before_user_instruction", func)
             return func
 
         return decorator
+
+    def add_before_user_instruction_handler(self, func: callable | list[callable]):
+        """
+        在用户输入被大模型处理之前
+        需要事件处理函数接受下面的参数：
+        user_message: str
+        """
+        if isinstance(func, list):
+            for f in func:
+                self._validate_event_handler_signature("before_user_instruction", f)
+                self.add_handler("before_user_instruction", f)
+        else:
+            self._validate_event_handler_signature("before_user_instruction", func)
+            self.add_handler("before_user_instruction", func)
 
     def after_user_instruction(self):
         """
@@ -195,10 +291,25 @@ class AgentEvents:
         """
 
         def decorator(func):
+            self._validate_event_handler_signature("after_user_instruction", func)
             self.add_handler("after_user_instruction", func)
             return func
 
         return decorator
+
+    def add_after_user_instruction_handler(self, func: callable | list[callable]):
+        """
+        在用户输入被大模型处理之后
+        需要事件处理函数接受下面的参数：
+        user_message: str assistant_message: str
+        """
+        if isinstance(func, list):
+            for f in func:
+                self._validate_event_handler_signature("after_user_instruction", f)
+                self.add_handler("after_user_instruction", f)
+        else:
+            self._validate_event_handler_signature("after_user_instruction", func)
+            self.add_handler("after_user_instruction", func)
 
     def trigger_before_user_instruction(self, user_message: str):
         changed_message = user_message
@@ -461,7 +572,7 @@ class AgentEvents:
 
     async def atrigger_on_stream_chunk(self, chunk: dict):
         changed_chunk = MappingProxyType(chunk)
-        changed_chunk = AgentResponse(**chunk)
+        changed_chunk = AgentResponse(**changed_chunk)
         for func in self.event_handler["on_stream_chunk"]:
             if inspect.iscoroutinefunction(func):
                 result = await func(changed_chunk)

@@ -1,4 +1,5 @@
-from ...llm.base_api import BaseAPI, BaseMultimodalAPI
+from ...llm.base_api import BaseAPI
+from ...llm.base_multimodal_api import BaseMultimodalAPI
 from ...mcp import MCPClient
 from .tools import Tools
 from .context_manager import BaseContextManager

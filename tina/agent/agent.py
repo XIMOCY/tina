@@ -125,7 +125,71 @@ class Agent:
         """
         self.tools.add_tools(tools)
 
-    # 事件管理（对外公开 Events 的装饰器接口）
+    # 事件管理
+    def add_on_stream_chunk_handler(self, func: callable | list[callable]):
+        """
+        在大模型处理用户输入时，每处理一个chunk，都会调用此函数
+        需要事件处理函数接受下面的参数：
+        chunk: dict[str,str] or AgentResponse
+        """
+        self.events.add_on_stream_chunk_handler(func)
+
+    def add_before_tool_call_handler(self, func: callable | list[callable]):
+        """
+        在执行工具调用之 前
+        需要事件处理函数接受下面的参数：
+        tool_name: str,tool_arguments: dict,
+        """
+        self.events.add_before_tool_call_handler(func)
+
+    def add_after_tool_call_handler(self, func: callable | list[callable]):
+        """
+        在执行工具调用之 后
+        需要事件处理函数接受下面的参数：
+        tool_name: str,tool_arguments: dict,tool_result: any
+        """
+        self.events.add_after_tool_call_handler(func)
+
+    def add_before_tool_calls_handler(self, func: callable | list[callable]):
+        """
+        在工具调用被大模型处理之前
+        需要事件处理函数接受下面的参数：
+        tool_calls: list[dict[str,str]]
+        """
+        self.events.add_before_tool_calls_handler(func)
+
+    def add_after_tool_call_handler(self, func: callable | list[callable]):
+        """
+        在工具调用被大模型处理之后
+        需要事件处理函数接受下面的参数：
+        tool_calls: list[dict[str,str]]
+        """
+        self.events.add_after_tool_calls_handler(func)
+
+    def add_on_tool_confirmation_handler(self, func: callable):
+        """
+        如果一个工具被登记为需要验证猜可以运行，请监听此事件
+        需要事件处理函数接受下面的参数：
+        tool_name: str tool_arguments: dict
+        """
+        self.events.add_on_tool_confirmation_handler(func)
+
+    def add_before_user_instruction_handler(self, func: callable | list[callable]):
+        """
+        在用户输入被大模型处理之前
+        需要事件处理函数接受下面的参数：
+        user_message: str
+        """
+        self.events.add_before_user_instruction_handler(func)
+
+    def add_after_user_instruction_handler(self, func: callable | list[callable]):
+        """
+        在用户输入被大模型处理之后
+        需要事件处理函数接受下面的参数：
+        user_message: str assistant_message: str
+        """
+        self.events.add_after_user_instruction_handler(func)
+
     def before_tool_call(self):
         """
         在执行工具调用之 前
@@ -189,23 +253,6 @@ class Agent:
         chunk: dict 或者 AgentResponse
         """
         return self.events.on_stream_chunk()
-
-    def add_event_handler(self, event_name: str, func):
-        """
-        添加事件处理函数
-        before_tool_call
-        after_tool_call
-        before_user_instruction
-        after_user_instruction
-        before_tool_calls
-        after_tool_calls
-        on_tool_confirmation
-        Args:
-            event_name:事件名称
-            func:事件处理函数
-        """
-
-        self.events.add_handler(event_name, func)
 
     def _mcp_to_tools(self, MCP):
         """如果传入了MCP，则将MCP的工具集加入到当前的工具集中"""

@@ -9,3 +9,5 @@ my_little_cat_girl.py
 *.ini
 *.ico
 logs/
+tina_python.egg-info/
+dist/

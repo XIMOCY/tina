@@ -9,14 +9,14 @@ class EnvReader:
         :param env_file: Path to the .env file (default is ".env").
         """
         self.env_file = env_file
-        self.load_env()
+        self.envs = self.load_env()
 
     def load_env(self):
         """
         Loads environment variables from the specified .env file.
         """
         if os.path.exists(self.env_file):
-            dotenv.load_dotenv(self.env_file)
+            return dotenv.dotenv_values(self.env_file)
         else:
             raise FileNotFoundError(f"Environment file '{self.env_file}' not found.")
 
@@ -26,7 +26,7 @@ class EnvReader:
         :param key: Name of the environment variable.
         :return: Value of the environment variable.
         """
-        return os.getenv(key)
+        return self.envs.get(key)
 
     def get_api_key(self):
         """

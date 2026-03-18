@@ -22,7 +22,7 @@ from typing import (
     overload,
 )
 
-from ..llm.base_api import BaseMultimodalAPI
+from ..llm.base_multimodal_api import BaseMultimodalAPI
 from .core.tools import Tools
 from ..mcp.client import MCPClient
 from .core.prompt import Prompt
@@ -46,7 +46,7 @@ class MultimodalAgent(Agent):
     def __init__(
         self,
         llm: BaseMultimodalAPI,
-        tools: Tools,
+        tools: Tools | list[Tools],
         system_prompt: str = None,
         mcp: MCPClient = None,
         events: AgentEvents = None,
