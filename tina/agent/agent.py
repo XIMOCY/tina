@@ -158,7 +158,7 @@ class Agent:
         """
         self.events.add_before_tool_calls_handler(func)
 
-    def add_after_tool_call_handler(self, func: callable | list[callable]):
+    def add_after_tool_calls_handler(self, func: callable | list[callable]):
         """
         在工具调用被大模型处理之后
         需要事件处理函数接受下面的参数：
