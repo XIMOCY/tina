@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tina-python"
+version = "0.5.0"
+description = "tina is in your computer!"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+license = { text = "Apache Software License" }
+authors = [
+    { name = "王出日", email = "wangchuri@163.com" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "httpx",
+    "python-dotenv",
+]
+
+[project.urls]
+Homepage = "https://gitee.com/wang-churi/tina"
+Repository = "https://gitee.com/wang-churi/tina.git"
+GitHub = "https://github.com/XIMOCY/tina.git"
+
+[project.optional-dependencies]
+mcp = [
+    "mcp-python", 
+]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tina*"]
