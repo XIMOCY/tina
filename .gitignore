@@ -11,3 +11,5 @@ my_little_cat_girl.py
 logs/
 tina_python.egg-info/
 dist/
+build/
+.vscode/

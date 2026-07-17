@@ -1,3 +1,4 @@
+import json
 from typing import Any, Dict, List
 
 
@@ -39,3 +40,27 @@ class AgentResponse(dict):
         raise AttributeError(
             f"AgentResponse的属性是只读的 请不要修改'{name}'的值通过属性赋值 而是应该使用['{name}'] = {value} "
         )
+
+
+class ToolCall(dict):
+    """
+    简单的工具调用对象，继承自 dict
+    属性: name, args
+    """
+
+    def __init__(self, tool_call:dict):
+        super().__init__(tool_call)
+
+    @property
+    def name(self) -> str:
+        """工具名称"""
+        return self.get("function").get("name","")
+
+    @property
+    def arguments(self) -> Dict[str, Any]:
+        """工具参数（已解析为字典）"""
+        return self.get("function").get("arguments",{})
+    @property
+    def id(self) -> str:
+        return self.get("id")
+

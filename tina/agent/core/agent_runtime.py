@@ -177,7 +177,9 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                 self.context_manager.add_assistant_message(llm_response["content"])
                 # 用户输入后事件（同步非流式）
 
+                self.events.trigger_on_turn_end()
                 return llm_response
+        self.events.trigger_on_turn_end()
         self.state = AgentState.IDLE
         if counter > self.max_tool_loop:
             self.state = AgentState.ERROR
@@ -266,6 +268,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
             if tool_called:
                 continue
             break
+        self.events.trigger_on_turn_end()
         self.state = AgentState.IDLE
 
         if counter > self.max_tool_loop:
@@ -307,7 +310,9 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                 self.context_manager.add_assistant_message(llm_result["content"])
                 # 用户输入后事件（异步非流式）
 
+                await self.events.atrigger_on_turn_end()
                 return llm_result
+        await self.events.atrigger_on_turn_end()
         self.state = AgentState.IDLE
         if counter > self.max_tool_loop:
             self.state = AgentState.ERROR
@@ -399,6 +404,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
             if tool_called:
                 continue
             break
+        await self.events.atrigger_on_turn_end()
         self.state = AgentState.IDLE
 
         if counter > self.max_tool_loop:
@@ -466,7 +472,9 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                 _, llm_assistant_message = self.events.trigger_after_user_instruction(
                     user_message=instruction, assistant_message=llm_assistant_message
                 )
+                self.events.trigger_on_turn_end()
                 return llm_response
+        self.events.trigger_on_turn_end()
         self.state = AgentState.IDLE
         if counter > self.max_tool_loop:
             self.state = AgentState.ERROR
@@ -568,6 +576,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                 continue
             break
 
+        self.events.trigger_on_turn_end()
         self.state = AgentState.IDLE
 
         if counter > self.max_tool_loop:
@@ -620,7 +629,9 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                         assistant_message=llm_result["content"],
                     )
                 )
+                await self.events.atrigger_on_turn_end()
                 return llm_result
+        await self.events.atrigger_on_turn_end()
         self.state = AgentState.IDLE
         if counter > self.max_tool_loop:
             self.state = AgentState.ERROR
@@ -719,6 +730,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
             if tool_called:
                 continue
             break
+        await self.events.atrigger_on_turn_end()
         self.state = AgentState.IDLE
 
         if counter > self.max_tool_loop:

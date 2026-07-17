@@ -1,3 +1,4 @@
+import asyncio
 import json
 import httpx
 import sys
@@ -263,3 +264,8 @@ async def astream_generator_parser(
                 logger.info(f"BaseAPI - 返回的usage信息：{usage}")
                 last["usage"] = usage
             yield last
+
+        # 让出事件循环控制权，让底层 TLS 连接的清理回调得以执行
+        # (Windows ProactorEventLoop 在 asyncio.run() 关闭循环后
+        #  无法处理这些回调，会导致 RuntimeError: Event loop is closed)
+        await asyncio.sleep(0)
