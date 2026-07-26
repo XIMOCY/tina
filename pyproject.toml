@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tina-python"
-version = "0.5.1"
+version = "0.5.2"
 description = "tina is in your computer!"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
@@ -31,6 +31,20 @@ GitHub = "https://github.com/XIMOCY/tina.git"
 mcp = [
     "mcp-python", 
 ]
+test = [
+    "pytest>=9.0",
+    "pytest-asyncio>=1.4",
+    "pytest-cov>=7.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+asyncio_mode = "auto"
+markers = [
+    "slow: 需要 LLM 实际调用的测试（默认跳过）",
+    "integration: 集成测试",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["tina*"]
