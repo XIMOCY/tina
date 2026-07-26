@@ -13,3 +13,16 @@ tina_python.egg-info/
 dist/
 build/
 .vscode/
+.venv/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# 测试覆盖率
+.coverage
+.coverage.*
+coverage/
+htmlcov/
