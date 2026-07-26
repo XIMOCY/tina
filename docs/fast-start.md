@@ -1,9 +1,9 @@
 # 快速开始
 快速使用tina来开发你的Agent  
 ```bash
-pip install tina-python==0.4.9rc0 
+pip install tina-python
 ```
-该教程是基于0.4.9预览版和0.5.0编写的  
+该教程是基于0.5.x版本编写的  
 在开始之前 请清楚tina不是一个复杂的框架，是一个方便你使用大模型功能和Agent功能的工具库  
 下面是一个参考代码，教你快速的在控制台运行一个可以对话和使用工具的Agent  
 ```python

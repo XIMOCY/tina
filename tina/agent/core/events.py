@@ -37,6 +37,8 @@ class AgentEvents:
             "on_tool_confirmation": None,
             # 处理流式输出的每一个chunk
             "on_stream_chunk": [],
+            # 在本次推理的最后
+            "on_turn_end":[]
         }
 
 
@@ -66,6 +68,7 @@ class AgentEvents:
             "after_user_instruction": {"min_params": 2, "param_types": [str, str]},
             "on_stream_chunk": {"min_params": 1, "param_types": [dict]},
             "on_tool_confirmation": {"min_params": 2, "param_types": [str, dict]},
+            "on_turn_end": {"min_params": 0, "param_types": []},
         }
 
         if event_name not in event_requirements:
@@ -87,7 +90,56 @@ class AgentEvents:
             self.event_handler["on_tool_confirmation"] = func
         else:
             self.event_handler[event_name].append(func)
+    def on_turn_end(self):
+        """
+        在一次推理完结后执行，不需要参数
+        """
+        def decorator(func):
+            self._validate_event_handler_signature("on_turn_end", func)
+            self.add_handler("on_turn_end", func)
+            return func
 
+        return decorator
+
+    def add_on_turn_end_handler(self, func: callable | list[callable]):
+        """
+        在一次推理完结后执行，不需要参数
+        """
+        if isinstance(func, list):
+            for f in func:
+                self._validate_event_handler_signature("on_turn_end", f)
+                self.add_handler("on_turn_end", f)
+        else:
+            self._validate_event_handler_signature("on_turn_end", func)
+            self.add_handler("on_turn_end", func)
+
+    def trigger_on_turn_end(self):
+        """
+        触发on_turn_end事件，不需要参数
+        """
+        for func in self.event_handler["on_turn_end"]:
+            if inspect.iscoroutinefunction(func):
+                logger.warning(
+                    f"Events - 异步事件on_turn_end处理器{func.__name__}在同步调用中被忽略"
+                )
+                continue
+            func()
+            logger.debug(
+                f"Events - on_turn_end处理器{func.__name__}执行完毕"
+            )
+
+    async def atrigger_on_turn_end(self):
+        """
+        异步触发on_turn_end事件，不需要参数
+        """
+        for func in self.event_handler["on_turn_end"]:
+            if inspect.iscoroutinefunction(func):
+                await func()
+            else:
+                func()
+            logger.debug(
+                f"Events - on_turn_end处理器{func.__name__}执行完毕"
+            )
     def on_stream_chunk(self):
         """
         在大模型处理用户输入时，每处理一个chunk，都会调用此函数

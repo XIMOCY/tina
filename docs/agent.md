@@ -632,4 +632,53 @@ class BaseContextManager(ABC):
 *   **返回值**: `None`
 *   **注意**: 具体实现需决定是否保留 `system` 消息。Tina 的默认实现通常会清空所有内容，由 Agent 层重新注入 system prompt。
 
-## AgentRuntime
+## AgentRuntime 类
+
+`AgentRuntime` 是 Agent 的执行引擎，定义了 Agent 调用 LLM、执行工具、维护循环的完整流程。
+
+tina 提供了两个内置的运行时实现：
+
+| 类名 | 说明 |
+|------|------|
+| **`ToolCallingAgentRuntime`** | 标准工具调用式 Agent 运行时，实现 ReAct 循环 |
+| **`ToolCallingMutilemodalAgentRuntime`** | 多模态 Agent 运行时，支持图片/音频/URL 输入 |
+| **`BaseAgentRuntime`** | 抽象基类，可继承并重写方法实现自定义逻辑 |
+
+### 自定义 AgentRuntime
+
+你可以通过继承 `BaseAgentRuntime` 来完全自定义 Agent 的执行逻辑：
+
+```python
+from tina import Agent, Tools
+from tina.llm import BaseAPI
+from tina.agent.core.agent_runtime import BaseAgentRuntime, ToolCallingAgentRuntime
+
+class MyCustomRuntime(ToolCallingAgentRuntime):
+    """自定义运行时的示例"""
+    
+    def run_prediction_no_stream(self, instruction=None, **kwargs):
+        # 在这里添加自定义逻辑
+        print(f"接收到指令: {instruction}")
+        return super().run_prediction_no_stream(instruction, **kwargs)
+
+llm = BaseAPI()
+tools = Tools()
+runtime = MyCustomRuntime(llm, tools, ...)
+
+agent = Agent(
+    llm=llm,
+    tools=tools,
+    agent_runtime=runtime  # 使用自定义运行时
+)
+```
+
+### 可重写的方法
+
+| 方法 | 说明 |
+|------|------|
+| `run_prediction_no_stream()` | 同步非流式预测流程 |
+| `run_prediction_stream()` | 同步流式预测流程 |
+| `arun_prediction_no_stream()` | 异步非流式预测流程 |
+| `arun_prediction_stream()` | 异步流式预测流程 |
+| `_execute_tool(_tool_calls)` | 执行工具（同步） |
+| `_aexecute_tool(_tool_calls)` | 执行工具（异步） |

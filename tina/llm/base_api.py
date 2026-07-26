@@ -36,7 +36,7 @@ class BaseAPI:
         model: str = None,
         api_key: str = None,
         base_url: str = None,
-        env_path: str = os.path.join(os.getcwd(), "tina.env"),
+        env_path: str = None,
         name: str = None,
         role: str = "user",
         timeout: int = 180,
@@ -47,9 +47,16 @@ class BaseAPI:
         self.base_url = base_url
         self.model = model
 
-        params_to_load = any(param is None for param in [model, api_key, base_url])
+        # 未提供 env_path 时，自动查找 .env 或 tina.env
+        if env_path is None:
+            for candidate in [".env", "tina.env"]:
+                full_path = os.path.join(os.getcwd(), candidate)
+                if os.path.exists(full_path):
+                    env_path = full_path
+                    break
 
-        if params_to_load:
+        # 只要有 env 文件，就尝试读取缺失的参数
+        if env_path is not None and os.path.exists(env_path):
             try:
                 self.env_reader = EnvReader(env_file=env_path)
 
@@ -60,39 +67,45 @@ class BaseAPI:
                 if model is None:
                     self.model = self.env_reader.get_model()
             except Exception as e:
-                logger.error("BaseAPI - env内参数名称错误：请检查")
-                raise ValueError("env内参数名称错误：请检查")
+                logger.warning(f"BaseAPI - 读取环境配置文件失败: {e}")
 
+        # 三个核心参数依然必须有一个来源（参数 or env）
         if not self.__api_key:
-            self.logger.warning(
-                f"BaseAPI - 未找到API key，请检查环境变量'{self.API_ENV_VAR_NAME}'和{env_path}"
+            self.logger.error(
+                "BaseAPI - 未找到 API key，请通过参数 api_key 传入或创建 .env 文件并设置 api_key=your_key"
             )
             raise ValueError(
-                f"API key并没有在环境变量'{self.API_ENV_VAR_NAME}'和{env_path}中找到，要么请你设置一下，要么输入api_key参数"
+                "未找到 API key，请通过参数 api_key 传入或创建 .env 文件并设置 api_key=your_key"
             )
         if not self.base_url:
-            self.logger.warning(
-                f"BaseAPI - 未找到Base_url，请检查环境变量'BASE_URL'和{os.path.join(env_path, '.env')}"
+            self.logger.error(
+                "BaseAPI - 未找到 Base URL，请通过参数 base_url 传入或创建 .env 文件并设置 base_url=your_url"
             )
             raise ValueError(
-                f"Base_url并没有在环境变量'BASE_URL'和{os.path.join(env_path, '.env')}中找到，要么请你设置一下，要么输入base_url参数"
+                "未找到 Base URL，请通过参数 base_url 传入或创建 .env 文件并设置 base_url=your_url"
             )
         if not self.model:
-            self.logger.warning(
-                f"BaseAPI - 未找到模型名称，请检查环境变量'MODEL_NAME'和{os.path.join(env_path, '.env')}"
+            self.logger.error(
+                "BaseAPI - 未找到模型名称，请通过参数 model 传入或创建 .env 文件并设置 model=your_model"
             )
             raise ValueError(
-                f"模型名称并没有在环境变量'MODEL_NAME'和{os.path.join(env_path, '.env')}中找到，要么请你设置一下，要么输入model参数"
+                "未找到模型名称，请通过参数 model 传入或创建 .env 文件并设置 model=your_model"
             )
 
         self.MAX_INPUT = None
         self.temperature = None
-        try:
-            self.env_reader = EnvReader(env_file=env_path)
-            self.MAX_INPUT = self.env_reader.getMaxInput()
-            self.temperature = self.env_reader.getTemperature()
-        except:
-            pass  # 即使环境配置文件中没有这些参数也不影响程序运行
+        if env_path is not None and os.path.exists(env_path):
+            try:
+                self.env_reader = EnvReader(env_file=env_path)
+                # 优先使用新方法名（snake_case），同时兼容旧方法名
+                if hasattr(self.env_reader, "get_max_input"):
+                    self.MAX_INPUT = self.env_reader.get_max_input()
+                    self.temperature = self.env_reader.get_temperature()
+                else:
+                    self.MAX_INPUT = self.env_reader.getMaxInput()
+                    self.temperature = self.env_reader.getTemperature()
+            except:
+                pass
 
         self.MAX_INPUT = self.MAX_INPUT if self.MAX_INPUT is not None else 8000
         self.temperature = self.temperature if self.temperature is not None else 1.0
@@ -112,7 +125,8 @@ class BaseAPI:
         self._async_client = None
         self._timeout = timeout
 
-        del self.env_reader
+        if hasattr(self, "env_reader"):
+            del self.env_reader
 
     @property
     def aclient(self) -> httpx.AsyncClient:

@@ -27,7 +27,7 @@ tools = Tools()
 | --- | --- | --- | --- |
 | **`description`** | `str` | `None` | **手动描述**。若不填，Tina 会自动读取函数文档字符串作为工具描述。 |
 | **`require_confirmation`** | `bool` | `False` | **工具确认**。若为 `True`，Agent 在执行该工具前会触发`on_tool_confirmation`事件，并`暂停，等待人类用户的授权。适合“转账”、“删除文件”等高危操作。 |
-| **`require_persistence`** | `bool` | `False` | **持久化运行**。标识该工具是否需要在特定环境下保持运行状态或具有副作用记录。 |
+| **`require_persistence`** | `bool` | `False` | **持久化运行**。标识该工具是否需要持久化运行或保存状态到文件。 |
 | **`return_image`** | `bool` | `False` | **图片回传**。针对多模态 Agent。若工具返回图片路径，Tina 会自动将图片转为 Base64 并喂给模型“观看”。 |
 | **`return_audio`** | `bool` | `False` | **音频回传**。针对多模态 Agent。工具返回的音频数据会自动提交给支持音频分析的模型。 |
 | **`return_url`** | `bool` | `False` | **URL 回传**。针对多模态 Agent。自动将工具返回的资源 URL 链接给模型进行进一步访问。 |

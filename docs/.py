@@ -1,0 +1,136 @@
+from tina import Agent,Tools
+from tina.llm import BaseAPI
+
+class RAG:
+    """
+    示例的类，假设他是负责RAG的工具类
+    """
+    tools:Tools # 将Tools实例作为你的类属性
+    def __init__(self):
+        self.tools = Tools(name="rag") # 当你指定了工具包的名称之后，tina会自动的给你的工具包设置一个命名空间，防止冲突
+
+        self.tools.register_tool(tool=self.query) # tina会自动解析工具的文档字符串和参数描述来自动生成json schame 所以在编写工具的时候顺带编写你的注释即可
+        # 如果工具是高危工具时，建议使用参数require_confirmation=True,tina会在标记了该工具为需要验证的情况下 ，在该工具还没有执行的时候弹出中断并执行开发者设置的Agent事件
+        # self.tools.register_tool(tool=self.query,require_confirmation=True) 
+
+    def get_tools(self):
+        """把tools公开出去"""
+        return self.tools
+    # 上面是一个基本的范式，请开发者在编写tina的程序的时候，将上面的操作视为:我可以把这个类里面的哪些功能暴露给Agent？
+        
+
+    def query(self,key_words:list):
+        """
+        在向量数据库里面查询
+        Args:
+            key_words(list):字符串列表，例如：['python','编程']
+        """
+        result = []
+        for key_word in key_words:
+            # 向数据库发起查询请求
+            result.append("查询结果")
+        
+        return result # 不需要担心是什么类型，不论是什么类型，tina都会转化为LLM看的懂的string类型
+class Search:
+    """
+    假设他是联网查询的类
+       """
+    chat_tools:Tools # 假设你有一个ChatAgent,可以接触到所有的工具
+    memory_tools:Tools # 假设你有一个MemoryAgent,只能读取缓存来看看ChatAgent做了什么
+    def __init__(self):
+        self.chat_tools = Tools(name="search") # 当你指定了工具包的名称之后，tina就会允许你的工具和其他的工具包进行组合
+        self.memory_tools = Tools(name="search") # 因为是给不同的Agent看的，所以可以使用同一个名字
+        self.cache = [{
+
+        }]
+
+        self.chat_tools.register_tool(tool=self.search)
+        self.chat_tools.register_tool(tool=self.fetch_url) 
+        self.chat_tools.register_tool(tool=self.get_cache)
+
+        self.memory_tools.register_tool(tool=self.get_cache)
+
+
+    def get_chat_tools(self):
+        """把tools公开出去"""
+        return self.chat_tools
+    def get_memory_tools(self):
+        return self.memory_tools
+    
+    def get_cache(self):
+        """
+        获取检索的缓存
+        """
+        return self.cache
+    def search(self,key_word:str):
+        """
+        在互联网上面搜索
+        Args:
+            key_word(string):检索的关键词
+        """
+        urls = []
+        # 在这里实现在互联网检索的逻辑
+        return urls
+    def fetch_url(url:str):
+        """
+        获取网页内容
+        """    
+        result = []
+        # 在这里实现获取网页内容的操作
+        return result
+        
+
+rag = RAG() # 一定要实例化
+search = Search()
+chat_agent = Agent(
+    llm=BaseAPI(),# 如果你使用了tina.env文件
+    tools=[rag.get_tools(),search.get_chat_tools()], # 你可以传递一个Tools列表
+    system_prompt="你可以查询向量数据库..." # 在这里设定你的提示词
+)
+memory_agent = Agent(
+    llm=BaseAPI(),
+    tools=[rag.get_tools,search.get_memory_tools],
+    system_prompt="你可以整理Agent的记忆和历史..."
+)
+from asyncio import Queue
+class ChatAgent:
+    def __init__(self):
+        self.llm = BaseAPI()
+        self.tools = Tools(name="Chat")
+        self.system_prompt = "你是负责聊天的AGent"
+        self.agent_core = Agent(llm=self.llm,tools=self.tools,system_prompt=self.system_prompt)
+
+        self.message = Queue(maxsize=10)
+        self.stream_chunk_processer = None
+
+        self.tools.register_tool(tool=self.put_instruction) # 其他Agent可以给这个Agent布置任务
+
+        self.agent_core.add_on_turn_end_handler(func=self.check_some_tool_is_done)
+
+        
+
+    async def put_instruction(self,instruction:str):
+        await self.message.put(item=instruction)
+    
+    async def check_some_tool_is_done(self):
+        if self.agent_core.get_tools_call[-1]['name'] != "some_tool":
+            await self.put_instruction(instruction="请使用some_tool来结束你这次的指令")
+
+    def set_stream_chunk_processer(self,func:callable):
+        self.stream_chunk_processer = func
+        self.agent_core.add_on_stream_chunk_handler(self.stream_chunk_processer) # 可以使用这个事件来把Agent的流式输出暴露出去,tina会在每一个chunk生成的时候把数据通过这个函数发布出去，支持多个处理器
+
+    async def run(self):
+        while True:
+            instruction = await self.message.get()
+            try:
+                # 确保错误不会导致整个 Worker 挂掉
+                self.prediction(instruction)
+            except Exception as e:
+                print(f"Agent 执行出错: {e}")
+            finally:
+                self.message.task_done()
+
+    def prediction(self, instruction):
+        for _ in self.agent_core.apredict(instruction=instruction):
+            continue

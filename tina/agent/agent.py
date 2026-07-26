@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import List, Literal, Union, Generator, Dict, Any, AsyncGenerator, overload
 
-from tina.agent.core.agent_response import AgentResponse
+from tina.agent.core.agent_response import AgentResponse, ToolCall
 from tina.agent.core.state import AgentState
 
 from ..llm.base_api import BaseAPI
@@ -66,9 +66,6 @@ class Agent:
         # 运行需要的实例
         self.llm = llm
         self._init_tools(tools, name)
-
-        self.tools_call_result = []
-        self.tools_call = []
         self.mcp_client = mcp
         if context_manager is None:
             self.context_manager = ContextManager(
@@ -100,17 +97,22 @@ class Agent:
         self.other_agents = []
 
     def _init_tools(self, tools, name):
-        if tools is None or isinstance(tools, list):
-            self.tools = Tools(
+        if tools is None:
+            self._create_self_tools(name)
+        elif isinstance(tools, list):
+            self._create_self_tools(name)
+            self.tools.add_tools(tools)
+        elif isinstance(tools, Tools):
+            self.tools = tools
+
+    def _create_self_tools(self, name):
+        self.tools = Tools(
                 name="_self",
                 metadata={
                     "name": name,
                     "description": "Agent自己的工具包，实例化时指定的工具包会被添加到这个工具包里面",
                 },
             )
-            self.tools.add_tools(tools)
-        elif isinstance(tools, Tools):
-            self.tools = tools
 
     @property
     def state(self) -> AgentState:
@@ -254,6 +256,18 @@ class Agent:
         """
         return self.events.on_stream_chunk()
 
+    def on_turn_end(self):
+        """
+        在每次推理完结后执行，不需要参数
+        """
+        return self.events.on_turn_end()
+
+    def add_on_turn_end_handler(self, func: callable | list[callable]):
+        """
+        在每次推理完结后执行，不需要参数
+        """
+        self.events.add_on_turn_end_handler(func)
+
     def _mcp_to_tools(self, MCP):
         """如果传入了MCP，则将MCP的工具集加入到当前的工具集中"""
         try:
@@ -288,6 +302,34 @@ class Agent:
         获取当前Agent的提示词
         """
         return self.context_manager.get_system_message()
+
+    def set_system_prompt(self, prompt: str) -> None:
+        """
+        设置系统提示词
+        Args:
+            prompt: 系统提示词
+        """
+        self.context_manager.set_system_message(prompt)
+
+    def get_last_tool_call(self) -> ToolCall | None:
+        """
+        获取最近一次工具调用信息
+        Returns:
+            ToolCall | None: 最近一次工具调用，如果没有则返回 None
+        """
+        calls = self.context_manager.get_tool_calls()
+        if not calls:
+            return None
+        return ToolCall(calls[-1])
+
+    def get_last_tool_result(self) -> dict | None:
+        """
+        获取最近一次工具调用的结果
+        Returns:
+            dict | None: 最近一次工具调用结果，如果没有则返回 None
+        """
+        results = self.context_manager.get_tools_result()
+        return results[-1] if results else None
 
     def connect_agent(self, agent: "Agent" | list["Agent"]):
         """
