@@ -2,6 +2,8 @@
 
 ![tina logo](logo.svg)
 
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 一个轻量、模块化的 AI 智能体框架，基于 OpenAI API 格式构建。
 
 ## 安装
@@ -995,7 +997,7 @@ MAX_INPUT=8000
 
 ### 许可证
 
-MIT License
+Apache License 2.0
 
 ### 贡献
 
