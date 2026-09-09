@@ -1,4 +1,7 @@
 # Tools 工具包类
+
+> 需要「说出关键词触发无参副作用、且不进 tools schema」时，请用 [`KeywordActions`](./keyword_actions.md)，不要塞进 Tools。
+
 ## Tools API文档
 ### 实例化Tools
 ```python

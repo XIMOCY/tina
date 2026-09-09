@@ -27,12 +27,15 @@ class BaseAgentRuntime:
     mcp_client: MCPClient
     state: AgentState
 
-    def __init__(self, llm, tools, context_manager, events=None, mcp_client=None):
+    def __init__(
+        self, llm, tools, context_manager, events=None, mcp_client=None, keyword_actions=None
+    ):
         self.llm = llm
         self.tools = tools
         self.context_manager = context_manager
         self.mcp_client = mcp_client
         self.events: AgentEvents = events
+        self.keyword_actions = keyword_actions
         self.state = AgentState.IDLE
 
     def run_prediction_no_stream(
@@ -46,6 +49,7 @@ class BaseAgentRuntime:
         """
         非流式的预测
         """
+        self._reset_keyword_buffer()
         self._instruction(instruction)
 
     def run_prediction_stream(
@@ -59,6 +63,7 @@ class BaseAgentRuntime:
         """
         流式的预测
         """
+        self._reset_keyword_buffer()
         self._instruction(instruction)
 
     async def arun_prediction_no_stream(
@@ -69,6 +74,7 @@ class BaseAgentRuntime:
         top_k: int = 1,
         min_p: float = 0.0,
     ):
+        self._reset_keyword_buffer()
         await self._ainstruction(instruction)
 
     async def arun_prediction_stream(
@@ -79,7 +85,22 @@ class BaseAgentRuntime:
         top_k: int = 1,
         min_p: float = 0.0,
     ):
+        self._reset_keyword_buffer()
         await self._ainstruction(instruction)
+
+    def _reset_keyword_buffer(self):
+        if self.keyword_actions is not None:
+            self.keyword_actions.reset_buffer()
+
+    def _check_keyword_actions(self, text: str):
+        """assistant 正文凑齐后触发（含 tool_calls 前的中间段）。"""
+        if self.keyword_actions is not None and text:
+            self.keyword_actions.check(text)
+
+    async def _acheck_keyword_actions(self, text: str):
+        """异步路径；支持 async 绑定函数。"""
+        if self.keyword_actions is not None and text:
+            await self.keyword_actions.acheck(text)
 
     def _instruction(self, instruction):
         if instruction is not None:
@@ -137,8 +158,11 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
         events,
         max_tool_loop: int = 30,
         mcp_client: MCPClient = None,
+        keyword_actions=None,
     ):
-        super().__init__(llm, tools, context_manager, events, mcp_client)
+        super().__init__(
+            llm, tools, context_manager, events, mcp_client, keyword_actions
+        )
         self.max_tool_loop = max_tool_loop
 
     def run_prediction_no_stream(
@@ -162,6 +186,9 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
 
             if "tool_calls" in llm_response:
                 self.state = AgentState.TOOL_CALLING
+                _content = llm_response.get("content") or ""
+                if _content:
+                    self._check_keyword_actions(_content)
                 _tool_calls = llm_response["tool_calls"]
                 self.context_manager.add_tool_calls(_tool_calls)
                 self._execute_tool(_tool_calls)
@@ -175,6 +202,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                     user_message=instruction, assistant_message=llm_response["content"]
                 )
                 self.context_manager.add_assistant_message(llm_response["content"])
+                self._check_keyword_actions(llm_response["content"])
                 # 用户输入后事件（同步非流式）
 
                 self.events.trigger_on_turn_end()
@@ -219,6 +247,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
 
                     if whole_content:
                         self.context_manager.add_assistant_message(whole_content)
+                        self._check_keyword_actions(whole_content)
 
                     content_parts = []
                     reasoning_buffer = ""
@@ -251,9 +280,13 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                         yield reasoning_content_chunk
                 else:
                     content = chunk.get("content", "")
-                    if content:
-                        content_parts.append(content)
+                    usage = chunk.get("usage")
+                    if content or usage is not None:
+                        if content:
+                            content_parts.append(content)
                         content_chunk = {"role": "assistant", "content": content}
+                        if usage is not None:
+                            content_chunk["usage"] = usage
                         self.events.trigger_on_stream_chunk(content_chunk)
                         yield content_chunk
 
@@ -263,6 +296,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                     user_message=instruction, assistant_message=whole_content
                 )
                 self.context_manager.add_assistant_message(whole_content)
+                self._check_keyword_actions(whole_content)
                 # 用户输入后事件（同步流式）
 
             if tool_called:
@@ -292,6 +326,9 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
             )
             if "tool_calls" in llm_result:
                 self.state = AgentState.TOOL_CALLING
+                _content = llm_result.get("content") or ""
+                if _content:
+                    await self._acheck_keyword_actions(_content)
                 _tool_calls = llm_result["tool_calls"]
                 self.context_manager.add_tool_calls(_tool_calls)
                 await self._aexecute_tool(_tool_calls)
@@ -308,6 +345,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                     )
                 )
                 self.context_manager.add_assistant_message(llm_result["content"])
+                await self._acheck_keyword_actions(llm_result["content"])
                 # 用户输入后事件（异步非流式）
 
                 await self.events.atrigger_on_turn_end()
@@ -353,6 +391,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
 
                     if whole_content:
                         self.context_manager.add_assistant_message(whole_content)
+                        await self._acheck_keyword_actions(whole_content)
 
                     content_parts = []
                     reasoning_buffer = ""
@@ -387,9 +426,13 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                         yield reasoning_content_chunk
                 else:
                     content = chunk.get("content", "")
-                    if content:
-                        content_parts.append(content)
+                    usage = chunk.get("usage")
+                    if content or usage is not None:
+                        if content:
+                            content_parts.append(content)
                         content_chunk = {"role": "assistant", "content": content}
+                        if usage is not None:
+                            content_chunk["usage"] = usage
                         await self.events.atrigger_on_stream_chunk(content_chunk)
                         yield content_chunk
 
@@ -399,6 +442,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                     user_message=instruction, assistant_message=whole_content
                 )
                 self.context_manager.add_assistant_message(whole_content)
+                await self._acheck_keyword_actions(whole_content)
                 # 用户输入后事件（异步流式）
 
             if tool_called:
@@ -421,13 +465,16 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
         events,
         max_tool_loop: int = 30,
         mcp_client: MCPClient = None,
+        keyword_actions=None,
     ):
         self.llm = llm
         self.tools = tools
         self.context_manager = context_manager
         self.events = events
         self.mcp_client = mcp_client
+        self.keyword_actions = keyword_actions
         self.max_tool_loop = max_tool_loop
+        self.state = AgentState.IDLE
 
     def run_prediction_no_stream(
         self,
@@ -440,6 +487,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
         top_k: int = 1,
         min_p: float = 0.0,
     ) -> dict:
+        self._reset_keyword_buffer()
         self.context_manager.add_user_message(
             instruction=instruction, image=image, audio=audio, url=url
         )
@@ -457,6 +505,9 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
 
             if "tool_calls" in llm_response:
                 self.state = AgentState.TOOL_CALLING
+                _content = llm_response.get("content") or ""
+                if _content:
+                    self._check_keyword_actions(_content)
                 _tool_calls = llm_response["tool_calls"]
                 self.context_manager.add_tool_calls(_tool_calls)
                 self._execute_tool(_tool_calls)
@@ -472,6 +523,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                 _, llm_assistant_message = self.events.trigger_after_user_instruction(
                     user_message=instruction, assistant_message=llm_assistant_message
                 )
+                self._check_keyword_actions(llm_assistant_message)
                 self.events.trigger_on_turn_end()
                 return llm_response
         self.events.trigger_on_turn_end()
@@ -491,6 +543,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
         top_k: int = 1,
         min_p: float = 0,
     ) -> Generator[dict, None, None]:
+        self._reset_keyword_buffer()
         self.context_manager.add_user_message(
             instruction=instruction, image=image, audio=audio, url=url
         )
@@ -526,6 +579,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
 
                     if whole_content:
                         self.context_manager.add_assistant_message(whole_content)
+                        self._check_keyword_actions(whole_content)
 
                     content_parts = []
                     reasoning_buffer = ""
@@ -558,9 +612,13 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                         yield reasoning_content_chunk
                 else:
                     content = chunk.get("content", "")
-                    if content:
-                        content_parts.append(content)
+                    usage = chunk.get("usage")
+                    if content or usage is not None:
+                        if content:
+                            content_parts.append(content)
                         content_chunk = {"role": "assistant", "content": content}
+                        if usage is not None:
+                            content_chunk["usage"] = usage
                         self.events.trigger_on_stream_chunk(content_chunk)
                         yield content_chunk
 
@@ -571,6 +629,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                     user_message=instruction, assistant_message=whole_content
                 )
                 self.context_manager.add_assistant_message(whole_content)
+                self._check_keyword_actions(whole_content)
 
             if tool_called:
                 continue
@@ -596,6 +655,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
         top_k=1,
         min_p=0,
     ):
+        self._reset_keyword_buffer()
         self.context_manager.add_user_message(
             instruction=instruction, image=image, audio=audio, url=url
         )
@@ -612,6 +672,9 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
             )
             if "tool_calls" in llm_result:
                 self.state = AgentState.TOOL_CALLING
+                _content = llm_result.get("content") or ""
+                if _content:
+                    await self._acheck_keyword_actions(_content)
                 _tool_calls = llm_result["tool_calls"]
                 self.context_manager.add_tool_calls(_tool_calls)
                 await self._aexecute_tool(_tool_calls)
@@ -629,6 +692,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                         assistant_message=llm_result["content"],
                     )
                 )
+                await self._acheck_keyword_actions(llm_result["content"])
                 await self.events.atrigger_on_turn_end()
                 return llm_result
         await self.events.atrigger_on_turn_end()
@@ -648,6 +712,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
         top_k=1,
         min_p=0,
     ):
+        self._reset_keyword_buffer()
         self.context_manager.add_user_message(
             instruction=instruction, image=image, audio=audio, url=url
         )
@@ -680,6 +745,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
 
                     if whole_content:
                         self.context_manager.add_assistant_message(whole_content)
+                        await self._acheck_keyword_actions(whole_content)
 
                     content_parts = []
                     reasoning_buffer = ""
@@ -712,9 +778,13 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                         yield reasoning_content_chunk
                 else:
                     content = chunk.get("content", "")
-                    if content:
-                        content_parts.append(content)
+                    usage = chunk.get("usage")
+                    if content or usage is not None:
+                        if content:
+                            content_parts.append(content)
                         content_chunk = {"role": "assistant", "content": content}
+                        if usage is not None:
+                            content_chunk["usage"] = usage
                         await self.events.atrigger_on_stream_chunk(content_chunk)
                         yield content_chunk
 
@@ -725,6 +795,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                 )
 
                 self.context_manager.add_assistant_message(whole_content)
+                await self._acheck_keyword_actions(whole_content)
                 # 用户输入后事件（异步流式）
 
             if tool_called:

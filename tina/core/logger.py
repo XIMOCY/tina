@@ -1,6 +1,9 @@
 import logging
 import os
-from typing import Optional
+import warnings
+from typing import Optional, Type
+
+from .error import TinaWarning
 
 
 class Logger:
@@ -65,7 +68,21 @@ class Logger:
         self.logger.info(message)
 
     def warning(self, message: str):
+        """仅写日志 WARNING，不抛出 Python Warning。"""
         self.logger.warning(message)
+
+    def warn(
+        self,
+        message: str,
+        category: Type[Warning] = TinaWarning,
+        stacklevel: int = 2,
+    ):
+        """
+        统一的用户可见警告：写入日志，并 warnings.warn(TinaWarning)。
+        业务侧请调用本方法，不要各自 warnings.warn。
+        """
+        self.logger.warning(message)
+        warnings.warn(message, category, stacklevel=stacklevel + 1)
 
     def error(self, message: str):
         self.logger.error(message)

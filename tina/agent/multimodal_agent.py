@@ -24,6 +24,7 @@ from typing import (
 
 from ..llm.base_multimodal_api import BaseMultimodalAPI
 from .core.tools import Tools
+from .core.keyword_actions import KeywordActions
 from ..mcp.client import MCPClient
 from .core.prompt import Prompt
 from .core.context_manager import MultimodalContextManager
@@ -56,6 +57,7 @@ class MultimodalAgent(Agent):
         max_context_length: int = 100000,
         max_tool_result_length: int = 6000,
         name: str = "None",
+        keyword_actions: KeywordActions = None,
     ):
         """
         实例化一个Agent对象
@@ -70,6 +72,7 @@ class MultimodalAgent(Agent):
             agent_runtime: tina.BaseAgentRuntime类型，运行时，
             max_tool_loop: int 默认30，最多循环次数
             name: str 智能体名字，用于多Agent区分
+            keyword_actions: KeywordActions，可选关键词动作
         """
         # 智能体的名称
         self.name = name
@@ -77,6 +80,7 @@ class MultimodalAgent(Agent):
         # 运行需要的实例
         self.llm = llm
         self._init_tools(tools, name)
+        self.keyword_actions = keyword_actions
 
         self.tools_call_result = []
         self.tools_call = []
@@ -96,6 +100,7 @@ class MultimodalAgent(Agent):
             self.context_manager.set_system_message(system_prompt)
         else:
             self.context_manager.set_system_message(Prompt("tina").prompt)
+        self._inject_keyword_actions_prompt()
         # 初始化消息，可以直接使用context_manager来修改messages
         self.messages = self.context_manager.get_messages()
 
@@ -107,9 +112,15 @@ class MultimodalAgent(Agent):
                 self.events,
                 max_tool_loop=max_tool_loop,
                 mcp_client=mcp,
+                keyword_actions=self.keyword_actions,
             )
         else:
             self.runtime = agent_runtime
+            if (
+                self.keyword_actions is not None
+                and getattr(self.runtime, "keyword_actions", None) is None
+            ):
+                self.runtime.keyword_actions = self.keyword_actions
 
     @overload
     def predict(

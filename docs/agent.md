@@ -29,6 +29,7 @@ Agent的实例化参数十分丰富，它分为下面几种:
 |----| ---- | ---- |---- |
 |  llm |  tina.BaseAPI |必填|Agent的大脑| 
 |  tools |  tina.Tools |必填|Agent的工具包|
+|  keyword_actions |  tina.KeywordActions |None|可选关键词动作（不进 tools schema，见 [keyword_actions.md](./keyword_actions.md)）|
 |  system_prompt | str |None|Agent的系统提示词，与后面的context_manager有关系|  
 |  mcp |  tina.MCPClient |None|MCP客户端用于链接MCP生态| 
 |  events |  tina.AgentEvents |None|Agent的事件管理类| 
@@ -78,15 +79,16 @@ agent.predict(
     min_p=0.0,
     stream=True
 )
-# 不论是不是流式输出，都需要使用await
-await agent.apredict(
+
+async for chunk in agent.apredict(
     instruction="",
     temperature=0.5,
     top_p=0.9,
     top_k=1,
-    min_p=0.0,
-    stream=True
+    min_p=0.0
 )
+# 异步的非流式方法修改为了：
+await agent.apredict_no_stream()
 ```
 | 参数名称 | 类型 | 默认值 | 描述 |
 | :--- | :--- | :--- | :--- |

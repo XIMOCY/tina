@@ -9,6 +9,7 @@ Agent类：基础智能体类，默认支持API调用
 
 from __future__ import annotations
 
+import re
 from typing import List, Literal, Union, Generator, Dict, Any, AsyncGenerator, overload
 
 from tina.agent.core.agent_response import AgentResponse, ToolCall
@@ -16,12 +17,20 @@ from tina.agent.core.state import AgentState
 
 from ..llm.base_api import BaseAPI
 from .core.tools import Tools
+from .core.keyword_actions import KeywordActions
 from ..mcp.client import MCPClient
 from .core.prompt import Prompt
 from .core.context_manager import ContextManager
 from .core.agent_runtime import ToolCallingAgentRuntime, BaseAgentRuntime
 from .core.events import AgentEvents
 from ..core.error import TinaError
+from ..core import logger
+
+
+_KEYWORD_ACTION_BLOCK_RE = re.compile(
+    r"\n*\s*<keyword_action>.*?</keyword_action>\s*",
+    re.DOTALL | re.IGNORECASE,
+)
 
 
 class Agent:
@@ -32,6 +41,7 @@ class Agent:
 
     llm: BaseAPI
     tools: Tools
+    keyword_actions: KeywordActions | None
 
     def __init__(
         self,
@@ -46,6 +56,7 @@ class Agent:
         max_context_length: int = 100000,
         max_tool_result_length: int = 6000,
         name: str = None,
+        keyword_actions: KeywordActions = None,
     ):
         """
         实例化一个Agent对象
@@ -59,6 +70,8 @@ class Agent:
             context_limit: int 上下文限制，使用大模型来总结你的上下文，数字为0时不触发
             max_tool_loop: int 最大工具调用次数，超过该次数则停止调用工具
             name: str 智能体名字，用于多Agent区分
+            keyword_actions: KeywordActions，可选关键词动作（不进 tools schema）；
+                有绑定时会自动追加到 system prompt 末尾的 <keyword_action> 块
         """
         # 智能体的名称
         self.name = name
@@ -66,6 +79,7 @@ class Agent:
         # 运行需要的实例
         self.llm = llm
         self._init_tools(tools, name)
+        self.keyword_actions = keyword_actions
         self.mcp_client = mcp
         if context_manager is None:
             self.context_manager = ContextManager(
@@ -81,6 +95,7 @@ class Agent:
             self.context_manager.set_system_message(system_prompt)
         else:
             self.context_manager.set_system_message(Prompt("tina").prompt)
+        self._inject_keyword_actions_prompt()
 
         self.messages = self.context_manager.get_messages()
         if agent_runtime is None:
@@ -91,10 +106,67 @@ class Agent:
                 self.events,
                 max_tool_loop=max_tool_loop,
                 mcp_client=mcp,
+                keyword_actions=self.keyword_actions,
             )
         else:
             self.runtime = agent_runtime
+            if (
+                self.keyword_actions is not None
+                and getattr(self.runtime, "keyword_actions", None) is None
+            ):
+                self.runtime.keyword_actions = self.keyword_actions
         self.other_agents = []
+
+    def set_keyword_actions(self, keyword_actions: KeywordActions | None) -> None:
+        """挂载或替换 KeywordActions；会同步更新 system prompt 末尾的说明块。"""
+        self.keyword_actions = keyword_actions
+        if hasattr(self, "runtime") and self.runtime is not None:
+            self.runtime.keyword_actions = keyword_actions
+        self._inject_keyword_actions_prompt()
+
+    def _strip_keyword_action_block(self, prompt: str) -> str:
+        if not prompt:
+            return ""
+        return _KEYWORD_ACTION_BLOCK_RE.sub("", prompt).rstrip()
+
+    def _inject_keyword_actions_prompt(self) -> None:
+        """
+        将 KeywordActions 说明块追加到 system prompt 末尾：
+        <keyword_action>...</keyword_action>
+        """
+        prompt = self._strip_keyword_action_block(
+            self.context_manager.get_system_message() or ""
+        )
+        block = ""
+        if self.keyword_actions is not None:
+            block = self.keyword_actions.build_prompt_block()
+        if block:
+            wrapped = f"<keyword_action>\n{block}\n</keyword_action>"
+            self.context_manager.set_system_message(f"{prompt}\n\n{wrapped}" if prompt else wrapped)
+            logger.warn("使用了关键词动作，会影响你的系统提示词")
+        else:
+            self.context_manager.set_system_message(prompt)
+
+    def filter_visible(self, content: str) -> str:
+        """
+        Hide 可见过滤（跨 chunk 缓冲）。on_stream_chunk 不可改写 chunk，
+        请在消费流式输出时自行调用本方法。
+        """
+        if self.keyword_actions is None:
+            return content or ""
+        return self.keyword_actions.filter_visible(content)
+
+    def flush_visible(self) -> str:
+        """回合末吐出 Hide 截留缓冲。"""
+        if self.keyword_actions is None:
+            return ""
+        return self.keyword_actions.flush_visible()
+
+    def build_keyword_actions_prompt_block(self) -> str:
+        """生成可拼进 system prompt 的关键词动作说明块。"""
+        if self.keyword_actions is None:
+            return ""
+        return self.keyword_actions.build_prompt_block()
 
     def _init_tools(self, tools, name):
         if tools is None:
@@ -310,6 +382,7 @@ class Agent:
             prompt: 系统提示词
         """
         self.context_manager.set_system_message(prompt)
+        self._inject_keyword_actions_prompt()
 
     def get_last_tool_call(self) -> ToolCall | None:
         """
@@ -374,9 +447,7 @@ class Agent:
         """
         在当前的Agent添加新的消息
         Args:
-            role:消息的角色，可以是"user"，"assistant"，"system"
-            content:消息的内容
-            messages:消息列表，可以一次性添加多个消息,格式为[{"role": "user", "content": "你好，我是用户"}]，注意如果传入了messages，则role和content参数将被忽略
+            messages:消息列表，可以一次性添加多个消息,格式为[{"role": "user", "content": "你好，我是用户"}]
         """
         self.messages = self.context_manager.add_messages(messages)
 

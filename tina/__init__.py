@@ -1,6 +1,7 @@
 from tina.agent import (
     Agent,
     Tools,
+    KeywordActions,
     ContextManager,
     ToolsExecutor,
     MultimodalAgent,
@@ -11,10 +12,11 @@ from tina.agent import (
 __all__ = [
     "Agent",
     "Tools",
+    "KeywordActions",
     "ContextManager",
     "ToolsExecutor",
     "MultimodalAgent",
     "AgentState",
     "AgentEvents",
 ]
-__version__ = "0.5.0"
+__version__ = "0.5.3"
