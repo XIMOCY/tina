@@ -69,6 +69,7 @@ for chunk in result:
 - [四、MCP 支持 —— 模型上下文协议](#四mcp-支持--模型上下文协议)
 - [五、多模态支持](#五多模态支持)
 - [六、快速开发工具](#六快速开发工具)
+- [6.5 终端界面 TUI（可选扩展）](#65-终端界面-tui可选扩展)
 
 ---
 
@@ -96,6 +97,7 @@ tina 是一个轻量、模块化的 AI 智能体框架，专注于让开发者�
 | **MCPClient** | MCP 集成 | 连接 MCP 服务器生态（stdio/SSE） |
 | **ContextManager** | 上下文管理 | 滚动窗口策略，自动截断 |
 | **AgentEvents** | 事件系统 | 贯穿 Agent 生命周期的回调钩子 |
+| **TUI（可选）** | 终端界面 | 测试你写的 Agent 的交互控制台，也可当作自己的 TUI 使用 |
 
 ---
 
@@ -872,20 +874,22 @@ for chunk in result:
 | `list_dir` | ❌ | 列出目录下的文件和子目录 |
 | `project_tree` | ❌ | 获取项目目录结构（类似 tree 命令） |
 | `get_path` | ❌ | 获取文件/文件夹的绝对路径 |
-| `read_code` | ❌ | 按字节范围读取文件内容片段 |
-| `read_code_by_line` | ❌ | 按行读取代码片段 |
-| `search_in_files` | ❌ | 在项目中搜索文本（支持正则） |
+| `read_code` | ❌ | 按字符范围读取文件内容片段 |
+| `read_code_by_line` | ❌ | 按行读取代码片段（带行号） |
+| `search_in_files` | ❌ | 在项目中按正则搜索文本（自动忽略 `.git`/`.venv` 等） |
 | `delay` | ❌ | 延时函数 |
-| `make_dir` | ✅ | 创建目录 |
-| `write_code` | ✅ | 写入文件内容（覆盖） |
-| `append_code` | ✅ | 追加写入文件内容 |
-| `delete_path` | ✅ | 删除文件或空目录 |
+| `make_dir` | ✅ | 创建目录（自动创建父目录） |
+| `write_code` | ✅ | 写入文件内容（覆盖，自动创建父目录） |
+| `append_code` | ✅ | 追加写入文件内容（自动创建父目录） |
+| `delete_path` | ✅ | 删除文件或目录（`recursive=True` 可递归） |
 | `replace_code_by_lines` | ✅ | 按行范围替换代码块 |
-| `terminal` | ✅ | 在终端运行指令 |
+| `terminal` | ✅ | 在终端运行指令（带超时） |
 | `run_python` | ✅ | 执行一小段 Python 代码 |
-| `shot_down_system` | ❌ | 关机（交互式确认） |
+| `shot_down_system` | ✅ | 关机 |
 
 > `需要确认` 的工具在执行时会触发 `on_tool_confirmation` 事件，适合接入人工审批流程。
+>
+> 由于系统工具包使用了命名空间，工具在模型侧的实际名称为 `tina_sys_tools_{名称}`，例如 `tina_sys_tools_read_code`。
 
 ### 6.2 后台工作器 `AgentWorker`
 
@@ -972,6 +976,49 @@ print(message)
 # {"role": "user", "content": [{"type": "text", "text": "..."}, {"type": "image_url", ...}]}
 ```
 
+### 6.5 终端界面 TUI（可选扩展）
+
+`tina` 自带一个基于 [Textual](https://textual.textualize.io/) 的终端界面。它的定位是**可选扩展**：方便你测试自己写的 Agent，也可以直接当作自己的 TUI 来用。核心不依赖它，需要额外安装：
+
+```bash
+pip install tina-python[tui]
+```
+
+```python
+from tina import Agent, Tools
+from tina.llm import BaseAPI
+from tina.utils.tui import run_agent_in_tui
+
+agent = Agent(llm=BaseAPI(), tools=Tools())
+
+run_agent_in_tui(agent, max_tokens=32000)
+```
+
+特性：
+
+- 助手正文流式渲染（Markdown），推理内容与工具调用卡片均可折叠
+- 自动为 Agent 注册工具确认事件（`require_confirmation=True` 的工具会弹出选择条）
+- token 累计与上限进度（显示百分比，超限变红警告）
+- 输入框支持多行与粘贴；`Enter` 发送、`Shift+Enter` 换行、`Tab` 补全命令
+- 底部粘性滚动：在底部时自动跟随输出，向上滚动查看历史时不会被打扰，滚回底部自动恢复
+
+| 指令 | 功能 |
+|------|------|
+| `#help` | 查看可用命令 |
+| `#tools` | 查看当前工具、描述与参数 |
+| `#context` | 查看当前上下文 |
+| `#model` | 查看当前模型信息 |
+| `#tokens` | 查看 token 统计 |
+| `#compact` | 压缩上下文（让 Agent 自我总结并并入 system） |
+| `#clear` | 清空上下文与界面 |
+| `#exit` | 退出 |
+
+快捷键：`Ctrl+↑/↓` 跳转消息、`Ctrl+Home/End` 首/末条、`Ctrl+R` 折叠思考、`Ctrl+T` 折叠工具与结果、`Esc` 取消确认。
+
+> 界面是可选的：数据层 `TuiContextManager`（渲染块列表）和 `TokenCounter`（token 计数）**不依赖 textual**，可以单独导入，用来接入你自己的界面。
+
+完整说明（安装、指令、快捷键、自建界面）见 [`docs/tui.md`](./docs/tui.md)。
+
 ---
 
 ## 附录
@@ -993,6 +1040,7 @@ MAX_INPUT=8000
 |------|------|
 | 核心功能 | `httpx`, `python-dotenv` |
 | MCP 支持 | `mcp` (包名: `mcp-python`) |
+| TUI 界面（可选） | `textual` |
 | 测试 | `pytest`, `pytest-asyncio`, `pytest-cov` |
 
 ### 许可证

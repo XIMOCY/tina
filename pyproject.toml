@@ -28,6 +28,9 @@ Repository = "https://gitee.com/wang-churi/tina.git"
 GitHub = "https://github.com/XIMOCY/tina.git"
 
 [project.optional-dependencies]
+tui = [
+    "textual>=0.80",
+]
 mcp = [
     "mcp-python", 
 ]
