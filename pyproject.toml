@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tina-python"
-version = "0.6.4"
+version = "0.6.5"
 description = "tina is in your computer!"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
@@ -32,12 +32,16 @@ tui = [
     "textual>=0.80",
 ]
 mcp = [
-    "mcp-python", 
+    "mcp",
 ]
 test = [
     "pytest>=9.0",
     "pytest-asyncio>=1.4",
     "pytest-cov>=7.0",
+]
+all = [
+    "textual>=0.80",
+    "mcp",
 ]
 
 [tool.pytest.ini_options]

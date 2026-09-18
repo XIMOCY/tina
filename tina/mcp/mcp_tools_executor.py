@@ -3,6 +3,15 @@ from ..core import logger
 from typing import Dict, Any
 
 
+def _content_to_text(result: Dict[str, Any]) -> str:
+    """将 MCP 返回的 TextContent 列表拼接为纯文本"""
+    parts = []
+    for item in result.get("content") or []:
+        text = getattr(item, "text", None)
+        parts.append(text if text is not None else str(item))
+    return "\n".join(parts)
+
+
 class MCPToolExecutor:
     """
     MCP工具执行器，用于执行MCP工具调用
@@ -36,7 +45,7 @@ class MCPToolExecutor:
                 logger.debug(
                     f"MCPToolExecutor - 工具 '{_tool_name}' 执行结果: {result}：参数 {_tool_args}"
                 )
-                return result["content"]
+                return _content_to_text(result)
             else:
                 logger.error(
                     f"MCPToolExecutor - 工具'{_tool_name}' 执行错误: {result.get('error', '未知错误')}"
@@ -57,7 +66,7 @@ class MCPToolExecutor:
                 logger.debug(
                     f"MCPToolExecutor - 工具 '{_tool_name}' 执行结果: {result}：参数 {_tool_args}"
                 )
-                return result["content"]
+                return _content_to_text(result)
             else:
                 logger.error(
                     f"MCPToolExecutor - 工具'{_tool_name}' 执行错误: {result.get('error', '未知错误')}"

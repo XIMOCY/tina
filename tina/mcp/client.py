@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import json
 import uuid
 import threading
@@ -32,12 +33,13 @@ def _tool_input_schema(tool: Any) -> Dict[str, Any]:
 class MCPClient:
     def __init__(self):
         if not MCP_AVAILABLE:
-            raise ImportError("请先安装MCP依赖: pip install mcp-python")
+            raise ImportError("请先安装MCP依赖: pip install mcp")
 
         self.servers = (
             {}
-        )  # {server_id: {"session": s, "stack": stack, "tools": [], "config": {}}}
+        )  # {server_id: {"session": s, "tools": [], "config": {}, "stop": Event}}
         self.request_history = []
+        self._server_futures = {}  # {server_id: concurrent.futures.Future}
         self.loop = asyncio.new_event_loop()
         self._loop_is_running = False
         self._lock = threading.Lock()  # 保护 servers 字典的线程安全
@@ -60,14 +62,22 @@ class MCPClient:
         thread = threading.Thread(target=run_event_loop, daemon=True)
         thread.start()
 
-    # --- 核心内部异步实现 (解决资源残留) ---
+    # --- 核心内部异步实现 ---
 
-    async def _add_server_async(self, server_id: str, config: Dict[str, Any]) -> bool:
-        if server_id in self.servers:
-            return True
+    async def _serve_server(
+        self,
+        server_id: str,
+        config: Dict[str, Any],
+        ready: concurrent.futures.Future,
+    ) -> None:
+        """在同一个 task 内完成 MCP 会话的进入与退出。
 
-        # 为每个 Server 创建独立的 Stack
+        mcp 2.x 基于 anyio，context 的进入/退出必须在同一个 task，
+        否则退出时会报 "Attempted to exit cancel scope in a different task"。
+        因此这里用一个常驻 task 持有会话，直到 stop 事件触发再统一关闭。
+        """
         stack = AsyncExitStack()
+        stop = asyncio.Event()
         try:
             server_type = config.get("type", "").lower()
             if server_type == "stdio":
@@ -76,9 +86,7 @@ class MCPClient:
                     args=config.get("args", []),
                     env=config.get("env"),
                 )
-                # 进入 stdio 上下文 (管理子进程)
                 transport = await stack.enter_async_context(stdio_client(params))
-                # 进入 session 上下文 (管理协议)
                 session = await stack.enter_async_context(
                     ClientSession(transport[0], transport[1])
                 )
@@ -96,40 +104,101 @@ class MCPClient:
             with self._lock:
                 self.servers[server_id] = {
                     "session": session,
-                    "stack": stack,  # 这里的 stack 包含了这个 server 的所有资源
                     "tools": res.tools,
                     "config": config,
                     "added_at": datetime.now(),
+                    "stop": stop,
                 }
-            return True
+
+            ready.set_result(True)
+            await stop.wait()
         except Exception as e:
-            await stack.aclose()  # 出错时立即清理已打开的资源
-            logger.error(f"MCP Add Server Error [{server_id}]: {e}")
-            return False
-
-    async def _close_server_async(self, server_id: str) -> bool:
-        """物理杀掉子进程并移除服务器"""
-        with self._lock:
-            server_info = self.servers.pop(server_id, None)
-
-        if server_info:
-            # 这一步是关键：调用 stack.aclose() 会按相反顺序关闭 session 和 transport
-            # 对于 stdio 来说，这会发送信号给子进程并等待其退出
-            await server_info["stack"].aclose()
-            return True
-        return False
+            logger.error(f"MCP Server Error [{server_id}]: {e}")
+            if not ready.done():
+                ready.set_result(False)
+        finally:
+            with self._lock:
+                self.servers.pop(server_id, None)
+                self._server_futures.pop(server_id, None)
+            try:
+                await stack.aclose()
+            except Exception as e:
+                logger.error(f"MCP Cleanup Error [{server_id}]: {e}")
 
     # --- 同步接口桥接 ---
 
-    def add_server(self, server_id: str, config: Dict[str, Any], timeout=30) -> bool:
-        future = asyncio.run_coroutine_threadsafe(
-            self._add_server_async(server_id, config), self.loop
-        )
-        try:
-            return future.result(timeout=timeout)
-        except Exception as e:
-            logger.error(f"Sync add_server timeout/error: {e}")
-            return False
+    def add_server(
+        self,
+        server_id: str,
+        config: Dict[str, Any],
+        max_retries: int = 1,
+        timeout: int = 90,
+    ) -> bool:
+        """添加并连接一个 MCP 服务器，失败时按 max_retries 重试"""
+        with self._lock:
+            if server_id in self.servers:
+                return True
+
+        for attempt in range(1, max(1, max_retries) + 1):
+            ready: concurrent.futures.Future = concurrent.futures.Future()
+            future = asyncio.run_coroutine_threadsafe(
+                self._serve_server(server_id, config, ready), self.loop
+            )
+            try:
+                ok = ready.result(timeout=timeout)
+            except Exception as e:
+                logger.error(f"Sync add_server timeout/error [{server_id}]: {e}")
+                ok = False
+
+            if ok:
+                with self._lock:
+                    self._server_futures[server_id] = future
+                return True
+
+            if attempt < max_retries:
+                logger.warning(
+                    f"MCP 添加服务器 '{server_id}' 第 {attempt} 次失败，重试中..."
+                )
+        return False
+
+    def remove_server(self, server_id: str, timeout: int = 10) -> bool:
+        """移除服务器并等待其资源（子进程/连接）释放"""
+        with self._lock:
+            info = self.servers.get(server_id)
+            if info is None:
+                return False
+            stop = info["stop"]
+            future = self._server_futures.get(server_id)
+
+        self.loop.call_soon_threadsafe(stop.set)
+        if future is not None:
+            try:
+                future.result(timeout=timeout)
+            except Exception as e:
+                logger.error(f"Sync remove_server timeout/error [{server_id}]: {e}")
+        return True
+
+    @staticmethod
+    def _format_server_info(server_id: str, info: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "server_id": server_id,
+            "config": info["config"],
+            "tools": [t.name for t in info["tools"]],
+            "added_at": info["added_at"].isoformat(),
+        }
+
+    def get_server_info(
+        self, server_id: Optional[str] = None
+    ) -> Optional[Union[Dict[str, Any], List[Dict[str, Any]]]]:
+        """获取已连接 MCP 服务器的信息；不传 server_id 时返回全部"""
+        with self._lock:
+            if server_id is not None:
+                info = self.servers.get(server_id)
+                return self._format_server_info(server_id, info) if info else None
+            return [
+                self._format_server_info(sid, info)
+                for sid, info in self.servers.items()
+            ]
 
     def call_tool(
         self,
@@ -217,18 +286,17 @@ class MCPClient:
 
     def close(self):
         """优雅关闭所有资源"""
-        if self._loop_is_running:
-            # 获取所有服务器 ID
-            with self._lock:
-                ids = list(self.servers.keys())
+        if not self._loop_is_running:
+            return
 
-            # 提交清理任务
-            tasks = [self._close_server_async(sid) for sid in ids]
-            future = asyncio.run_coroutine_threadsafe(asyncio.gather(*tasks), self.loop)
-            future.result(timeout=10)
+        with self._lock:
+            ids = list(self.servers.keys())
 
-            # 停止循环
-            self.loop.call_soon_threadsafe(self.loop.stop)
+        # 通知各 server 的常驻 task 退出，并在原 task 内完成资源清理
+        for sid in ids:
+            self.remove_server(sid)
+
+        self.loop.call_soon_threadsafe(self.loop.stop)
 
     def __del__(self):
         # 析构时尽量尝试静默关闭

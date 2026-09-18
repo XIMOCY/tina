@@ -660,6 +660,8 @@ tina 支持通过 MCP（Model Context Protocol）连接外部工具生态。
 pip install tina-python[mcp]
 ```
 
+> 想一次装齐所有可选功能（TUI + MCP）：`pip install tina-python[all]`
+
 ### 4.2 使用 MCP 客户端
 
 ```python
@@ -1045,7 +1047,7 @@ MAX_INPUT=8000
 | 用途 | 依赖 |
 |------|------|
 | 核心功能 | `httpx`, `python-dotenv` |
-| MCP 支持 | `mcp` (包名: `mcp-python`) |
+| MCP 支持 | `mcp` |
 | TUI 界面（可选） | `textual` |
 | 测试 | `pytest`, `pytest-asyncio`, `pytest-cov` |
 
