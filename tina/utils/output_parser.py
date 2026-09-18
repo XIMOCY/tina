@@ -92,6 +92,7 @@ def stream_generator_parser(base_url, payload, headers, timeout):
                                             "role": "assistant",
                                             "content": "",
                                             "tool_name": current["function"]["name"],
+                                            "tool_index": index,
                                         }
 
                                     if func.get("arguments") is not None:
@@ -189,6 +190,8 @@ async def astream_generator_parser(
                                 }
 
                         if "tool_calls" in delta:
+                            if delta["tool_calls"] is None:
+                                continue
                             for tool_call in delta["tool_calls"]:
                                 index = tool_call["index"]
 
@@ -224,6 +227,7 @@ async def astream_generator_parser(
                                             "role": "assistant",
                                             "content": "",
                                             "tool_name": current["function"]["name"],
+                                            "tool_index": index,
                                         }
 
                                     if func.get("arguments") is not None:

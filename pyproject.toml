@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tina-python"
-version = "0.5.3"
+version = "0.6.4"
 description = "tina is in your computer!"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
@@ -51,3 +51,6 @@ markers = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["tina*"]
+
+[tool.setuptools.package-data]
+tina = ["py.typed"]

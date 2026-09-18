@@ -288,7 +288,7 @@ class Tools:
             )
             json_schema = TypeMapper.map_type(param_type)
             properties[p_name] = {
-                "type": json_schema["type"],
+                **json_schema,
                 "description": p_doc[0].get(p_name, ""),
             }
 

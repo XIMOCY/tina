@@ -81,13 +81,16 @@ class Agent:
         self._init_tools(tools, name)
         self.keyword_actions = keyword_actions
         self.mcp_client = mcp
+        # 上下文管理器解析：显式参数 > agent_runtime 自带的 > 新建默认
         if context_manager is None:
-            self.context_manager = ContextManager(
-                max_length=max_context_length,
-                max_tool_result_length=max_tool_result_length,
-            )
-        else:
-            self.context_manager = context_manager
+            if agent_runtime is not None:
+                context_manager = agent_runtime.context_manager
+            else:
+                context_manager = ContextManager(
+                    max_length=max_context_length,
+                    max_tool_result_length=max_tool_result_length,
+                )
+        self.context_manager = context_manager
         # 初始化MCP
         self._mcp_to_tools(mcp)
         self.events = AgentEvents() if events is None else events
@@ -110,6 +113,7 @@ class Agent:
             )
         else:
             self.runtime = agent_runtime
+            self.runtime.context_manager = self.context_manager
             if (
                 self.keyword_actions is not None
                 and getattr(self.runtime, "keyword_actions", None) is None
@@ -146,21 +150,6 @@ class Agent:
             logger.warn("使用了关键词动作，会影响你的系统提示词")
         else:
             self.context_manager.set_system_message(prompt)
-
-    def filter_visible(self, content: str) -> str:
-        """
-        Hide 可见过滤（跨 chunk 缓冲）。on_stream_chunk 不可改写 chunk，
-        请在消费流式输出时自行调用本方法。
-        """
-        if self.keyword_actions is None:
-            return content or ""
-        return self.keyword_actions.filter_visible(content)
-
-    def flush_visible(self) -> str:
-        """回合末吐出 Hide 截留缓冲。"""
-        if self.keyword_actions is None:
-            return ""
-        return self.keyword_actions.flush_visible()
 
     def build_keyword_actions_prompt_block(self) -> str:
         """生成可拼进 system prompt 的关键词动作说明块。"""
@@ -352,10 +341,27 @@ class Agent:
 
     def get_messages(self) -> list:
         """
-        获取当前Agent的消息列表
+        获取当前Agent的完整消息列表（包含 system 系统提示词）
         Agent会在当前运行状态维护一个自己的消息列表，可以通过该方法获取
         """
         return self.messages
+
+    def get_conversation(self) -> list:
+        """
+        获取当前Agent的对话消息列表（不包含 system 系统提示词）
+        """
+        return self.context_manager.get_conversation()
+
+    def set_context_manager(self, context_manager: ContextManager) -> None:
+        """
+        替换上下文管理器，并同步给运行时与 messages
+
+        Args:
+            context_manager: 新的上下文管理器
+        """
+        self.context_manager = context_manager
+        self.runtime.context_manager = context_manager
+        self.messages = context_manager.get_messages()
 
     def clear_messages(self) -> None:
         """

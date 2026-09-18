@@ -1,6 +1,5 @@
 # KeywordActions 关键词动作
 
-对应 Unity Tina 的 **Keyword Actions**：说出关键词触发**无参**副作用。  
 对照 `Tools`：需要参数、要进 LLM tools 列表 → 用 `Tools`；只触发副作用、不进 schema → 用 `KeywordActions`。
 
 ## 与 Tools 的区别
@@ -63,16 +62,12 @@ agent = Agent(
 
 ## Hide 与流式
 
-`on_stream_chunk` 是**监听型，不能改写 chunk**（设计如此，不会为 Hide 做成拦截）。  
-需要隐藏关键词时，在消费流式输出时自行调用：
+Hide（`display=False`）在 **runtime 更底层**完成：先过滤 `content`，再 `on_stream_chunk` / `yield`。  
+因此广播正文时看不到隐藏关键词；`reasoning_content`（思维链）**不过滤**，可以照常显示。  
+历史与 `check` 仍用原文。
 
-```python
-for chunk in agent.predict("..."):
-    visible = agent.filter_visible(chunk.content or "")
-    if visible:
-        print(visible, end="")
-tail = agent.flush_visible()
-```
+回合结束会 `flush_visible`，误缓冲的残留会再发一个可见 chunk。  
+Hide 由 runtime 自动处理，不必在 Agent 上再调过滤方法。
 
 Hide 剥离**大小写敏感**，且支持跨 chunk 前缀缓冲（对齐 Unity）。
 

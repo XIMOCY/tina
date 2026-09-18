@@ -4,6 +4,7 @@ Python类型到JSON Schema映射工具
 """
 
 import inspect
+import types
 from typing import Any, Dict, List, Union, get_type_hints, get_origin, get_args
 from enum import Enum
 
@@ -51,8 +52,8 @@ class TypeMapper:
         origin = get_origin(python_type)
         args = get_args(python_type)
 
-        # 处理Union类型 (包括Optional)
-        if origin is Union:
+        # 处理Union类型 (包括Optional，兼容 PEP604 的 X | Y)
+        if origin is Union or origin is types.UnionType:
             # 特殊处理Optional[T] (实际上是Union[T, None])
             if len(args) == 2 and type(None) in args:
                 non_none_type = args[0] if args[1] is type(None) else args[1]

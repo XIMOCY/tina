@@ -4,11 +4,13 @@
 
 特性：
 - 助手正文流式渲染，推理内容与工具内容均可折叠
+- 消费与渲染解耦（定时渲染泵），快速输出也不掉帧
 - 自动为 Agent 注册工具确认事件（require_confirmation 工具弹出确认框）
-- token 累计与上限进度展示，超限变红警告
+- 上下文 token 占用与上限进度展示，超限变红警告
+- 运行中动画，Escape 可打断本轮回复
 - 快捷键在消息之间跳转
 
-只依赖 `TuiContextManager`（列表）与 `TokenCounter`（计数），界面本身不计算 token。
+只依赖 `TuiMessageStore`（列表）与 `TokenCounter`（计数），界面本身不计算 token。
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from textual import on, work
 from textual.app import App, ComposeResult
@@ -24,12 +26,14 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.markup import escape
 from textual.message import Message
+from textual.screen import ModalScreen
 from textual.theme import Theme
 from textual.widgets import (
     Collapsible,
     Footer,
     Header,
     Label,
+    LoadingIndicator,
     Markdown,
     OptionList,
     ProgressBar,
@@ -38,8 +42,16 @@ from textual.widgets import (
 )
 from textual.widgets.option_list import Option
 
-from .context_manager import TuiBlock, TuiContextManager
+from ...agent.core.state import AgentState
+from .context_manager import (
+    TuiBlock,
+    TuiMessageStore,
+    make_unlimited_context_manager,
+)
 from .token import TokenCounter
+
+if TYPE_CHECKING:
+    from ...agent import Agent, BaseContextManager, MultimodalAgent
 
 
 TINA_THEME = Theme(
@@ -68,6 +80,37 @@ def _stringify(value: Any) -> str:
         except (TypeError, ValueError):
             return str(value)
     return str(value)
+
+
+def _one_line(text: Any) -> str:
+    """把多行文本压成一行，合并多余空白"""
+    return " ".join(str(text or "").split())
+
+
+def _shorten(text: str, limit: int = 160) -> str:
+    """过长文本截断并加省略号"""
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
+def _param_type(info: Any) -> str:
+    """从 JSON Schema 参数定义里取出可读的类型"""
+    if not isinstance(info, dict):
+        return "any"
+    param_type = info.get("type")
+    if param_type:
+        return str(param_type)
+    for key in ("anyOf", "oneOf", "allOf"):
+        options = info.get(key)
+        if isinstance(options, list) and options:
+            types: list[str] = []
+            for option in options:
+                option_type = _param_type(option)
+                if option_type not in types:
+                    types.append(option_type)
+            return " | ".join(types)
+    return "any"
 
 
 class UserMessage(Static):
@@ -158,10 +201,16 @@ class MessageScroll(VerticalScroll):
 
 
 class ResultBlock(Collapsible):
-    """命令结果块，可折叠"""
+    """命令结果块，可折叠
 
-    def __init__(self, collapsed: bool = False, **kwargs: Any) -> None:
-        self._text = Static("", classes="result-text", markup=False)
+    `markup=True` 时内容按 Rich 标记解析（用于 `#tools` 这类由我们生成、已转义的文本）；
+    默认 `False`，避免命令输出里的 `[...]` 被当成标记。
+    """
+
+    def __init__(
+        self, collapsed: bool = False, markup: bool = False, **kwargs: Any
+    ) -> None:
+        self._text = Static("", classes="result-text", markup=markup)
         super().__init__(self._text, title="结果", collapsed=collapsed, **kwargs)
         self.add_class("result-block")
 
@@ -199,6 +248,30 @@ class ToolBlock(Collapsible):
 
         result = _stringify(block.tool_result).strip()
         self._result.update(f"结果：\n{result}" if result else "结果：等待中…")
+
+
+class ToolArgsScreen(ModalScreen[None]):
+    """查看完整工具参数的小窗口（确认时按 Ctrl+O 打开）"""
+
+    BINDINGS = [
+        Binding("escape", "close_screen", "关闭", show=False),
+        Binding("q", "close_screen", "关闭", show=False),
+        Binding("enter", "close_screen", "关闭", show=False),
+    ]
+
+    def __init__(self, tool_name: str, arguments: str) -> None:
+        super().__init__()
+        self._tool_name = tool_name
+        self._arguments = arguments
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="args-dialog"):
+            yield Static(f"工具参数 · {escape(self._tool_name)}", id="args-title")
+            with VerticalScroll(id="args-scroll"):
+                yield Static(self._arguments, id="args-body", markup=False)
+
+    def action_close_screen(self) -> None:
+        self.dismiss()
 
 
 class TinaTUI(App):
@@ -255,6 +328,11 @@ class TinaTUI(App):
     }
     #token-bar {
         width: 24;
+    }
+    #loading {
+        width: 2;
+        height: 1;
+        color: $accent;
     }
 
     #command-hint {
@@ -340,7 +418,7 @@ class TinaTUI(App):
 
     #confirm-bar {
         height: auto;
-        max-height: 12;
+        max-height: 15;
         padding: 0 2;
         background: $surface;
         border-top: thick $accent;
@@ -348,11 +426,41 @@ class TinaTUI(App):
     #confirm-question {
         color: $foreground;
         padding-top: 1;
+        max-height: 10;
+        overflow-y: auto;
+        scrollbar-size-vertical: 1;
     }
     #confirm-options {
         height: auto;
-        max-height: 6;
+        max-height: 5;
         margin: 1 0;
+    }
+
+    ToolArgsScreen {
+        align: center middle;
+    }
+    #args-dialog {
+        width: 80%;
+        max-width: 110;
+        height: auto;
+        max-height: 80%;
+        padding: 0 1;
+        background: $surface;
+        border: round $accent;
+    }
+    #args-title {
+        padding: 0 1;
+        color: $accent;
+        text-style: bold;
+    }
+    #args-scroll {
+        height: auto;
+        max-height: 24;
+        background: $panel;
+    }
+    #args-body {
+        padding: 0 1;
+        color: $foreground;
     }
     """
 
@@ -364,10 +472,12 @@ class TinaTUI(App):
         Binding("ctrl+r", "toggle_reasoning", "折叠思考", priority=True),
         Binding("ctrl+t", "toggle_tools", "折叠工具/结果", priority=True),
         Binding("ctrl+l", "clear_view", "清空界面", priority=True, show=False),
-        Binding("escape", "cancel_confirm", "取消确认", priority=True, show=False),
+        Binding("ctrl+o", "show_tool_args", "查看工具参数", priority=True, show=False),
+        Binding("escape", "escape", "打断", priority=True),
     ]
 
-    COMMANDS = {
+    # 注意：不要叫 COMMANDS，那是 Textual 命令面板的注册表（值是 provider）
+    TUI_COMMANDS = {
         "#help": "查看可用命令",
         "#tools": "查看当前工具、描述与参数",
         "#context": "查看当前上下文",
@@ -383,35 +493,69 @@ class TinaTUI(App):
         "我们将会使用这个信息作为新的开始。"
     )
 
-    # 流式期间 Markdown 重渲染的最小间隔（秒）
+    # 关闭 Textual 自带的命令面板（默认 ctrl+p），tina 用自己的 # 命令
+    ENABLE_COMMAND_PALETTE = False
+
+    # 渲染泵间隔：界面更新与滚动统一在这里做，与 chunk 速率解耦
+    PUMP_INTERVAL = 0.1
+    # 流式块重渲染的最小间隔（秒），内容越长间隔越大，避免 O(n²) 重解析
     RENDER_INTERVAL = 0.08
+    RENDER_INTERVAL_MAX = 0.5
+
+    # 确认框内联显示参数的上限，超过则只显示提示（按 Ctrl+O 查看完整参数）
+    CONFIRM_INLINE_ARGS = 200
+    CONFIRM_INLINE_LINES = 4
 
     def __init__(
         self,
-        agent: Any,
+        agent: Agent | MultimodalAgent,
         max_tokens: int | None = None,
         *,
         reasoning_collapsed: bool = True,
         auto_confirm: bool = True,
+        unlimited_context: bool = False,
     ) -> None:
         super().__init__()
-        self.agent = agent
-        self.context = TuiContextManager()
+        self.agent: Agent | MultimodalAgent = agent
+        self.context = TuiMessageStore()
         self.counter = TokenCounter(max_tokens=max_tokens)
         self.reasoning_collapsed = reasoning_collapsed
         self.auto_confirm = auto_confirm
+        if unlimited_context:
+            self.install_context_manager(make_unlimited_context_manager(agent))
 
         self._widgets: dict[int, Any] = {}
         self._message_widgets: list[Any] = []
         self._jump_index = -1
         self._busy = False
         self._confirm_future: asyncio.Future | None = None
+        self._confirm_lock: asyncio.Lock | None = None
+        self._pending_confirms = 0
         self._pending_tool: str | None = None
+        self._pending_tool_args: str | None = None
         self._always_allow: set[str] = set()
         self._completion_matches: list[str] = []
         self._completion_index = 0
         self._last_render: dict[int, float] = {}
         self._stick = True
+
+        # 渲染泵状态
+        self._dirty: dict[int, TuiBlock] = {}
+        self._turn_refs: dict[int, TuiBlock] = {}
+        self._scroll_pending = False
+        self._last_status: str | None = None
+
+        # 打断 / 运行状态
+        self._interrupted = False
+        self._turn_worker: Any = None
+        self._active_assistant: TuiBlock | None = None
+
+        # 启动时缓存的组件引用
+        self._messages: MessageScroll | None = None
+        self._status_text: Label | None = None
+        self._token_label: Label | None = None
+        self._token_bar: ProgressBar | None = None
+        self._loading: LoadingIndicator | None = None
 
         if auto_confirm:
             self._register_tool_confirmation()
@@ -423,6 +567,7 @@ class TinaTUI(App):
         yield MessageScroll(id="messages")
         with Horizontal(id="status"):
             yield Label("就绪", id="status-text")
+            yield LoadingIndicator(id="loading")
             yield Label("", id="token-text")
             yield ProgressBar(
                 total=100, show_percentage=False, show_eta=False, id="token-bar"
@@ -441,11 +586,18 @@ class TinaTUI(App):
         self._apply_theme()
         self.title = "tina"
         self.sub_title = getattr(self.agent, "name", "") or ""
+        self._messages = self.query_one("#messages", MessageScroll)
+        self._status_text = self.query_one("#status-text", Label)
+        self._token_label = self.query_one("#token-text", Label)
+        self._token_bar = self.query_one("#token-bar", ProgressBar)
+        self._loading = self.query_one("#loading", LoadingIndicator)
+        self._loading.display = False
         self._render_welcome()
         self._refresh_tokens()
         self.query_one("#command-hint", Static).display = False
         self.query_one("#confirm-bar", Vertical).display = False
         self.query_one("#prompt", ChatInput).focus()
+        self.set_interval(self.PUMP_INTERVAL, self._render_pump)
 
     def _apply_theme(self) -> None:
         try:
@@ -453,6 +605,14 @@ class TinaTUI(App):
             self.theme = TINA_THEME.name
         except Exception:
             pass
+
+    def install_context_manager(self, context_manager: BaseContextManager) -> None:
+        """替换 Agent 的上下文管理器（委托 `agent.set_context_manager`）
+
+        注意：替换会立即生效，但只有传入的实例里已有的消息会被使用；想保留
+        当前历史，用 `tina.utils.tui.make_unlimited_context_manager(agent)`。
+        """
+        self.agent.set_context_manager(context_manager)
 
     def _render_welcome(self) -> None:
         model = escape(getattr(getattr(self.agent, "llm", None), "model", "") or "")
@@ -465,9 +625,12 @@ class TinaTUI(App):
         lines.append(
             "[dim]Ctrl+↑/↓ 跳转消息 · Ctrl+R 折叠思考 · Ctrl+T 折叠工具 · 输入 # 查看命令[/]"
         )
-        self.query_one("#messages", VerticalScroll).mount(
-            Static("\n".join(lines), id="welcome")
-        )
+        self._messages_widget().mount(Static("\n".join(lines), id="welcome"))
+
+    def _messages_widget(self) -> "MessageScroll":
+        if self._messages is None:
+            self._messages = self.query_one("#messages", MessageScroll)
+        return self._messages
 
     # ------------------------------------------------------------------ 工具确认
 
@@ -492,29 +655,52 @@ class TinaTUI(App):
     async def _ask_tool_confirmation(self, tool_name: str, tool_arguments: Any) -> bool:
         if not self.is_running:
             return True
-        if tool_name in self._always_allow:
-            return True
-
-        loop = asyncio.get_running_loop()
-        self._confirm_future = loop.create_future()
-        self._pending_tool = tool_name
-        self._show_confirm_bar(tool_name, tool_arguments)
+        # 多个工具（尤其并发同名工具）会同时请求确认，必须串行化，
+        # 否则后来的确认会覆盖 _confirm_future，导致前面的调用永远等下去。
+        if self._confirm_lock is None:
+            self._confirm_lock = asyncio.Lock()
+        self._pending_confirms += 1
         try:
-            return await self._confirm_future
+            async with self._confirm_lock:
+                if tool_name in self._always_allow:
+                    return True
+
+                loop = asyncio.get_running_loop()
+                self._confirm_future = loop.create_future()
+                self._pending_tool = tool_name
+                self._show_confirm_bar(tool_name, tool_arguments)
+                try:
+                    return await self._confirm_future
+                finally:
+                    self._confirm_future = None
+                    self._pending_tool = None
+                    self._hide_confirm_bar()
+                    self.query_one("#prompt", ChatInput).focus()
         finally:
-            self._confirm_future = None
-            self._pending_tool = None
-            self._hide_confirm_bar()
-            self.query_one("#prompt", ChatInput).focus()
+            self._pending_confirms -= 1
 
     def _show_confirm_bar(self, tool_name: str, tool_arguments: Any) -> None:
         bar = self.query_one("#confirm-bar", Vertical)
         question = self.query_one("#confirm-question", Static)
         args = _stringify(tool_arguments).strip()
-        question.update(
-            f"允许执行工具 [b]{escape(tool_name)}[/] 吗？"
-            + (f"\n[dim]{escape(args)}[/]" if args else "")
-        )
+        self._pending_tool_args = args or None
+
+        header = f"允许执行工具 [b]{escape(tool_name)}[/] 吗？"
+        if not args:
+            text = header
+        elif (
+            len(args) <= self.CONFIRM_INLINE_ARGS
+            and args.count("\n") < self.CONFIRM_INLINE_LINES
+        ):
+            text = f"{header}\n[dim]{escape(args)}[/]"
+        else:
+            # 参数过长时不内联显示，避免把下面的选项挤出可视区
+            text = f"{header}\n[dim]参数较长，按 Ctrl+O 查看完整参数[/]"
+
+        queued = self._pending_confirms - 1
+        if queued > 0:
+            text += f"\n[dim]还有 {queued} 个工具调用等待确认[/]"
+        question.update(text)
 
         options = self.query_one("#confirm-options", OptionList)
         options.clear_options()
@@ -530,6 +716,7 @@ class TinaTUI(App):
         options.focus()
 
     def _hide_confirm_bar(self) -> None:
+        self._pending_tool_args = None
         self.query_one("#confirm-bar", Vertical).display = False
 
     @on(OptionList.OptionSelected, "#confirm-options")
@@ -542,10 +729,32 @@ class TinaTUI(App):
         if future is not None and not future.done():
             future.set_result(option_id != "deny")
 
-    def action_cancel_confirm(self) -> None:
+    def action_show_tool_args(self) -> None:
+        """查看当前待确认工具的完整参数（小窗口）"""
+        if not self._pending_tool_args or isinstance(self.screen, ToolArgsScreen):
+            return
+        self.push_screen(
+            ToolArgsScreen(self._pending_tool or "工具", self._pending_tool_args)
+        )
+
+    def action_escape(self) -> None:
+        """Escape：参数窗口/确认框在则关闭，否则打断本轮回复"""
+        if isinstance(self.screen, ToolArgsScreen):
+            self.screen.dismiss()
+            return
         future = self._confirm_future
         if future is not None and not future.done():
             future.set_result(False)
+            return
+        if self._busy and not self._interrupted:
+            self._interrupt_turn()
+
+    def _interrupt_turn(self) -> None:
+        self._interrupted = True
+        self._set_status("正在打断…")
+        worker = self._turn_worker
+        if worker is not None:
+            worker.cancel()
 
     # ------------------------------------------------------------------ 输入与命令
 
@@ -560,13 +769,15 @@ class TinaTUI(App):
         self._hide_command_hint()
         if not text:
             return
+        # 用户主动发送/执行命令时，重新贴回底部跟随输出
+        self._stick = True
         if text.startswith("#"):
             await self._handle_command(text)
             return
         if self._busy:
-            self.notify("正在回复中，请稍候…", severity="warning")
+            self.notify("正在回复中，Esc 可打断，请稍候…", severity="warning")
             return
-        self._run_turn(text)
+        self._turn_worker = self._run_turn(text)
 
     async def _handle_command(self, command: str) -> None:
         cmd = command.strip().lower()
@@ -587,14 +798,22 @@ class TinaTUI(App):
             self._show_context()
         elif cmd in ("#compact", "#compress", "#summary"):
             if self._busy:
-                self.notify("正在回复中，请稍候…", severity="warning")
+                self.notify("正在回复中，Esc 可打断，请稍候…", severity="warning")
             else:
-                self._compact_context()
+                self._turn_worker = self._compact_context()
         else:
             self._result("提示", f"未知命令：{command}\n输入 #help 查看可用命令")
 
-    def _result(self, title: str, content: str, collapsed: bool = False) -> None:
-        block = self.context.add_result(title, content, collapsed=collapsed)
+    def _result(
+        self,
+        title: str,
+        content: str,
+        collapsed: bool = False,
+        markup: bool = False,
+    ) -> None:
+        block = self.context.add_result(
+            title, content, collapsed=collapsed, markup=markup
+        )
         self._sync_block(block)
 
     def _notice(self, text: str) -> None:
@@ -602,11 +821,12 @@ class TinaTUI(App):
 
     def _show_help(self) -> None:
         lines = [
-            f"{name:<9} {desc}" for name, desc in self.COMMANDS.items()
+            f"{name:<9} {desc}" for name, desc in self.TUI_COMMANDS.items()
         ]
         self._result("可用命令", "\n".join(lines))
 
     def _show_context(self) -> None:
+        self.context.commit()
         blocks = self.context.get_blocks()
         lines = [f"{b.role}: {len(b.content)} 字" for b in blocks] or ["（空）"]
         self._result("当前上下文", "\n".join(lines))
@@ -625,28 +845,49 @@ class TinaTUI(App):
             self._result("工具", "（无工具）")
             return
 
-        lines: list[str] = []
-        for schema in schemas:
+        blocks: list[str] = []
+        for index, schema in enumerate(schemas, 1):
             function = schema.get("function", {})
             name = function.get("name", "?")
-            description = (function.get("description") or "").strip().replace("\n", " ")
-            lines.append(name)
-            if description:
-                lines.append(f"  {description}")
+            description = _one_line(function.get("description"))
             params = function.get("parameters", {}) or {}
             properties = params.get("properties", {}) or {}
             required = set(params.get("required", []) or [])
-            if properties:
-                for p_name, p_info in properties.items():
-                    p_type = p_info.get("type", "any")
-                    p_desc = (p_info.get("description") or "").strip().replace("\n", " ")
-                    flag = "必填" if p_name in required else "可选"
-                    suffix = f" {p_desc}" if p_desc else ""
-                    lines.append(f"    - {p_name} ({p_type}, {flag}){suffix}")
+
+            blocks.append(f"{index}. [bold #7aa2f7]{escape(name)}[/]")
+            if description:
+                blocks.append(f"   [dim]{escape(_shorten(description))}[/]")
+
+            if not properties:
+                blocks.append("   [dim]参数：（无）[/]")
             else:
-                lines.append("    （无参数）")
-            lines.append("")
-        self._result(f"工具（{len(schemas)}）", "\n".join(lines).rstrip())
+                name_width = max(len(str(p_name)) for p_name in properties)
+                type_width = max(
+                    len(_param_type(p_info)) for p_info in properties.values()
+                )
+                blocks.append("   [dim]参数：[/]")
+                for p_name, p_info in properties.items():
+                    param_type = _param_type(p_info)
+                    flag = (
+                        "[#e0af68]必填[/]"
+                        if p_name in required
+                        else "[dim]可选[/]"
+                    )
+                    p_desc = _one_line(
+                        p_info.get("description") if isinstance(p_info, dict) else ""
+                    )
+                    line = (
+                        f"     [#7dcfff]{escape(str(p_name)):<{name_width}}[/]  "
+                        f"[dim]{escape(param_type):<{type_width}}[/]  {flag}"
+                    )
+                    if p_desc:
+                        line += f"  {escape(_shorten(p_desc, 80))}"
+                    blocks.append(line.rstrip())
+            blocks.append("")
+
+        self._result(
+            f"工具（{len(schemas)}）", "\n".join(blocks).rstrip(), markup=True
+        )
 
     def _show_model(self) -> None:
         llm = getattr(self.agent, "llm", None)
@@ -666,15 +907,15 @@ class TinaTUI(App):
         counter = self.counter
         limit = counter.max_tokens if counter.max_tokens is not None else "未设置"
         lines = [
-            f"累计 total      {counter.total_tokens}",
+            f"上下文 total    {counter.total_tokens}",
             f"prompt           {counter.prompt_tokens}",
             f"completion       {counter.completion_tokens}",
-            f"调用次数         {counter.calls}",
+            f"请求次数         {counter.calls}",
             f"上限 max_tokens  {limit}",
         ]
         if counter.remaining is not None:
             lines.append(f"剩余             {counter.remaining}")
-            lines.append(f"已用占比         {counter.ratio:.1%}")
+            lines.append(f"占用比例         {counter.ratio:.1%}")
         self._result("Token 统计", "\n".join(lines))
 
     def _update_command_hint(self, value: str) -> None:
@@ -683,11 +924,11 @@ class TinaTUI(App):
         if not text.startswith("#"):
             hint.display = False
             return
-        matches = [c for c in self.COMMANDS if c.startswith(text)]
+        matches = [c for c in self.TUI_COMMANDS if c.startswith(text)]
         if not matches:
             hint.display = False
             return
-        hint.update("  ".join(f"{c} {self.COMMANDS[c]}" for c in matches))
+        hint.update("  ".join(f"{c} {self.TUI_COMMANDS[c]}" for c in matches))
         hint.display = True
 
     def _hide_command_hint(self) -> None:
@@ -706,7 +947,7 @@ class TinaTUI(App):
             )
             matches = self._completion_matches
         else:
-            matches = [c for c in self.COMMANDS if c.startswith(text)]
+            matches = [c for c in self.TUI_COMMANDS if c.startswith(text)]
             if not matches:
                 self._completion_matches = []
                 return
@@ -723,28 +964,106 @@ class TinaTUI(App):
     @work(exclusive=True)
     async def _run_turn(self, instruction: str) -> None:
         self._busy = True
+        self._interrupted = False
+        self._active_assistant = None
+        self._turn_refs.clear()
+        self._dirty.clear()
+        self._start_loading()
         self._set_status("思考中…")
+
         user_block = self.context.add_user(instruction)
-        self._sync_block(user_block)
+        self._mark_dirty(user_block, turn=True)
 
         try:
             async for chunk in self.agent.apredict(instruction=instruction):
                 block = self.context.handle_chunk(chunk)
-                self.counter.add_from_chunk(chunk)
-                if block is not None:
-                    await self._sync_block_async(block)
-                self._refresh_tokens()
+                if chunk.get("usage") is not None:
+                    self.counter.add_from_chunk(chunk)
+                    self._refresh_tokens()
                 self._refresh_status()
+                if block is not None:
+                    if block.role == "assistant" and block.get("status") == "streaming":
+                        self._active_assistant = block
+                    self._mark_dirty(block, turn=True)
+                # 让出事件循环，保证渲染泵与重绘能插入（应对极快输出）
+                await asyncio.sleep(0)
+        except asyncio.CancelledError:
+            raise
         except Exception as error:  # noqa: BLE001 界面上要显示任何异常
-            block = self.context.add_error(error)
-            self._sync_block(block)
+            self._mark_dirty(self.context.add_error(error), turn=True)
         finally:
+            partial = self._partial_assistant_text()
             self.context.finish_turn()
-            for block in self.context.get_blocks():
+            self.context.commit()
+            # 只渲染本轮涉及到的块，避免每轮重解析全部历史（越用越卡）
+            for block in list(self._turn_refs.values()):
                 await self._sync_block_async(block)
+            if self._interrupted:
+                await self._finalize_interrupted_turn(partial)
+            self._dirty.clear()
+            self._turn_refs.clear()
+            self._active_assistant = None
+            self._turn_worker = None
+            self._stop_loading()
             self._refresh_tokens()
             self._busy = False
-            self._set_status("就绪")
+            self._set_status("已打断" if self._interrupted else "就绪")
+
+    def _partial_assistant_text(self) -> str:
+        """本轮仍在流式的助手正文（尚未写入 Agent 上下文）"""
+        block = self._active_assistant
+        if block is None or block.get("status") != "streaming":
+            return ""
+        self.context.commit()
+        return block.content
+
+    async def _finalize_interrupted_turn(self, partial: str) -> None:
+        """打断收尾：补齐被打断的工具结果、写回部分正文并复位 Agent 状态"""
+        agent = self.agent
+        try:
+            self._mark_interrupted_tool_results(agent.context_manager)
+        except Exception:  # noqa: BLE001
+            pass
+        if partial.strip():
+            try:
+                agent.context_manager.add_assistant_message(partial)
+            except Exception:  # noqa: BLE001
+                pass
+        try:
+            await agent.events.atrigger_on_turn_end()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            agent.runtime.state = AgentState.IDLE
+        except Exception:  # noqa: BLE001
+            pass
+
+        self._notice("已打断本轮回复")
+
+    def _mark_interrupted_tool_results(
+        self, context_manager: BaseContextManager
+    ) -> None:
+        """把已发出但还没有结果的 tool_call 补上「该次调用被打断」"""
+        messages = context_manager.get_messages()
+        last_index = None
+        for index in range(len(messages) - 1, -1, -1):
+            message = messages[index]
+            if message.get("role") == "assistant" and message.get("tool_calls"):
+                last_index = index
+                break
+        if last_index is None:
+            return
+
+        answered = {
+            message.get("tool_call_id")
+            for message in messages[last_index + 1 :]
+            if message.get("role") == "tool"
+        }
+        for call in messages[last_index].get("tool_calls") or []:
+            call_id = call.get("id") or call.get("tool_call_id")
+            if not call_id or call_id in answered:
+                continue
+            context_manager.add_tool_call_result("该次调用被打断", call_id, call)
 
     # ------------------------------------------------------------------ 上下文压缩
 
@@ -752,6 +1071,8 @@ class TinaTUI(App):
     async def _compact_context(self) -> None:
         """让 Agent 自我总结，把总结并入 system，并清空其余消息"""
         self._busy = True
+        self._interrupted = False
+        self._start_loading()
         self._set_status("压缩上下文中…")
         try:
             messages = self.agent.context_manager.get_messages()
@@ -793,6 +1114,9 @@ class TinaTUI(App):
             self._sync_block(block)
         finally:
             self._busy = False
+            self._turn_worker = None
+            self._stop_loading()
+            self._refresh_tokens()
             self._set_status("就绪")
 
     async def _reset_view(self) -> None:
@@ -800,8 +1124,10 @@ class TinaTUI(App):
         self._widgets.clear()
         self._message_widgets.clear()
         self._last_render.clear()
+        self._dirty.clear()
+        self._turn_refs.clear()
         self._jump_index = -1
-        await self.query_one("#messages", VerticalScroll).remove_children()
+        await self._messages_widget().remove_children()
         self._render_welcome()
 
     # ------------------------------------------------------------------ 渲染同步
@@ -820,7 +1146,8 @@ class TinaTUI(App):
             return SystemMessage(block.content)
         if role == "result":
             return ResultBlock(
-                collapsed=bool(block.metadata.get("collapsed", False))
+                collapsed=bool(block.metadata.get("collapsed", False)),
+                markup=bool(block.metadata.get("markup", False)),
             )
         return Markdown("", classes="assistant-message")
 
@@ -830,17 +1157,17 @@ class TinaTUI(App):
             widget = self._create_widget(block)
             self._widgets[block.id] = widget
             self._message_widgets.append(widget)
-            self.query_one("#messages", VerticalScroll).mount(widget)
+            self._messages_widget().mount(widget)
         return widget
 
     def _apply_block(self, block: TuiBlock) -> Any:
         """把块更新到组件；Markdown 为异步渲染，返回可等待对象"""
         widget = self._ensure_widget(block)
         if isinstance(widget, Markdown):
-            # Markdown.update() 异步解析并挂载子块，流式下需要 await；
-            # 为避免高频 O(n^2) 重解析，流式期间做节流，结束时必渲染
-            if block.status == "streaming" and not self._should_render(block.id):
-                return None
+            # Markdown.update() 异步全量重解析，必须在渲染泵里按节流调用。
+            # Textual 挂载时会用 _initial_markdown 再渲染一次，这里同步成最新内容，
+            # 避免它用空串覆盖已流式写入的内容。
+            widget._initial_markdown = block.content
             return widget.update(block.content)
         if isinstance(widget, (ReasoningBlock, ToolBlock, ResultBlock)):
             widget.set_block(block)
@@ -850,43 +1177,88 @@ class TinaTUI(App):
             widget.update(block.content)
         return None
 
-    def _should_render(self, block_id: int) -> bool:
+    def _should_render(self, block_id: int, length: int = 0) -> bool:
+        """流式节流：内容越长间隔越大，避免反复全量重解析"""
         now = time.monotonic()
+        interval = min(
+            self.RENDER_INTERVAL_MAX, self.RENDER_INTERVAL + length / 20000
+        )
         last = self._last_render.get(block_id, 0.0)
-        if now - last >= self.RENDER_INTERVAL:
+        if now - last >= interval:
             self._last_render[block_id] = now
             return True
         return False
 
+    def _mark_dirty(self, block: TuiBlock | None, turn: bool = False) -> None:
+        if block is None:
+            return
+        self._dirty[block.id] = block
+        if turn:
+            self._turn_refs[block.id] = block
+
+    async def _render_pump(self) -> None:
+        """定时渲染：界面工作量只与时间有关，与 chunk 速率无关"""
+        if not self._dirty:
+            return
+        self.context.commit()
+        rendered = False
+        for block in list(self._dirty.values()):
+            if block.is_streaming and not self._should_render(
+                block.id, len(block.content)
+            ):
+                continue  # 仍在节流窗口内，保留脏标记，下个 tick 再试
+            pending = self._apply_block(block)
+            if pending is not None:
+                await pending
+            self._dirty.pop(block.id, None)
+            rendered = True
+        if rendered:
+            self._request_scroll()
+
+    def _request_scroll(self) -> None:
+        """合并滚动请求：同一时刻最多挂一个回调"""
+        if not self._stick or self._scroll_pending:
+            return
+        self._scroll_pending = True
+        self.call_after_refresh(self._do_scroll)
+
+    def _do_scroll(self) -> None:
+        self._scroll_pending = False
+        if self._stick and self._messages is not None:
+            self._messages.scroll_end(animate=False)
+
     def _sync_block(self, block: TuiBlock) -> None:
         """同步更新（命令结果等 Static/Collapsible 块）"""
-        stick = self._stick
         self._apply_block(block)
-        if stick:
-            messages = self.query_one("#messages", MessageScroll)
-            self.call_after_refresh(messages.scroll_end, animate=False)
+        self._dirty.pop(block.id, None)
+        self._request_scroll()
 
     async def _sync_block_async(self, block: TuiBlock) -> None:
         """异步更新（助手 Markdown 流式），渲染完成后再跟随滚动"""
-        stick = self._stick
         pending = self._apply_block(block)
         if pending is not None:
             await pending
-        if stick:
-            messages = self.query_one("#messages", MessageScroll)
-            # 等下一次布局刷新（Markdown 子块挂载后尺寸才更新）再滚到底
-            self.call_after_refresh(messages.scroll_end, animate=False)
+        self._dirty.pop(block.id, None)
+        self._request_scroll()
 
     def _update_stick(self, scroll: "MessageScroll") -> None:
         """根据滚动位置更新粘性：在底部则跟随输出，否则保持用户浏览位置"""
         self._stick = scroll.is_vertical_scroll_end
 
     def _is_at_bottom(self) -> bool:
-        messages = self.query_one("#messages", MessageScroll)
+        messages = self._messages_widget()
         try:
             return messages.is_vertical_scroll_end
         except Exception:
             return messages.scroll_offset.y >= messages.max_scroll_y - 1
+
+    def _start_loading(self) -> None:
+        if self._loading is not None:
+            self._loading.display = True
+
+    def _stop_loading(self) -> None:
+        if self._loading is not None:
+            self._loading.display = False
 
     def _refresh_status(self) -> None:
         state = getattr(self.agent, "state", None)
@@ -902,12 +1274,18 @@ class TinaTUI(App):
         self._set_status(mapping.get(name, name))
 
     def _set_status(self, text: str) -> None:
-        self.query_one("#status-text", Label).update(text)
+        if text == self._last_status:
+            return
+        self._last_status = text
+        if self._status_text is not None:
+            self._status_text.update(text)
 
     def _refresh_tokens(self) -> None:
         counter = self.counter
-        bar = self.query_one("#token-bar", ProgressBar)
-        label = self.query_one("#token-text", Label)
+        bar = self._token_bar
+        label = self._token_label
+        if bar is None or label is None:
+            return
 
         if counter.max_tokens:
             bar.display = True
@@ -993,19 +1371,22 @@ class TinaTUI(App):
         self._widgets.clear()
         self._message_widgets.clear()
         self._last_render.clear()
+        self._dirty.clear()
+        self._turn_refs.clear()
         self._jump_index = -1
-        await self.query_one("#messages", VerticalScroll).remove_children()
+        await self._messages_widget().remove_children()
         self._render_welcome()
         self._refresh_tokens()
         self._set_status("就绪")
 
 
 def run_agent_in_tui(
-    agent: Any,
+    agent: Agent | MultimodalAgent,
     max_tokens: int | None = None,
     *,
     reasoning_collapsed: bool = True,
     auto_confirm: bool = True,
+    unlimited_context: bool = False,
 ) -> None:
     """在终端启动 tina 界面
 
@@ -1014,12 +1395,15 @@ def run_agent_in_tui(
         max_tokens: 用户设置的最大 token 数，用于进度展示与超限警告
         reasoning_collapsed: 推理内容默认是否折叠
         auto_confirm: 是否自动为 Agent 注册工具确认弹窗
+        unlimited_context: 是否用 tina 提供的无限制上下文管理器替换 Agent 的
+            （不裁剪历史、不截断工具结果，现有历史会保留）
     """
     app = TinaTUI(
         agent,
         max_tokens=max_tokens,
         reasoning_collapsed=reasoning_collapsed,
         auto_confirm=auto_confirm,
+        unlimited_context=unlimited_context,
     )
     app.run()
 

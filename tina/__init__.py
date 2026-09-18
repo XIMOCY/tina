@@ -19,4 +19,4 @@ __all__ = [
     "AgentState",
     "AgentEvents",
 ]
-__version__ = "0.5.3"
+__version__ = "0.6.4"

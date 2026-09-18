@@ -142,7 +142,7 @@ await agent.apredict_no_stream()
 }
 然后会接着返回正常的输出
 ```
-### 消息管理 get_messages clear_messages get_system_prompt add_message add_messages get_tools_call_result get_tools_call
+### 消息管理 get_messages get_conversation clear_messages get_system_prompt add_message add_messages get_tools_call_result get_tools_call
 #### 获取完整的消息列表 get_messages
 不需要接受参数，返回值参考如下：
 ```python
@@ -152,6 +152,16 @@ await agent.apredict_no_stream()
     ...
     {"role": "assistant","content":""},
     {"role": "assistant","content":"","tool_calls":[]},
+    {"role": "tool","content":""},
+]
+```
+#### 获取对话消息列表 get_conversation
+不需要接受参数，返回不含 `system` 系统提示词的对话消息列表（仅 `user`/`assistant`/`tool`），参考如下：
+```python
+[
+    {"role": "user","content":""},
+    ...
+    {"role": "assistant","content":""},
     {"role": "tool","content":""},
 ]
 ```
@@ -478,6 +488,22 @@ elif agent.state == 'error':
 *   **工具调用对保护**：删除时会自动识别 `assistant (tool_calls)` 和紧随其后的 `tool (result)` 消息，将它们作为**一个整体**删除，避免留下孤立的工具结果导致模型报错。
 *   **结果长度限制**：工具返回结果若超过 `max_tool_result_length` (默认 10,000)，会自动截断并添加 `...`。
 
+### 替换上下文管理器
+运行时可以用 `agent.set_context_manager(cm)` 替换整个上下文管理器，它会同时更新 Agent、运行时（`agent.runtime.context_manager`）和 `agent.messages` 的引用：
+
+```python
+from tina import Agent, Tools
+from tina.agent.core.context_manager import ContextManager
+
+agent = Agent(llm=llm, tools=Tools())
+agent.set_context_manager(ContextManager(max_length=200000))
+```
+
+构造 `Agent` 时：
+
+*   同时传 `context_manager` 与 `agent_runtime` 时，以显式传入的 `context_manager` 为准；
+*   只传 `agent_runtime` 时，采用该运行时自带的上下文管理器（不会再新建默认实例）。
+
 ### 核心参数
 
 | 参数名 | 类型 | 默认值 | 描述 |
@@ -491,7 +517,8 @@ elif agent.state == 'error':
 这些方法用于直接操作消息列表。
 
 *   **`set_messages(messages: list)`**: 重置整个消息列表。通常用于初始化或加载历史存档。
-*   **`get_messages() -> list`**: 获取当前完整的消息列表。这是 Agent 在每次调用 LLM 前会调用的方法。
+*   **`get_messages() -> list`**: 获取当前完整的消息列表（含 `system` 系统提示词）。这是 Agent 在每次调用 LLM 前会调用的方法。
+*   **`get_conversation() -> list`**: 获取不含 `system` 系统提示词的对话消息列表（仅 `user`/`assistant`/`tool`），适合展示或导出对话历史。
 *   **`add_messages(messages: list)`**: 批量追加消息列表。会自动校验 `role` 和 `content` 字段是否存在，并触发长度限制检查。
 *   **`clear_messages()`**: 清空所有对话历史（包括 system prompt、tool_calls 记录等），让 Agent 重新开始。
 

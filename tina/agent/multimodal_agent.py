@@ -85,14 +85,17 @@ class MultimodalAgent(Agent):
         self.tools_call_result = []
         self.tools_call = []
         self.mcp_client = mcp
+        # 上下文管理器解析：显式参数 > agent_runtime 自带的 > 新建默认
         if context_manager is None:
-            self.context_manager = MultimodalContextManager(
-                tools=self.tools,
-                max_length=max_context_length,
-                max_tool_result_length=max_tool_result_length,
-            )
-        else:
-            self.context_manager = context_manager
+            if agent_runtime is not None:
+                context_manager = agent_runtime.context_manager
+            else:
+                context_manager = MultimodalContextManager(
+                    tools=self.tools,
+                    max_length=max_context_length,
+                    max_tool_result_length=max_tool_result_length,
+                )
+        self.context_manager = context_manager
         # 初始化MCP
         self._mcp_to_tools(mcp)
         self.events = AgentEvents() if events is None else events
@@ -103,6 +106,7 @@ class MultimodalAgent(Agent):
         self._inject_keyword_actions_prompt()
         # 初始化消息，可以直接使用context_manager来修改messages
         self.messages = self.context_manager.get_messages()
+        self.other_agents = []
 
         if agent_runtime is None:
             self.runtime = ToolCallingMutilemodalAgentRuntime(
@@ -116,11 +120,23 @@ class MultimodalAgent(Agent):
             )
         else:
             self.runtime = agent_runtime
+            self.runtime.context_manager = self.context_manager
             if (
                 self.keyword_actions is not None
                 and getattr(self.runtime, "keyword_actions", None) is None
             ):
                 self.runtime.keyword_actions = self.keyword_actions
+
+    def set_context_manager(self, context_manager: MultimodalContextManager) -> None:
+        """
+        替换上下文管理器，并同步给运行时与 messages
+
+        Args:
+            context_manager: 新的上下文管理器
+        """
+        self.context_manager = context_manager
+        self.runtime.context_manager = context_manager
+        self.messages = context_manager.get_messages()
 
     @overload
     def predict(

@@ -53,11 +53,14 @@ class BaseMultimodalAPI(BaseAPI):
         """准备多模态消息列表，支持单/多文本、图片、音频"""
         if messages is None:
             messages = [{"role": "system", "content": sys_prompt}]
-        if any(_input is not None for _input in [input_image, input_audio, input_url]):
+        if input_text is not None or any(
+            _input is not None for _input in [input_image, input_audio, input_url]
+        ):
             user_message = build_multimodal_message(
                 input_text, input_image, input_audio, input_url, image_detail, role
             )
-            messages.append(user_message)
+            if user_message is not None:
+                messages.append(user_message)
         return messages
 
     # ========================== 同步接口 ==========================

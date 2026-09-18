@@ -92,8 +92,41 @@ class BaseAgentRuntime:
         if self.keyword_actions is not None:
             self.keyword_actions.reset_buffer()
 
+    def _filter_stream_content(self, content: str) -> str:
+        """Hide 在事件之前：只过滤 content，reasoning_content 原样透传。"""
+        if self.keyword_actions is None:
+            return content or ""
+        return self.keyword_actions.filter_visible(content or "")
+
+    def _flush_stream_visible(self) -> str:
+        if self.keyword_actions is None:
+            return ""
+        return self.keyword_actions.flush_visible()
+
+    def _emit_visible_content_chunk(self, content: str = "", usage=None) -> dict | None:
+        """
+        组装并触发可见 content chunk。content 应为已过滤文本。
+        无可见内容且无 usage 时不发射。
+        """
+        if not content and usage is None:
+            return None
+        chunk = {"role": "assistant", "content": content or ""}
+        if usage is not None:
+            chunk["usage"] = usage
+        self.events.trigger_on_stream_chunk(chunk)
+        return chunk
+
+    async def _aemit_visible_content_chunk(self, content: str = "", usage=None) -> dict | None:
+        if not content and usage is None:
+            return None
+        chunk = {"role": "assistant", "content": content or ""}
+        if usage is not None:
+            chunk["usage"] = usage
+        await self.events.atrigger_on_stream_chunk(chunk)
+        return chunk
+
     def _check_keyword_actions(self, text: str):
-        """assistant 正文凑齐后触发（含 tool_calls 前的中间段）。"""
+        """assistant 正文凑齐后触发（含 tool_calls 前的中间段）；匹配用原文。"""
         if self.keyword_actions is not None and text:
             self.keyword_actions.check(text)
 
@@ -189,6 +222,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                 _content = llm_response.get("content") or ""
                 if _content:
                     self._check_keyword_actions(_content)
+                    self.context_manager.add_assistant_message(_content)
                 _tool_calls = llm_response["tool_calls"]
                 self.context_manager.add_tool_calls(_tool_calls)
                 self._execute_tool(_tool_calls)
@@ -209,7 +243,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                 return llm_response
         self.events.trigger_on_turn_end()
         self.state = AgentState.IDLE
-        if counter > self.max_tool_loop:
+        if counter >= self.max_tool_loop:
             self.state = AgentState.ERROR
             raise RuntimeError(f"超过了最大工具循环次数{self.max_tool_loop}")
 
@@ -284,11 +318,12 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                     if content or usage is not None:
                         if content:
                             content_parts.append(content)
-                        content_chunk = {"role": "assistant", "content": content}
-                        if usage is not None:
-                            content_chunk["usage"] = usage
-                        self.events.trigger_on_stream_chunk(content_chunk)
-                        yield content_chunk
+                        visible = (
+                            self._filter_stream_content(content) if content else ""
+                        )
+                        emitted = self._emit_visible_content_chunk(visible, usage)
+                        if emitted is not None:
+                            yield emitted
 
             whole_content = "".join(content_parts)
             if whole_content:
@@ -302,10 +337,15 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
             if tool_called:
                 continue
             break
+        flush = self._flush_stream_visible()
+        if flush:
+            emitted = self._emit_visible_content_chunk(flush)
+            if emitted is not None:
+                yield emitted
         self.events.trigger_on_turn_end()
         self.state = AgentState.IDLE
 
-        if counter > self.max_tool_loop:
+        if counter >= self.max_tool_loop:
             self.state = AgentState.ERROR
             raise RuntimeError(f"超过了最大工具循环次数{self.max_tool_loop}")
 
@@ -329,6 +369,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                 _content = llm_result.get("content") or ""
                 if _content:
                     await self._acheck_keyword_actions(_content)
+                    self.context_manager.add_assistant_message(_content)
                 _tool_calls = llm_result["tool_calls"]
                 self.context_manager.add_tool_calls(_tool_calls)
                 await self._aexecute_tool(_tool_calls)
@@ -352,7 +393,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                 return llm_result
         await self.events.atrigger_on_turn_end()
         self.state = AgentState.IDLE
-        if counter > self.max_tool_loop:
+        if counter >= self.max_tool_loop:
             self.state = AgentState.ERROR
             raise RuntimeError(f"超过了最大工具循环次数{self.max_tool_loop}")
 
@@ -430,11 +471,14 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                     if content or usage is not None:
                         if content:
                             content_parts.append(content)
-                        content_chunk = {"role": "assistant", "content": content}
-                        if usage is not None:
-                            content_chunk["usage"] = usage
-                        await self.events.atrigger_on_stream_chunk(content_chunk)
-                        yield content_chunk
+                        visible = (
+                            self._filter_stream_content(content) if content else ""
+                        )
+                        emitted = await self._aemit_visible_content_chunk(
+                            visible, usage
+                        )
+                        if emitted is not None:
+                            yield emitted
 
             whole_content = "".join(content_parts)
             if whole_content:
@@ -448,10 +492,15 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
             if tool_called:
                 continue
             break
+        flush = self._flush_stream_visible()
+        if flush:
+            emitted = await self._aemit_visible_content_chunk(flush)
+            if emitted is not None:
+                yield emitted
         await self.events.atrigger_on_turn_end()
         self.state = AgentState.IDLE
 
-        if counter > self.max_tool_loop:
+        if counter >= self.max_tool_loop:
             self.state = AgentState.ERROR
             raise RuntimeError(f"超过了最大工具循环次数{self.max_tool_loop}")
 
@@ -508,6 +557,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                 _content = llm_response.get("content") or ""
                 if _content:
                     self._check_keyword_actions(_content)
+                    self.context_manager.add_assistant_message(_content)
                 _tool_calls = llm_response["tool_calls"]
                 self.context_manager.add_tool_calls(_tool_calls)
                 self._execute_tool(_tool_calls)
@@ -528,7 +578,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                 return llm_response
         self.events.trigger_on_turn_end()
         self.state = AgentState.IDLE
-        if counter > self.max_tool_loop:
+        if counter >= self.max_tool_loop:
             self.state = AgentState.ERROR
             raise RuntimeError(f"超过了最大工具循环次数{self.max_tool_loop}")
 
@@ -585,6 +635,8 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                     reasoning_buffer = ""
 
                     self.context_manager.add_tool_calls(tool_calls=chunk["tool_calls"])
+                    self.events.trigger_on_stream_chunk(chunk)
+                    yield chunk
 
                     results = self._execute_tool(chunk["tool_calls"])
                     for result in results:
@@ -616,11 +668,12 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                     if content or usage is not None:
                         if content:
                             content_parts.append(content)
-                        content_chunk = {"role": "assistant", "content": content}
-                        if usage is not None:
-                            content_chunk["usage"] = usage
-                        self.events.trigger_on_stream_chunk(content_chunk)
-                        yield content_chunk
+                        visible = (
+                            self._filter_stream_content(content) if content else ""
+                        )
+                        emitted = self._emit_visible_content_chunk(visible, usage)
+                        if emitted is not None:
+                            yield emitted
 
             whole_content = "".join(content_parts)
             if whole_content:
@@ -635,10 +688,15 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                 continue
             break
 
+        flush = self._flush_stream_visible()
+        if flush:
+            emitted = self._emit_visible_content_chunk(flush)
+            if emitted is not None:
+                yield emitted
         self.events.trigger_on_turn_end()
         self.state = AgentState.IDLE
 
-        if counter > self.max_tool_loop:
+        if counter >= self.max_tool_loop:
 
             self.state = AgentState.ERROR
 
@@ -675,6 +733,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                 _content = llm_result.get("content") or ""
                 if _content:
                     await self._acheck_keyword_actions(_content)
+                    self.context_manager.add_assistant_message(_content)
                 _tool_calls = llm_result["tool_calls"]
                 self.context_manager.add_tool_calls(_tool_calls)
                 await self._aexecute_tool(_tool_calls)
@@ -697,7 +756,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                 return llm_result
         await self.events.atrigger_on_turn_end()
         self.state = AgentState.IDLE
-        if counter > self.max_tool_loop:
+        if counter >= self.max_tool_loop:
             self.state = AgentState.ERROR
             raise RuntimeError(f"超过了最大工具循环次数{self.max_tool_loop}")
 
@@ -751,6 +810,8 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                     reasoning_buffer = ""
 
                     self.context_manager.add_tool_calls(tool_calls=chunk["tool_calls"])
+                    await self.events.atrigger_on_stream_chunk(chunk)
+                    yield chunk
 
                     results = await self._aexecute_tool(chunk["tool_calls"])
                     for result in results:
@@ -782,11 +843,14 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                     if content or usage is not None:
                         if content:
                             content_parts.append(content)
-                        content_chunk = {"role": "assistant", "content": content}
-                        if usage is not None:
-                            content_chunk["usage"] = usage
-                        await self.events.atrigger_on_stream_chunk(content_chunk)
-                        yield content_chunk
+                        visible = (
+                            self._filter_stream_content(content) if content else ""
+                        )
+                        emitted = await self._aemit_visible_content_chunk(
+                            visible, usage
+                        )
+                        if emitted is not None:
+                            yield emitted
 
             whole_content = "".join(content_parts)
             if whole_content:
@@ -801,9 +865,14 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
             if tool_called:
                 continue
             break
+        flush = self._flush_stream_visible()
+        if flush:
+            emitted = await self._aemit_visible_content_chunk(flush)
+            if emitted is not None:
+                yield emitted
         await self.events.atrigger_on_turn_end()
         self.state = AgentState.IDLE
 
-        if counter > self.max_tool_loop:
+        if counter >= self.max_tool_loop:
             self.state = AgentState.ERROR
             raise RuntimeError(f"超过了最大工具循环次数{self.max_tool_loop}")

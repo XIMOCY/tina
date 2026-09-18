@@ -1,6 +1,26 @@
 from typing import Any
 from abc import ABC, abstractmethod
 from ...utils.multimodal_formatter import build_multimodal_message
+from ...core.error import ToolNotFound
+
+
+def _content_length(content: Any) -> int:
+    """
+    估算消息内容长度：文本按字符数，图片/音频等多模态块按固定开销计，
+    避免多模态 content 为 list 时被 len() 误算为块数。
+    """
+    if isinstance(content, str):
+        return len(content)
+    if isinstance(content, list):
+        length = 0
+        for part in content:
+            if isinstance(part, dict):
+                if part.get("type") == "text":
+                    length += len(part.get("text", ""))
+                else:
+                    length += 1000
+        return length
+    return 0
 
 
 class BaseContextManager(ABC):
@@ -13,6 +33,10 @@ class BaseContextManager(ABC):
     @abstractmethod
     def get_messages(self) -> list[dict[str, Any]]:
         pass
+
+    def get_conversation(self) -> list[dict[str, Any]]:
+        """返回不含 system 系统提示词的对话消息列表"""
+        return [m for m in self.messages if m.get("role") != "system"]
 
     def add_user_message(self, message: str) -> list[dict[str, Any]]:
         pass
@@ -211,7 +235,7 @@ class ContextManager(BaseContextManager):
             if msg.get("content") is None:
                 msg["content"] = ""
 
-        total_length = sum(len(msg.get("content", "")) for msg in self.messages)
+        total_length = sum(_content_length(msg.get("content")) for msg in self.messages)
 
         i = 1  # 从 1 开始，尽量保留 system 消息
         while total_length > self.max_length and len(self.messages) > 1:
@@ -220,24 +244,24 @@ class ContextManager(BaseContextManager):
 
             msg = self.messages[i]
 
-            # 如果是带 tool_calls 的 assistant 消息，把它和后面的 tool 消息一起删掉
+            # 如果是带 tool_calls 的 assistant 消息，把它和后面所有 tool 消息一起删掉
             if msg.get("tool_calls") is not None:
                 # 先减去当前消息的 content（通常为空）
-                total_length -= len(msg.get("content", ""))
+                total_length -= _content_length(msg.get("content"))
 
-                # 如果后面紧跟着 tool 消息，把它也删掉，并减长度
-                if i + 1 < len(self.messages):
-                    next_msg = self.messages[i + 1]
-                    total_length -= len(next_msg.get("content", ""))
-                    self.messages.pop(i + 1)
-
-                # 再删掉当前 tool_calls 消息
+                # 删掉当前 tool_calls 消息
                 self.messages.pop(i)
+
+                # 删除紧随其后的所有 tool 消息，避免留下孤立的 tool 消息
+                while i < len(self.messages) and self.messages[i].get("role") == "tool":
+                    total_length -= _content_length(self.messages[i].get("content"))
+                    self.messages.pop(i)
+
                 # 不递增 i，继续看当前位置的新消息
                 continue
 
             # 普通消息，直接删掉一条
-            total_length -= len(msg.get("content", ""))
+            total_length -= _content_length(msg.get("content"))
             self.messages.pop(i)
 
         # 循环结束后，如果还是超长，且只有一条 system，可以选择截断 system 的 content
@@ -295,10 +319,10 @@ class MultimodalContextManager(ContextManager):
 
     def add_user_message(
         self,
-        instruction: str,
-        image: str | list[str],
-        audio: str | list[str],
-        url: str | list[str],
+        instruction: str = None,
+        image: str | list[str] = None,
+        audio: str | list[str] = None,
+        url: str | list[str] = None,
     ) -> list[dict[str, Any]]:
         user_content = build_multimodal_message(
             input_text=instruction,
@@ -310,6 +334,7 @@ class MultimodalContextManager(ContextManager):
         if user_content is None:
             return self.messages
         self.messages.append(user_content)
+        self.limit_messages()
         return self.messages
 
     def add_tool_calls(self, tool_calls: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -339,12 +364,15 @@ class MultimodalContextManager(ContextManager):
         - "tool_call": 对应的 tool_call（可选）
         - "tool_name": 工具名称（可选）
         - "result": 工具执行结果字符串
+
+        注意：带 tool_calls 的 assistant 消息后面必须紧跟全部 tool 消息，
+        多模态结果不能穿插其中，因此这里先写完所有 tool 消息，
+        再统一追加对应的多模态 user 消息。
         """
+        pending_multimodal = []
+
         for item in tool_calls_result:
             # 确保有 result 字段
-            images = []
-            audios = []
-            urls = []
             item["result"] = item.get("content", "") or ""
             item["tool_name"] = item.get("tool_name", None)
             self.tool_calls_result.append(item)
@@ -361,30 +389,56 @@ class MultimodalContextManager(ContextManager):
                     "tool_call_id": item.get("tool_call_id"),
                 }
             )
-            self._add_multimodal_message(item, images, audios, urls)
 
-    def _add_multimodal_message(self, item, images, audios, urls):
-        if self.tools.get_multimodal_type(item["tool_name"]) == "image":
-            if isinstance(item["result"], str):
-                images.append(item["result"])
-            elif isinstance(item["result"], list):
-                images.extend(item["result"])
-        if self.tools.get_multimodal_type(item["tool_name"]) == "audio":
-            if isinstance(item["result"], str):
-                audios.append(item["result"])
-            elif isinstance(item["result"], list):
-                audios.extend(item["result"])
-        if self.tools.get_multimodal_type(item["tool_name"]) == "url":
-            if isinstance(item["result"], str):
-                urls.append(item["result"])
-            elif isinstance(item["result"], list):
-                urls.extend(item["result"])
-        self.add_user_message(
-            instruction=f"工具{item['tool_name']}的结果",
-            image=images,
-            audio=audios,
-            url=urls,
-        )
+            multimodal_result = self._extract_multimodal_result(item)
+            if multimodal_result is not None:
+                pending_multimodal.append((item["tool_name"], multimodal_result))
+
+        # 全部 tool 消息写入完毕后，再追加多模态 user 消息
+        for tool_name, (images, audios, urls) in pending_multimodal:
+            self.add_user_message(
+                instruction=f"工具{tool_name}的结果",
+                image=images,
+                audio=audios,
+                url=urls,
+            )
+
+        self.limit_messages()
+
+    def _extract_multimodal_result(self, item):
+        """提取工具结果中的图片/音频/URL，非多模态工具或结果为空时返回 None"""
+        tool_name = item.get("tool_name")
+        if not tool_name:
+            return None
+        try:
+            multimodal_type = self.tools.get_multimodal_type(tool_name)
+        except ToolNotFound:
+            return None
+        if multimodal_type == "text":
+            return None
+
+        result = item.get("result")
+        if isinstance(result, str):
+            values = [result]
+        elif isinstance(result, list):
+            values = result
+        else:
+            return None
+
+        values = [v for v in values if v]
+        if not values:
+            return None
+
+        images, audios, urls = [], [], []
+        if multimodal_type == "image":
+            images = values
+        elif multimodal_type == "audio":
+            audios = values
+        elif multimodal_type == "url":
+            urls = values
+        else:
+            return None
+        return images, audios, urls
 
     def add_tool_call_result(
         self, tool_result: str | None, tool_call_id: str, tool_call: dict[str, Any]
@@ -411,6 +465,7 @@ class MultimodalContextManager(ContextManager):
                 "tool_call_id": tool_call_id,
             }
         )
+        self.limit_messages()
 
     def get_tool_calls(self) -> list[dict[str, Any]]:
         return self.tool_calls
@@ -430,7 +485,7 @@ class MultimodalContextManager(ContextManager):
 
     def add_assistant_message(self, message: str) -> list[dict[str, Any]]:
         self.messages.append({"role": "assistant", "content": message})
-
+        self.limit_messages()
         return self.messages
 
     def clear_messages(self) -> None:
@@ -446,5 +501,6 @@ class MultimodalContextManager(ContextManager):
                 raise ValueError("消息缺少 content 字段")
 
         self.messages.extend(messages)
+        self.limit_messages()
 
         return self.messages

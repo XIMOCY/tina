@@ -202,7 +202,11 @@ class ToolsExecutor:
         output_buffer = io.StringIO()
         try:
             with redirect_stdout(output_buffer), redirect_stderr(output_buffer):
-                tool_result = _tool(**_tool_args)
+                # 同步路径同样支持异步工具：把协程跑完
+                if inspect.iscoroutinefunction(_tool):
+                    tool_result = self._run_coroutine(_tool(**_tool_args))
+                else:
+                    tool_result = _tool(**_tool_args)
 
             full_output = output_buffer.getvalue()
             if tool_result is not None:
@@ -215,6 +219,35 @@ class ToolsExecutor:
             return full_output
         except Exception as e:
             return f"工具内部执行失败: {str(e)}"
+
+    @staticmethod
+    def _run_coroutine(coro):
+        """在同步执行路径里跑完一个协程
+
+        `_raw_execute` 通常跑在没有事件循环的线程里（`execute` 的工作线程，
+        或异步路径的 `run_in_executor`），直接 `asyncio.run` 即可；若当前线程
+        已经存在运行中的事件循环，则另开线程用独立循环执行，避免 `asyncio.run`
+        直接抛 `RuntimeError`。
+        """
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(coro)
+
+        box: dict = {}
+
+        def _target():
+            try:
+                box["value"] = asyncio.run(coro)
+            except BaseException as e:  # noqa: BLE001
+                box["error"] = e
+
+        thread = threading.Thread(target=_target, daemon=True)
+        thread.start()
+        thread.join()
+        if "error" in box:
+            raise box["error"]
+        return box["value"]
 
     def _execute_sync_logic(
         self, _tool_name, _tool_args, _tool, timeout, active_events, _tools

@@ -7,6 +7,9 @@ monika.py
 my_little_cat_girl.py
 *.env
 *.ini
+*.ipynb
+little_toy/
+.pytest_cache/
 *.ico
 logs/
 tina_python.egg-info/

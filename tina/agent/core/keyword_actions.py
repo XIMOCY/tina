@@ -1,9 +1,8 @@
 """
 编写者：王出日
-日期：2026，3，13
+日期：2026，9，9
 版本 0.5.3
 描述：关键词动作。说出关键词触发无参副作用；不进入 tools schema，不可合并。
-对应 Unity Tina Keyword Actions 的轻量 Python 实现。
 """
 
 from __future__ import annotations
@@ -178,8 +177,9 @@ class KeywordActions:
 
     def filter_visible(self, content: str) -> str:
         """
-        流式消费方用：剥离 display=False 的关键词（大小写敏感），跨 chunk 前缀缓冲。
-        不改写历史原文；空 content 不消费缓冲。
+        剥离 display=False 的关键词（大小写敏感），跨 chunk 前缀缓冲。
+        只作用于 content；reasoning_content 不过滤。
+        空 content 不消费缓冲。
         """
         if not content:
             return ""
@@ -219,9 +219,7 @@ class KeywordActions:
         return False
 
     def flush_visible(self) -> str:
-        """
-        回合末吐出仍截留的缓冲（未拼成完整隐藏关键词的残留）。
-        """
+        """回合末吐出仍截留的 content 缓冲。"""
         if not self._buffer:
             return ""
         result = self._buffer

@@ -47,17 +47,11 @@ def run_agent_in_cli(agent):
                     t_name = chunk.get("tool_name")
                     t_args = chunk.get("tool_arguments")
 
-                    # 1. 处理普通对话文本（Hide 关键词经 filter_visible 剥离）
+                    # 1. 处理普通对话文本（Hide 已在 runtime 过滤后再进 on_stream_chunk/yield）
                     if role == "assistant" and content and not t_name:
                         if last_role == "tool":
                             print("\n")
-                        visible = (
-                            agent.filter_visible(content)
-                            if hasattr(agent, "filter_visible")
-                            else content
-                        )
-                        if visible:
-                            print(visible, end="", flush=True)
+                        print(content, end="", flush=True)
                         last_role = "assistant"
 
                     # 2. 处理工具调用开始 (必须有 t_name 且 t_args 为空)
@@ -92,11 +86,6 @@ def run_agent_in_cli(agent):
                         print(
                             f"\n\033[90m[Tokens: {u.get('total_tokens')} (P:{u.get('prompt_tokens')} C:{u.get('completion_tokens')})]\033[0m"
                         )
-
-                if hasattr(agent, "flush_visible"):
-                    tail = agent.flush_visible()
-                    if tail:
-                        print(tail, end="", flush=True)
 
                 print("\n" + "─" * 50)
 

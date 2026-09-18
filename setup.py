@@ -2,8 +2,9 @@ from setuptools import setup, find_packages
 
 setup(
     name="tina-python",
-    version="0.5.3",
+    version="0.6.4",
     packages=find_packages(),
+    package_data={"tina": ["py.typed"]},
     install_requires=["httpx", "python-dotenv"],
     description="tina is in your computer!",
     long_description=open("README.md", encoding="utf-8").read(),

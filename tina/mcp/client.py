@@ -17,6 +17,18 @@ except ImportError:
     MCP_AVAILABLE = False
 
 
+def _tool_input_schema(tool: Any) -> Dict[str, Any]:
+    """获取 MCP 工具的输入 schema，兼容 SDK 的字段改名
+
+    MCP Python SDK 早期版本用驼峰 `inputSchema`，新版本（pydantic 模型）改为
+    下划线 `input_schema`。这里两种都取，取不到返回空 dict。
+    """
+    schema = getattr(tool, "input_schema", None)
+    if schema is None:
+        schema = getattr(tool, "inputSchema", None)
+    return schema or {}
+
+
 class MCPClient:
     def __init__(self):
         if not MCP_AVAILABLE:
@@ -187,6 +199,8 @@ class MCPClient:
                 for tool in info["tools"]:
                     # 注意：Tina Tools 内部可能还会根据包名加一层前缀
                     # 这里的 register_no_function 保持你习惯的格式
+                    schema = _tool_input_schema(tool)
+                    properties = schema.get("properties", {}) or {}
                     tina_tools.register_no_function(
                         name=f"{sid}_{tool.name}",  # 外部包名是mcp，内部就是 mcp_sid_name
                         description=f"[MCP:{sid}] {tool.description}",
@@ -195,9 +209,9 @@ class MCPClient:
                                 "type": v.get("type", "str"),
                                 "description": v.get("description", ""),
                             }
-                            for k, v in tool.inputSchema.get("properties", {}).items()
+                            for k, v in properties.items()
                         },
-                        required_parameters=tool.inputSchema.get("required", []),
+                        required_parameters=schema.get("required", []) or [],
                     )
         return tina_tools
 

@@ -149,7 +149,8 @@ class BaseAPI:
             original_dict = super().__getattribute__("__dict__")
             clean_dict = {k: v for k, v in original_dict.items() if "api_key" not in k}
             return clean_dict
-        if "api_key" in name:
+        # 仅屏蔽显式的 api_key 属性，避免误伤内部名称（如 _BaseAPI__api_key）
+        if name == "api_key":
             return "*" * len(name)
 
         return super().__getattribute__(name)
@@ -235,6 +236,10 @@ class BaseAPI:
             "top_p": top_p,
             "stream": stream,
         }
+
+        # JSON 输出模式（仅显式指定时添加，兼容性优先）
+        if format == "json_object":
+            payload["response_format"] = {"type": "json_object"}
 
         # 可选参数（只有非None时才添加，保证兼容性）
         optional_params = {

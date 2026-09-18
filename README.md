@@ -992,15 +992,21 @@ from tina.utils.tui import run_agent_in_tui
 agent = Agent(llm=BaseAPI(), tools=Tools())
 
 run_agent_in_tui(agent, max_tokens=32000)
+
+# 想不受上下文长度限制（不裁剪历史、不截断工具结果）：
+# run_agent_in_tui(agent, unlimited_context=True)
 ```
 
 特性：
 
 - 助手正文流式渲染（Markdown），推理内容与工具调用卡片均可折叠
+- 消费与渲染解耦（定时渲染泵）：极快或极长的输出都不掉帧
 - 自动为 Agent 注册工具确认事件（`require_confirmation=True` 的工具会弹出选择条）
-- token 累计与上限进度（显示百分比，超限变红警告）
+- 上下文 token 占用与上限进度（显示百分比，≥80% 变黄、超限变红警告），运行时显示动画
+- `Esc` 可打断本轮回复；已生成的部分正文写回上下文，进行中的工具调用记为「该次调用被打断」
 - 输入框支持多行与粘贴；`Enter` 发送、`Shift+Enter` 换行、`Tab` 补全命令
 - 底部粘性滚动：在底部时自动跟随输出，向上滚动查看历史时不会被打扰，滚回底部自动恢复
+- 可选 `unlimited_context=True`：用 tina 提供的无限制上下文管理器替换 Agent 的（不裁剪历史、不截断工具结果）
 
 | 指令 | 功能 |
 |------|------|
@@ -1008,14 +1014,14 @@ run_agent_in_tui(agent, max_tokens=32000)
 | `#tools` | 查看当前工具、描述与参数 |
 | `#context` | 查看当前上下文 |
 | `#model` | 查看当前模型信息 |
-| `#tokens` | 查看 token 统计 |
+| `#tokens` | 查看当前上下文 token 占用 |
 | `#compact` | 压缩上下文（让 Agent 自我总结并并入 system） |
 | `#clear` | 清空上下文与界面 |
 | `#exit` | 退出 |
 
-快捷键：`Ctrl+↑/↓` 跳转消息、`Ctrl+Home/End` 首/末条、`Ctrl+R` 折叠思考、`Ctrl+T` 折叠工具与结果、`Esc` 取消确认。
+快捷键：`Ctrl+↑/↓` 跳转消息、`Ctrl+Home/End` 首/末条、`Ctrl+R` 折叠思考、`Ctrl+T` 折叠工具与结果、`Ctrl+O` 查看完整工具参数、`Esc` 关闭弹窗/取消确认 / 打断本轮回复。
 
-> 界面是可选的：数据层 `TuiContextManager`（渲染块列表）和 `TokenCounter`（token 计数）**不依赖 textual**，可以单独导入，用来接入你自己的界面。
+> 界面是可选的：数据层 `TuiMessageStore`（渲染块列表）和 `TokenCounter`（token 计数）**不依赖 textual**，可以单独导入，用来接入你自己的界面。
 
 完整说明（安装、指令、快捷键、自建界面）见 [`docs/tui.md`](./docs/tui.md)。
 

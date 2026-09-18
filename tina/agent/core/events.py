@@ -582,7 +582,7 @@ class AgentEvents:
             logger.warning(
                 f"Events - 异步事件on_tool_confirmation处理器{func.__name__}在同步调用中被忽略"
             )
-            return False
+            return (False, "用户阻止了该工具的运行")
 
         result = func(tool_name, tool_arguments)
 
