@@ -30,6 +30,70 @@ def _tool_input_schema(tool: Any) -> Dict[str, Any]:
     return schema or {}
 
 
+def _normalize_property(prop: Any) -> Dict[str, Any]:
+    """将单个 MCP 属性 schema 归一化为 Tina/大模型友好的形式。
+
+    修复原先只保留 `type` 且缺省退化为 Python 类型名 ``"str"`` 的问题：
+    - 缺少顶层 `type` 时，从 enum / anyOf 推断，最后回退为 JSON Schema 的
+      ``"string"``，不再输出 ``"str"``；
+    - 保留 `enum` 等约束信息，避免模型失去取值范围；
+    - 将带 null 的 `anyOf`/`oneOf` 及 ``["string", "null"]`` 形式的 type
+      压平为 `type` + `nullable`，提升对不支持联合类型的模型兼容性。
+    """
+    prop = dict(prop) if isinstance(prop, dict) else {}
+    description = prop.get("description", "")
+
+    # 压平 nullable 联合类型（例如 zod 的 z.enum([...]).nullable()）
+    variants = prop.get("anyOf") or prop.get("oneOf")
+    if isinstance(variants, list):
+        non_null = [
+            v for v in variants if isinstance(v, dict) and v.get("type") != "null"
+        ]
+        has_null = any(
+            isinstance(v, dict) and v.get("type") == "null" for v in variants
+        )
+        if len(non_null) == 1 and has_null:
+            merged = dict(non_null[0])
+            merged.setdefault("description", description)
+            merged["nullable"] = True
+            return _normalize_property(merged)
+
+    # 压平 type 为数组的形式，如 ["string", "null"]
+    raw_type = prop.get("type")
+    if isinstance(raw_type, list):
+        types = [t for t in raw_type if t != "null"]
+        prop["nullable"] = prop.get("nullable", "null" in raw_type)
+        if len(types) == 1:
+            prop["type"] = types[0]
+        else:
+            prop.pop("type", None)
+
+    # 缺少 type 时从 enum 推断，否则回退 "string"（而非 Python 的 "str"）
+    if "type" not in prop:
+        values = prop.get("enum")
+        if isinstance(values, list) and values:
+            if all(isinstance(v, str) for v in values):
+                prop["type"] = "string"
+            elif all(
+                isinstance(v, (int, float)) and not isinstance(v, bool)
+                for v in values
+            ):
+                prop["type"] = "number"
+        elif not (
+            prop.get("anyOf") or prop.get("oneOf") or prop.get("$ref")
+        ):
+            prop["type"] = "string"
+
+    prop["description"] = description
+    return prop
+
+
+def _convert_input_schema(schema: Dict[str, Any]) -> Dict[str, Any]:
+    """将 MCP 工具的 input schema.properties 转为 Tina 工具参数格式"""
+    properties = schema.get("properties", {}) or {}
+    return {name: _normalize_property(prop) for name, prop in properties.items()}
+
+
 class MCPClient:
     def __init__(self):
         if not MCP_AVAILABLE:
@@ -269,17 +333,10 @@ class MCPClient:
                     # 注意：Tina Tools 内部可能还会根据包名加一层前缀
                     # 这里的 register_no_function 保持你习惯的格式
                     schema = _tool_input_schema(tool)
-                    properties = schema.get("properties", {}) or {}
                     tina_tools.register_no_function(
                         name=f"{sid}_{tool.name}",  # 外部包名是mcp，内部就是 mcp_sid_name
                         description=f"[MCP:{sid}] {tool.description}",
-                        parameters={
-                            k: {
-                                "type": v.get("type", "str"),
-                                "description": v.get("description", ""),
-                            }
-                            for k, v in properties.items()
-                        },
+                        parameters=_convert_input_schema(schema),
                         required_parameters=schema.get("required", []) or [],
                     )
         return tina_tools
