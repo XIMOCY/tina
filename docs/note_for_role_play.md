@@ -139,7 +139,7 @@ MODEL_NAME = "qwen-plus"
 MAX_INPUT = 129024
 TEMPERATURE = 0.3 # 这里设置温度
 ```
-tina会自动地设置每次你输入地温度为这个值
+tina读取到的TEMPERATURE只有在调用 `predict`/`apredict` 时显式传入 `temperature=None` 才会生效；否则使用方法自身的默认温度（`predict` 为 1.0，`Agent.predict` 为 0.5）
 此外你可能听过采样率：top_p和top_k，一般来说我们设置了temperature，top_p和top_k就不建议一起设置了，他们和temmperature是差不多的功能  
 对于你使用的模型，建议自己尝试几个temperature值，然后设置一个你认为合适的  
 
@@ -156,7 +156,6 @@ tina.ContextManager
 ```python
 from tina import Agent,Tools
 from tina.llm import BaseAPI
-from tina.utils.output_parser import process_result
 from .memory import RoleMemory
 class RolePlayAgent():
     name:str
@@ -294,7 +293,7 @@ class RoleMemory(ContextManager):
     
     def return_messages(self):
         
-        return super().return_messages()
+        return super().get_messages()
 
 ```
 以上的代码实现了带向量检索的上下文管理器，他在用户每次输入的时候自动这个用户相关的数据库中检索，然后把结果包括在<memory></memory> 中，然后把这条信息放入库中。  

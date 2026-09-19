@@ -40,7 +40,8 @@ agent = Agent(
 )
 # 会自动在 system prompt 末尾追加：
 # <keyword_action>
-# 当你说的话里面包括了"[Happy]"的时候会触发 播放开心表情
+# 当你说的话里面包括了"[Happy]"的时候会触发。会调用以下的工具：
+# - play_happy: 播放开心表情
 # </keyword_action>
 # 并发出 Warning（经 logger.warn）：使用了关键词动作，会影响你的系统提示词
 ```

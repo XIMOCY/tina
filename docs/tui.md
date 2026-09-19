@@ -83,7 +83,7 @@ run_agent_in_tui(agent, unlimited_context=True)
 | `#model` | | 查看当前模型信息（model / base_url） |
 | `#tokens` | | 查看当前上下文 token 占用（total / prompt / completion / 占比） |
 | `#compact` | `#compress` `#summary` | 压缩上下文：让 Agent 自我总结，并写入 system 后清空其余消息 |
-| `#clear` | | 清空上下文与界面 |
+| `#clear` | | 清空界面与渲染上下文（不会清除发送给模型的上下文；要压缩请用 `#compact`） |
 | `#exit` | `#quit` | 退出 |
 
 ## 快捷键

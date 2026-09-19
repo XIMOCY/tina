@@ -9,6 +9,7 @@ my_little_cat_girl.py
 *.ini
 *.ipynb
 little_toy/
+yunguanjia_qa.py
 .pytest_cache/
 *.ico
 logs/

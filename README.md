@@ -15,6 +15,12 @@ pip install tina-python
 # 如果需要使用 MCP（模型上下文协议）服务
 pip install tina-python[mcp]
 
+# 如果需要 TUI 终端界面
+pip install tina-python[tui]
+
+# 一次装齐所有可选功能（TUI + MCP）
+pip install tina-python[all]
+
 # 如果需要运行测试
 pip install tina-python[test]
 ```
@@ -176,8 +182,9 @@ result = await llm.apredict(
     stream=False
 )
 
-# 异步流式
-async for chunk in llm.apredict(input_text="讲个故事", stream=True):
+# 异步流式：先 await 拿到异步生成器
+result = await llm.apredict(input_text="讲个故事", stream=True)
+async for chunk in result:
     print(chunk["content"], end="")
 ```
 
@@ -207,8 +214,6 @@ async for chunk in llm.apredict(input_text="讲个故事", stream=True):
 {
     "role": "assistant",
     "content": "回复内容",
-    # 推理模型时会出现
-    "reasoning_content": "推理链...",
     # 有工具调用时会出现
     "tool_calls": [
         {
@@ -220,7 +225,8 @@ async for chunk in llm.apredict(input_text="讲个故事", stream=True):
     ]
 }
 
-# 流式：逐块返回，格式与非流式一致
+# 流式：逐块返回片段，工具调用以 tool_name / tool_arguments 片段给出；
+# 推理模型的思维链在 reasoning_content 中，末尾可能带有 usage
 ```
 
 ### 1.8 获取可用模型列表
@@ -357,9 +363,12 @@ tool_calls = [
         }
     }
 ]
-results = tools.execute(tool_calls)
+# execute 需要事件对象（Agent 内部会自动传入）
+from tina import AgentEvents
+
+results = tools.execute(tool_calls, events=AgentEvents())
 # [
-#   {"role": "tool", "tool_call_id": "call_123", "name": "get_weather", "content": "北京今天天气晴朗"}
+#   {"role": "tool", "tool_call_id": "call_123", "tool_name": "get_weather", "content": "北京今天天气晴朗"}
 # ]
 ```
 
@@ -507,7 +516,7 @@ elif agent.state == AgentState.ERROR:
 # 获取消息列表
 messages = agent.get_messages()
 
-# 清空消息（保留系统提示词）
+# 清空全部消息（含系统提示词，之后需重新 set_system_prompt）
 agent.clear_messages()
 
 # 获取系统提示词
@@ -595,7 +604,7 @@ def on_turn_end():
 agent_a = Agent(llm=llm, tools=tools, name="agent_a")
 agent_b = Agent(llm=llm, tools=tools, name="agent_b")
 
-# 连接：共享消息列表
+# 关联另一个 Agent（记录到 other_agents，目前不会自动共享消息列表）
 agent_a.connect_agent(agent_b)
 
 # 断开连接
@@ -854,8 +863,8 @@ from tina import Agent, Tools
 from tina.llm import BaseAPI
 from tina.utils.system_tools import system_tools
 
-tools = Tools()
-tools += system_tools  # 添加 tina 自带的系统工具包
+tools = Tools(name="my_tools")
+tools += system_tools  # 添加 tina 自带的系统工具包（工具集需命名）
 
 agent = Agent(
     llm=BaseAPI(),
@@ -957,7 +966,7 @@ run_agent_in_cli(agent)
 |------|------|
 | `#context` | 查看当前对话上下文（消息列表） |
 | `#clear` | 清屏 |
-| `#exit` | 退出（或直接输入 `exit` / `quit`） |
+| `exit` / `quit` | 退出对话（`#exit` 不支持，会被当作普通输入） |
 
 ### 6.4 多模态消息构建器 `build_multimodal_message`
 

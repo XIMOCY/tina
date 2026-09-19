@@ -27,17 +27,17 @@ Agent的实例化参数十分丰富，它分为下面几种:
 
 | 参数名称  | 参数类型  | 默认值 |参数含义 | 
 |----| ---- | ---- |---- |
-|  llm |  tina.BaseAPI |必填|Agent的大脑| 
-|  tools |  tina.Tools |必填|Agent的工具包|
+|  llm |  tina.llm.BaseAPI |必填|Agent的大脑| 
+|  tools |  tina.Tools |None|Agent的工具包，不传入时使用内部空工具集|
 |  keyword_actions |  tina.KeywordActions |None|可选关键词动作（不进 tools schema，见 [keyword_actions.md](./keyword_actions.md)）|
 |  system_prompt | str |None|Agent的系统提示词，与后面的context_manager有关系|  
-|  mcp |  tina.MCPClient |None|MCP客户端用于链接MCP生态| 
+|  mcp |  tina.mcp.MCPClient |None|MCP客户端用于链接MCP生态| 
 |  events |  tina.AgentEvents |None|Agent的事件管理类| 
 |  context_manager |  tina.ContextManager |None|上下文管理器，不传入时使用开发者设置的system_prompt来自动初始化| 
 |  max_tool_loop |  int |30|自带的runtime支持的最大工具执行循环| 
 |  max_context_length |  int |100000|最大的上下文长度|
 |  max_tool_result_length | int |6000|最大的工具结果返回长度| 
-| agent_runtime | tina.AgentRuntime |tina.ToolCallingAgentRuntime|Agent运行的逻辑类| 
+| agent_runtime | tina.agent.core.agent_runtime.BaseAgentRuntime |None|Agent运行的逻辑类；None 时内部使用 ToolCallingAgentRuntime| 
 |  name |  str |None|Agent的名字|   
 
 mcp参数在这里你可以一样视为Tools，他们都是可以被Agent调用的工具包  
@@ -167,14 +167,14 @@ await agent.apredict_no_stream()
 ```
 #### 清空消息列表 clear_messages
 不需要接受参数，没有返回值  
-但是它不会删除**系统提示词**
+它会把**系统提示词一起清空**，如需保留请重新调用 `set_system_prompt`
 #### 获取系统提示词 get_system_prompt
 不需要接受参数，返回值为str类型  
 #### 添加消息 add_message
 接受下面的参数：
 | 参数名称 | 类型 | 默认值 | 描述 |
 | :--- | :--- | :--- | :--- |
-| **`role`** | `str` | `None` | **这次消息的身份**。只支持 `"system"`、`"user"`、`"assistant"`|
+| **`role`** | `str` | `None` | **这次消息的身份**。实际支持 `"user"`、`"assistant"`（传入 `"system"` 会被忽略，请用 `set_system_prompt`）|
 | **`content`** | `str` | `None` | **消息内容**。消息的具体内容|
 | **`name`** | `str` | `None` | **名称**。只在指定了`role`为`"assistant"`时使用，表示这个消息的是哪个Agent|
 #### 添加消息列表 add_messages
@@ -191,13 +191,15 @@ await agent.apredict_no_stream()
 ```python
 [
     {
-        "tool_call":{},
-        "tool_name":"",
-        "result":"",
-        "tool_call_id":""
+        "role": "tool",
+        "content": "",
+        "tool_name": "",
+        "result": "",
+        "tool_call_id": ""
     }
 ]
 ```
+> 注意：这里没有 `tool_call` 字段；只有直接调用 `context_manager.add_tool_call_result(...)` 时才会额外带上它。
 #### 获取工具调用 get_tools_call
 返回值为list
 ```python
@@ -565,7 +567,7 @@ Tina 提供了专门的方法来添加不同类型的消息，确保格式符合
 ### 导入方式
 
 ```python
-from tina import BaseContextManager
+from tina.agent import BaseContextManager
 ```
 
 ### 类结构定义

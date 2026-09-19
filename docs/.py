@@ -71,7 +71,7 @@ class Search:
         urls = []
         # 在这里实现在互联网检索的逻辑
         return urls
-    def fetch_url(url:str):
+    def fetch_url(self, url:str):
         """
         获取网页内容
         """    
@@ -89,7 +89,7 @@ chat_agent = Agent(
 )
 memory_agent = Agent(
     llm=BaseAPI(),
-    tools=[rag.get_tools,search.get_memory_tools],
+    tools=[rag.get_tools(),search.get_memory_tools()],
     system_prompt="你可以整理Agent的记忆和历史..."
 )
 from asyncio import Queue
@@ -113,7 +113,8 @@ class ChatAgent:
         await self.message.put(item=instruction)
     
     async def check_some_tool_is_done(self):
-        if self.agent_core.get_tools_call[-1]['name'] != "some_tool":
+        calls = self.agent_core.get_tools_call()
+        if not calls or calls[-1]['function']['name'] != "some_tool":
             await self.put_instruction(instruction="请使用some_tool来结束你这次的指令")
 
     def set_stream_chunk_processer(self,func:callable):
@@ -125,12 +126,12 @@ class ChatAgent:
             instruction = await self.message.get()
             try:
                 # 确保错误不会导致整个 Worker 挂掉
-                self.prediction(instruction)
+                await self.prediction(instruction)
             except Exception as e:
                 print(f"Agent 执行出错: {e}")
             finally:
                 self.message.task_done()
 
-    def prediction(self, instruction):
-        for _ in self.agent_core.apredict(instruction=instruction):
+    async def prediction(self, instruction):
+        async for _ in self.agent_core.apredict(instruction=instruction):
             continue

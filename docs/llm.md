@@ -82,7 +82,7 @@ llm.predict(
 | **`max_tokens`** | `int` | `None` | **最大长度限制**。限制模型生成的最大字符/Token 数。 |
 | **`presence_penalty`** | `float` | `None` | **存在惩罚**。正值会促使模型讨论新话题。 |
 | **`frequency_penalty`** | `float` | `None` | **频率惩罚**。正值会降低模型重复原文的可能性。 |
-| **`format`** | `str` | `"text"` | **输出格式**。若设为 `"json_object"`，则强制模型返回 JSON 字符串。 |
+| **`format`** | `str` | `"text"` | **输出格式**。若设为 `"json"`，则强制模型返回 JSON 字符串（内部映射为 `response_format=json_object`）。 |
 | **`json_format`** | `str` | `'{}'` | **JSON 模板**。传入 JSON 样式，引导模型按此结构填充数据。 |
 | **`tools`** | `list` | `None` | **工具列表**。传递符合 JSON Schema 规范的工具，用于 Agent 调用。 |
 | **`timeout`** | `int` | `180` | **请求超时**。单位为秒。 |
@@ -168,8 +168,8 @@ tokens # int类型的
 
 | 参数名 | 类型 | 默认值 | 描述 |
 | --- | --- | --- | --- |
-| **`input_image`** | `str` / `list` | `None` | **图片输入**。支持传入单个路径/URL，或由它们组成的列表。Tina 会自动处理 Base64 转换。 |
-| **`input_audio`** | `str` / `list` | `None` | **音频输入**。支持传入本地音频文件路径或 URL。 |
+| **`input_image`** | `str` / `list` | `None` | **图片输入**。支持本地图片路径或路径列表（会自动转 Base64）；远程 URL 请用 `input_url`。 |
+| **`input_audio`** | `str` / `list` | `None` | **音频输入**。支持本地音频文件路径或路径列表（不支持 URL）。 |
 | **`input_url`** | `str` / `list` | `None` | **通用 URL 输入**。用于处理模型支持的其他远程资源。 |
 | **`image_detail`** | `str` | `"auto"` | **图像解析细节**。可选 `"low"`, `"high"`, `"auto"`。高细节会消耗更多 Token 但能看清细微文字。 |
 
@@ -186,8 +186,8 @@ tokens # int类型的
 | 参数名 | 类型 | 默认值 | 描述 |
 | --- | --- | --- | --- |
 | **`input_text`** | `str` | `None` | 该条消息中的文本描述。 |
-| **`input_image`** | `str` / `list` | `None` | 本地图片路径或 URL。 |
-| **`input_audio`** | `str` / `list` | `None` | 本地音频路径或 URL。 |
+| **`input_image`** | `str` / `list` | `None` | 本地图片路径或路径列表（不支持 URL）。 |
+| **`input_audio`** | `str` / `list` | `None` | 本地音频路径或路径列表（不支持 URL）。 |
 | **`input_url`** | `str` / `list` | `None` | 其他远程资源 URL。 |
 | **`image_detail`** | `str` | `"auto"` | 图片解析精度 (`low` / `high` / `auto`)。 |
 | **`role`** | `str` | `"user"` | 消息的角色，默认为用户。 |

@@ -108,7 +108,7 @@ tools.unregister(name = "remember")
 | **`name`** | `str` | `None` | 工具的名称 |
 ### 获取工具列表的JSON schema get_tools get_tools_for_llm
 它允许你获取工具列表的JSON schema  
-和get_tools不一样的是 get_tools_for_llm会返回一个把参数名称更改为json对应的参数名称
+`get_tools` 与 `get_tools_for_llm` 返回的是同一套 schema（后者只是重新包装成新列表，不会改名）：
 ```python
 print(tools.get_tools())
 print(tools.get_tools_for_llm())
@@ -117,6 +117,7 @@ print(tools.get_tools_for_llm())
 ### 工具包加法和减法 + += - -= 
 在tina中允许你合并其他人的工具包通过+=等运算符  
 当你的工具包已经存在了对应的工具包时，不会相加  
+如果两个工具包里存在**同名工具**，相加时会抛出 `ToolAlreadyExists`  
 同时你尝试使用-=减去工具包时，如果对应的工具包不存在，不会产生作用
 ```python
 from tina import Tools
@@ -143,7 +144,7 @@ a_tools.add_tools([b_tools,c_tools])
 #### 参数
 | 参数名 | 类型 | 默认值 | 描述 |
 | --- | --- | --- | --- |
-| **`tools`** | `Tools | list[Tools]` | `None` | 允许你传入一个或者多个工具包 |
+| **`tools`** | `Tools | list[Tools]` | **必填** | 允许你传入一个或者多个工具包 |
  
 ### 去除工具包 sub_tools
 在tina中允许你通过sub_tools方法去除工具包
@@ -159,11 +160,11 @@ a_tools.sub_tools([b_tools])
 #### 参数
 | 参数名 | 类型 | 默认值 | 描述 |
 | --- | --- | --- | --- |
-| **`tools`** | `Tools | list[Tools]` | `None` | 允许你传入一个或者多个工具包 |
+| **`tools`** | `Tools | list[Tools]` | **必填** | 允许你传入一个或者多个工具包 |
 ### 执行tool_calls execute aexecute
 它会执行tool_calls，并返回工具执行的结果
 ```python
-from tina import Tools
+from tina import AgentEvents, Tools
 
 tools = Tools()
 
@@ -185,10 +186,10 @@ tool_calls = [
 ]
 
 # 执行工具
-results = tools.execute(tool_calls)
+results = tools.execute(tool_calls, events=AgentEvents())
 
 # results 会返回一个列表，包含了每条工具执行后的消息对象
-# [{"role": "tool", "tool_call_id": "call_123", "name": "get_weather", "content": "上海今天多云。"}]
+# [{"role": "tool", "tool_call_id": "call_123", "tool_name": "get_weather", "content": "上海今天多云。"}]
 print(results)
 ```
 #### 参数
@@ -202,7 +203,7 @@ print(results)
 #### 使用示例
 
 ```python
-from tina import Tools
+from tina import AgentEvents, Tools
 
 tools = Tools()
 
@@ -224,10 +225,10 @@ tool_calls = [
 ]
 
 # 执行工具
-results = tools.execute(tool_calls)
+results = tools.execute(tool_calls, events=AgentEvents())
 
 # results 会返回一个列表，包含了每条工具执行后的消息对象
-# [{"role": "tool", "tool_call_id": "call_123", "name": "get_weather", "content": "上海今天多云。"}]
+# [{"role": "tool", "tool_call_id": "call_123", "tool_name": "get_weather", "content": "上海今天多云。"}]
 print(results)
 
 ```
