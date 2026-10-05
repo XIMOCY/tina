@@ -20,8 +20,8 @@ llm = BaseAPI(
 )
 ```
 api_key: 选填 ，这个是你在大模型服务厂商获得的api_key  
-base_url: 选填 ，这个是你的大模型服务厂商的api_url   
-> 注意 为了考虑有些私人部署的大模型服务 ，我默认不会帮你补充 /chat/completions 这个路由 如果出现了404很大概率是你没在后面跟上这个参数  
+base_url: 选填 ，这个是你的大模型服务厂商的api_url（根地址即可，如 `https://api.openai.com/v1`）   
+> 从 0.7.0 起会自动补全 `/chat/completions` 路由：只写根地址（如 `https://api.deepseek.com`）或写完整地址都行；旧版本需要自行带上该路由。  
 
 model: 选填 ，这是你要使用的大模型名称  
 env_path: 选填 ，这个是你的env文件路径

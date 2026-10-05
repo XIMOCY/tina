@@ -12,7 +12,7 @@ from tina import Agent,Tools # 导入Agent组件和Tools组件
 from tina.llm import BaseAPI #导入基于OpenAI API的BaseAPI组件 它负责使用大模型
 llm = BaseAPI(
     api_key = "", #你申请的大模型API key
-    base_url = "", #如果你是获取的OpenAI格式的Base_url 请在后面自行添加 /chat/completions
+    base_url = "", #大模型服务地址（如 https://api.openai.com/v1），无需自行添加 /chat/completions
     model = "" #模型的名称
 )
 tools = Tools()

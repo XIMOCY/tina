@@ -37,7 +37,7 @@ from tina.llm import BaseAPI
 # 1. 实例化大模型（支持通过 tina.env 文件配置）
 llm = BaseAPI(
     api_key="your-api-key",
-    base_url="https://api.openai.com/v1/chat/completions",
+    base_url="https://api.openai.com/v1",
     model="gpt-4o"
 )
 
@@ -126,7 +126,7 @@ llm = BaseAPI()
 # 或者：手动传入参数
 llm = BaseAPI(
     api_key="your-api-key",
-    base_url="https://api.openai.com/v1/chat/completions",
+    base_url="https://api.openai.com/v1",
     model="gpt-4o"
 )
 ```
@@ -134,11 +134,11 @@ llm = BaseAPI(
 `tina.env` 文件示例：
 ```env
 LLM_API_KEY="your-api-key"
-BASE_URL="https://api.openai.com/v1/chat/completions"
+BASE_URL="https://api.openai.com/v1"
 MODEL_NAME="gpt-4o"
 ```
 
-> **注意**：`base_url` 需要包含完整的 `/chat/completions` 路由，tina 不会自动补充。
+> **base_url 规则（0.7.0 起）**：只写服务根地址即可（如 `https://api.openai.com/v1`），tina 会自动补上 `/chat/completions`；写完整地址（`.../chat/completions`）也依然兼容。旧文档要求"必须自带 `/chat/completions`"的说法已作废。
 
 ### 1.2 非流式调用
 
@@ -1091,7 +1091,7 @@ tina 支持通过环境文件配置 API 信息，自动从当前目录查找 `.e
 
 ```env
 LLM_API_KEY="your-api-key"
-BASE_URL="https://api.openai.com/v1/chat/completions"
+BASE_URL="https://api.openai.com/v1"
 MODEL_NAME="gpt-4o"
 MAX_INPUT=8000
 ```
