@@ -18,7 +18,7 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "tina-python>=0.7.0rc0",
+    "tina-python>=0.7.0",
     "textual>=0.80",
 ]
 
