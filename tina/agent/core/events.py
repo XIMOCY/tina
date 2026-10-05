@@ -37,8 +37,12 @@ class AgentEvents:
             "on_tool_confirmation": None,
             # 处理流式输出的每一个chunk
             "on_stream_chunk": [],
+            # 每次 LLM 请求返回 usage 时触发（含工具循环的每一轮）
+            "on_usage": [],
             # 在本次推理的最后
-            "on_turn_end":[]
+            "on_turn_end":[],
+            # 每次 LLM 调用之前（含工具循环的每一轮），安全的上下文注入点
+            "before_llm_call": [],
         }
 
 
@@ -67,8 +71,10 @@ class AgentEvents:
             "before_user_instruction": {"min_params": 1, "param_types": [str]},
             "after_user_instruction": {"min_params": 2, "param_types": [str, str]},
             "on_stream_chunk": {"min_params": 1, "param_types": [dict]},
+            "on_usage": {"min_params": 1, "param_types": [object]},
             "on_tool_confirmation": {"min_params": 2, "param_types": [str, dict]},
             "on_turn_end": {"min_params": 0, "param_types": []},
+            "before_llm_call": {"min_params": 0, "param_types": []},
         }
 
         if event_name not in event_requirements:
@@ -140,6 +146,56 @@ class AgentEvents:
             logger.debug(
                 f"Events - on_turn_end处理器{func.__name__}执行完毕"
             )
+    def before_llm_call(self):
+        """
+        在每一次 LLM 调用之前触发（包含工具循环的每一轮），不需要参数。
+        这是唯一安全的「往上下文里注入新消息」的时机：此时上一轮的
+        assistant / tool 消息都已写入，下一轮尚未读取上下文。
+        """
+
+        def decorator(func):
+            self._validate_event_handler_signature("before_llm_call", func)
+            self.add_handler("before_llm_call", func)
+            return func
+
+        return decorator
+
+    def add_before_llm_call_handler(self, func: callable | list[callable]):
+        """
+        在每一次 LLM 调用之前触发，不需要参数。
+        """
+        if isinstance(func, list):
+            for f in func:
+                self._validate_event_handler_signature("before_llm_call", f)
+                self.add_handler("before_llm_call", f)
+        else:
+            self._validate_event_handler_signature("before_llm_call", func)
+            self.add_handler("before_llm_call", func)
+
+    def trigger_before_llm_call(self):
+        """
+        同步触发 before_llm_call 事件，不需要参数。
+        """
+        for func in self.event_handler["before_llm_call"]:
+            if inspect.iscoroutinefunction(func):
+                logger.warning(
+                    f"Events - 异步事件before_llm_call处理器{func.__name__}在同步调用中被忽略"
+                )
+                continue
+            func()
+            logger.debug(f"Events - before_llm_call处理器{func.__name__}执行完毕")
+
+    async def atrigger_before_llm_call(self):
+        """
+        异步触发 before_llm_call 事件，不需要参数。
+        """
+        for func in self.event_handler["before_llm_call"]:
+            if inspect.iscoroutinefunction(func):
+                await func()
+            else:
+                func()
+            logger.debug(f"Events - before_llm_call处理器{func.__name__}执行完毕")
+
     def on_stream_chunk(self):
         """
         在大模型处理用户输入时，每处理一个chunk，都会调用此函数
@@ -167,6 +223,34 @@ class AgentEvents:
         else:
             self._validate_event_handler_signature("on_stream_chunk", func)
             self.add_handler("on_stream_chunk", func)
+
+    def on_usage(self):
+        """
+        每次 LLM 请求返回 usage 时触发
+        需要事件处理函数接受下面的参数：
+        usage: tina.utils.Usage
+        """
+
+        def decorator(func):
+            self._validate_event_handler_signature("on_usage", func)
+            self.add_handler("on_usage", func)
+            return func
+
+        return decorator
+
+    def add_on_usage_handler(self, func: callable | list[callable]):
+        """
+        每次 LLM 请求返回 usage 时触发
+        需要事件处理函数接受下面的参数：
+        usage: tina.utils.Usage
+        """
+        if isinstance(func, list):
+            for f in func:
+                self._validate_event_handler_signature("on_usage", f)
+                self.add_handler("on_usage", f)
+        else:
+            self._validate_event_handler_signature("on_usage", func)
+            self.add_handler("on_usage", func)
 
     def before_tool_call(self):
         """
@@ -633,3 +717,23 @@ class AgentEvents:
             logger.debug(
                 f"Events - on_stream_chunk处理器{func.__name__}返回结果{result}"
             )
+
+    def trigger_on_usage(self, usage):
+        """广播一次 usage（usage 为 tina.utils.Usage）"""
+        for func in self.event_handler["on_usage"]:
+            if inspect.iscoroutinefunction(func):
+                logger.warning(
+                    f"Events - 异步事件on_usage处理器{func.__name__}在同步调用中被忽略"
+                )
+                continue
+            func(usage)
+            logger.debug(f"Events - on_usage处理器{func.__name__}执行完毕")
+
+    async def atrigger_on_usage(self, usage):
+        """广播一次 usage（usage 为 tina.utils.Usage）"""
+        for func in self.event_handler["on_usage"]:
+            if inspect.iscoroutinefunction(func):
+                await func(usage)
+            else:
+                func(usage)
+            logger.debug(f"Events - on_usage处理器{func.__name__}执行完毕")

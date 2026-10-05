@@ -16,8 +16,8 @@ from typing import AsyncGenerator, Union, Generator
 from ..utils.env_reader import EnvReader
 from ..core.error import APIRequestFailed
 from ..utils.output_parser import stream_generator_parser
+from ..utils.url import derive_api_root, normalize_base_url
 from ..core import logger
-from ..utils.timer import timer, stream_timer, async_stream_timer
 
 
 class BaseAPI:
@@ -84,6 +84,8 @@ class BaseAPI:
             raise ValueError(
                 "未找到 Base URL，请通过参数 base_url 传入或创建 .env 文件并设置 base_url=your_url"
             )
+        # 只需要提供根地址，自动补齐 /chat/completions
+        self.base_url = normalize_base_url(self.base_url)
         if not self.model:
             self.logger.error(
                 "BaseAPI - 未找到模型名称，请通过参数 model 传入或创建 .env 文件并设置 model=your_model"
@@ -162,11 +164,10 @@ class BaseAPI:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self._async_client.aclose()
 
-    @timer
     def get_models(self) -> list:
         """返回支持的模型列表"""
         response = httpx.get(
-            f"{self.base_url.rstrip('/chat/completions')}/models",
+            f"{derive_api_root(self.base_url)}/models",
             headers=self._prepare_headers(),
         )
         if response.status_code != 200:
@@ -175,7 +176,7 @@ class BaseAPI:
                 f"BaseAPI.get_models - 请求失败了，状态码：{response.status_code}，错误信息：{json.loads(rep.decode('utf-8'))['error']['message']}"
             )
             raise APIRequestFailed(
-                url=f"{self.base_url.rstrip('/chat/completions')}/models",
+                url=f"{derive_api_root(self.base_url)}/models",
                 status_code=response.status_code,
                 error_details=json.loads(rep.decode("utf-8"))["error"]["message"],
             )
@@ -268,7 +269,6 @@ class BaseAPI:
             "Content-Type": "application/json",
         }
 
-    @timer
     def predict_no_stream(
         self,
         input_text: str = None,
@@ -360,9 +360,11 @@ class BaseAPI:
             if tool_calls:
                 result["tool_calls"] = tool_calls
 
+        if response_data.get("usage"):
+            result["usage"] = response_data["usage"]
+
         return result
 
-    @stream_timer
     def predict_stream(
         self,
         input_text: str = None,
@@ -659,7 +661,6 @@ class BaseAPI:
                 **kwargs,
             )
 
-    @async_stream_timer
     async def apredict_stream(
         self,
         input_text: str = None,
@@ -698,14 +699,13 @@ class BaseAPI:
         )
         headers = self._prepare_headers()
 
-        # 使用异步流式解析器
-        from ..utils.output_parser import astream_generator_parser
+        # 使用异步流式解析器（带瞬时错误重试）
+        from ..utils.output_parser import astream_generator_parser_with_retry
 
-        return astream_generator_parser(
+        return astream_generator_parser_with_retry(
             self.aclient, self.base_url, payload, headers, timeout
         )
 
-    @timer
     async def apredict_no_stream(
         self,
         input_text: str = None,
@@ -798,5 +798,8 @@ class BaseAPI:
             # 修改为需要的格式，开发者可以**直接**将这个工具使用追加到消息列表
             if tool_calls:
                 result["tool_calls"] = tool_calls
+
+        if response_data.get("usage"):
+            result["usage"] = response_data["usage"]
 
         return result

@@ -15,6 +15,7 @@ def build_multimodal_message(
     input_url: str | list[str] = None,
     image_detail: str = "auto",
     role: str = "user",
+    input_file_id: str | list[str] = None,
 ):
     user_message = []
 
@@ -55,6 +56,15 @@ def build_multimodal_message(
         urls = [input_url] if isinstance(input_url, str) else input_url
         for url in urls:
             user_message.append({"type": "image_url", "image_url": {"url": url}})
+
+    # 3. file_id（Files API 引用；无需指定 MIME，服务端按文件内容识别类型）
+    if input_file_id:
+        file_ids = (
+            [input_file_id] if isinstance(input_file_id, str) else input_file_id
+        )
+        for file_id in file_ids:
+            if file_id:
+                user_message.append({"type": "file", "file_id": file_id})
 
     # 4. 本地音频列表处理
     if input_audio:

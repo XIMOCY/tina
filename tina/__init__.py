@@ -8,6 +8,7 @@ from tina.agent import (
     AgentState,
     AgentEvents,
 )
+from tina.llm.files_api import FilesAPI
 
 __all__ = [
     "Agent",
@@ -18,5 +19,6 @@ __all__ = [
     "MultimodalAgent",
     "AgentState",
     "AgentEvents",
+    "FilesAPI",
 ]
-__version__ = "0.6.6"
+__version__ = "0.7.0rc0"

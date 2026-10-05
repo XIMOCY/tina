@@ -13,6 +13,7 @@ yunguanjia_qa.py
 .pytest_cache/
 *.ico
 logs/
+.playwright-mcp/
 tina_python.egg-info/
 dist/
 build/

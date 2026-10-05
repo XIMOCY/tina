@@ -10,7 +10,17 @@ Agent类：基础智能体类，默认支持API调用
 from __future__ import annotations
 
 import re
-from typing import List, Literal, Union, Generator, Dict, Any, AsyncGenerator, overload
+from typing import (
+    List,
+    Literal,
+    Union,
+    Generator,
+    Dict,
+    Any,
+    Optional,
+    AsyncGenerator,
+    overload,
+)
 
 from tina.agent.core.agent_response import AgentResponse, ToolCall
 from tina.agent.core.state import AgentState
@@ -18,7 +28,7 @@ from tina.agent.core.state import AgentState
 from ..llm.base_api import BaseAPI
 from .core.tools import Tools
 from .core.keyword_actions import KeywordActions
-from ..mcp.client import MCPClient
+from ..mcp.client import MCPClient, RemoteType, StdioType
 from .core.prompt import Prompt
 from .core.context_manager import ContextManager
 from .core.agent_runtime import ToolCallingAgentRuntime, BaseAgentRuntime
@@ -329,6 +339,19 @@ class Agent:
         """
         self.events.add_on_turn_end_handler(func)
 
+    def before_llm_call(self):
+        """
+        在每一次 LLM 调用之前触发（含工具循环的每一轮），不需要参数。
+        这是安全的上下文注入点。
+        """
+        return self.events.before_llm_call()
+
+    def add_before_llm_call_handler(self, func: callable | list[callable]):
+        """
+        在每一次 LLM 调用之前触发（含工具循环的每一轮），不需要参数。
+        """
+        self.events.add_before_llm_call_handler(func)
+
     def _mcp_to_tools(self, MCP):
         """如果传入了MCP，则将MCP的工具集加入到当前的工具集中"""
         try:
@@ -466,19 +489,69 @@ class Agent:
     def get_tools_call(self) -> list:
         return self.context_manager.get_tool_calls()
 
+    @overload
     def add_mcp_server(
-        self, server_id: str, config: Dict[str, Any], max_retries=3, timeout=90
+        self,
+        server_id: str,
+        *,
+        type: StdioType,
+        command: str,
+        args: Optional[List[str]] = None,
+        env: Optional[Dict[str, str]] = None,
+        max_retries: int = 3,
+        timeout: int = 90,
+    ) -> bool: ...
+
+    @overload
+    def add_mcp_server(
+        self,
+        server_id: str,
+        *,
+        type: RemoteType,
+        url: str,
+        headers: Optional[Dict[str, str]] = None,
+        max_retries: int = 3,
+        timeout: int = 90,
+    ) -> bool: ...
+
+    def add_mcp_server(
+        self,
+        server_id: str,
+        *,
+        type: str,
+        command: Optional[str] = None,
+        args: Optional[List[str]] = None,
+        env: Optional[Dict[str, str]] = None,
+        url: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
+        max_retries: int = 3,
+        timeout: int = 90,
     ) -> bool:
         """
         添加MCP服务器
         Args:
             server_id:服务器ID
-            config:服务器配置
+            type:传输类型（`stdio` / `sse` / `http`）
+            command:`stdio` 类型的启动命令
+            args:`stdio` 类型的命令参数
+            env:`stdio` 类型的环境变量
+            url:`sse` / `http` 类型的服务地址
+            headers:`sse` / `http` 类型的请求头
             max_retries:最大重试次数
             timeout:超时时间
         """
         if self.mcp_client is not None:
-            return self.mcp_client.add_server(server_id, config, max_retries, timeout)
+            return self.mcp_client.add_server(
+                server_id,
+                type=type,
+                command=command,
+                args=args,
+                env=env,
+                url=url,
+                headers=headers,
+                max_retries=max_retries,
+                timeout=timeout,
+            )
         else:
             raise ValueError("MCP客户端未初始化，请先初始化MCP客户端")
 

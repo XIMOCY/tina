@@ -263,6 +263,8 @@ class BaseMultimodalAPI(BaseAPI):
         result = {"role": "assistant", "content": msg.get("content", "")}
         if "tool_calls" in msg:
             result["tool_calls"] = msg["tool_calls"]
+        if res_json.get("usage"):
+            result["usage"] = res_json["usage"]
         return result
 
     def predict_stream(
@@ -551,6 +553,8 @@ class BaseMultimodalAPI(BaseAPI):
             result = {"role": "assistant", "content": msg.get("content", "")}
             if "tool_calls" in msg:
                 result["tool_calls"] = msg["tool_calls"]
+            if res_json.get("usage"):
+                result["usage"] = res_json["usage"]
             return result
 
     async def apredict_stream(
@@ -607,7 +611,7 @@ class BaseMultimodalAPI(BaseAPI):
         Raises:
             APIRequestFailed: 当API调用失败时抛出异常
         """
-        from ..utils.output_parser import astream_generator_parser
+        from ..utils.output_parser import astream_generator_parser_with_retry
 
         prepared_messages = self._prepare_multimodal_messages(
             input_text,
@@ -634,6 +638,6 @@ class BaseMultimodalAPI(BaseAPI):
             tools=tools,
             **kwargs,
         )
-        return astream_generator_parser(
+        return astream_generator_parser_with_retry(
             self.aclient, self.base_url, payload, self._prepare_headers(), timeout
         )

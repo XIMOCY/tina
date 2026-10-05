@@ -1,3 +1,6 @@
+import asyncio
+import concurrent.futures
+
 from .client import MCPClient
 from ..core import logger
 from typing import Dict, Any
@@ -20,15 +23,19 @@ class MCPToolExecutor:
 
     @staticmethod
     def execute_mcp_tool(
-        _tool_name: str, _tool_args: Dict[str, Any], mcp_client: MCPClient
+        _tool_name: str,
+        _tool_args: Dict[str, Any],
+        mcp_client: MCPClient,
+        timeout: float = 60,
     ) -> str:
         """
-        执行MCP工具调用
+        执行MCP工具调用（同步）
 
         Args:
             tool_name: 工具名称，格式为"mcp_server_id_tool_name"
             args: 工具参数
             mcp_client: MCP客户端实例
+            timeout: 超时时间（秒），<0 表示不限制
 
         Returns:
             str: 工具调用结果
@@ -38,43 +45,56 @@ class MCPToolExecutor:
             server_id, actual_tool_name = MCPToolExecutor._parse_name(_tool_name)
 
             # 调用MCP工具
-            result = mcp_client.call_tool(actual_tool_name, _tool_args, server_id)
+            result = mcp_client.call_tool(
+                actual_tool_name, _tool_args, server_id, timeout=timeout
+            )
 
-            if result["success"]:
+            return MCPToolExecutor._format_result(_tool_name, result, _tool_args)
 
-                logger.debug(
-                    f"MCPToolExecutor - 工具 '{_tool_name}' 执行结果: {result}：参数 {_tool_args}"
-                )
-                return _content_to_text(result)
-            else:
-                logger.error(
-                    f"MCPToolExecutor - 工具'{_tool_name}' 执行错误: {result.get('error', '未知错误')}"
-                )
-                return f"工具调用失败: {result.get('error', '未知错误')}"
-
+        except concurrent.futures.TimeoutError:
+            return f"工具执行超时（{timeout}秒）: {_tool_name}"
         except Exception as e:
-            logger.error(logger.debug(f"MCPToolExecutor - 错误: {str(e)}"))
+            logger.error(f"MCPToolExecutor - 错误: {str(e)}")
             return f"执行MCP工具时出错: {str(e)}"
 
     async def aexecute_mcp_tool(
-        _tool_name: str, _tool_args: Dict[str, Any], mcp_client: MCPClient
+        _tool_name: str,
+        _tool_args: Dict[str, Any],
+        mcp_client: MCPClient,
+        timeout: float = 60,
     ) -> str:
+        """执行MCP工具调用（异步，不阻塞事件循环）
+
+        MCP 调用体跑在 MCP 专用 loop 上，这里只 await 其 future；超时/打断
+        只会取消“等待”，不会卡住 Agent 的事件循环。
+        """
         try:
             server_id, actual_tool_name = MCPToolExecutor._parse_name(_tool_name)
-            result = mcp_client.call_tool(actual_tool_name, _tool_args, server_id)
-            if result["success"]:
-                logger.debug(
-                    f"MCPToolExecutor - 工具 '{_tool_name}' 执行结果: {result}：参数 {_tool_args}"
-                )
-                return _content_to_text(result)
-            else:
-                logger.error(
-                    f"MCPToolExecutor - 工具'{_tool_name}' 执行错误: {result.get('error', '未知错误')}"
-                )
-                return f"工具调用失败: {result.get('error', '未知错误')}"
+            future = mcp_client.submit_tool_call(
+                actual_tool_name, _tool_args, server_id
+            )
+            wait = None if (timeout is None or timeout < 0) else timeout
+            result = await asyncio.wait_for(asyncio.wrap_future(future), timeout=wait)
+            return MCPToolExecutor._format_result(_tool_name, result, _tool_args)
+        except asyncio.TimeoutError:
+            return f"工具执行超时（{timeout}秒）: {_tool_name}"
         except Exception as e:
-            logger.error(logger.debug(f"MCPToolExecutor - 错误: {str(e)}"))
+            logger.error(f"MCPToolExecutor - 错误: {str(e)}")
             return f"执行MCP工具时出错: {str(e)}"
+
+    @staticmethod
+    def _format_result(
+        _tool_name: str, result: Dict[str, Any], _tool_args: Dict[str, Any]
+    ) -> str:
+        if result["success"]:
+            logger.debug(
+                f"MCPToolExecutor - 工具 '{_tool_name}' 执行结果: {result}：参数 {_tool_args}"
+            )
+            return _content_to_text(result)
+        logger.error(
+            f"MCPToolExecutor - 工具'{_tool_name}' 执行错误: {result.get('error', '未知错误')}"
+        )
+        return f"工具调用失败: {result.get('error', '未知错误')}"
 
     @staticmethod
     def _parse_name(_tool_name: str) -> tuple[str, str]:

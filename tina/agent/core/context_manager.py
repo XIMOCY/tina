@@ -323,6 +323,7 @@ class MultimodalContextManager(ContextManager):
         image: str | list[str] = None,
         audio: str | list[str] = None,
         url: str | list[str] = None,
+        file_id: str | list[str] = None,
     ) -> list[dict[str, Any]]:
         user_content = build_multimodal_message(
             input_text=instruction,
@@ -330,6 +331,7 @@ class MultimodalContextManager(ContextManager):
             input_audio=audio,
             input_url=url,
             role="user",
+            input_file_id=file_id,
         )
         if user_content is None:
             return self.messages
@@ -395,12 +397,13 @@ class MultimodalContextManager(ContextManager):
                 pending_multimodal.append((item["tool_name"], multimodal_result))
 
         # 全部 tool 消息写入完毕后，再追加多模态 user 消息
-        for tool_name, (images, audios, urls) in pending_multimodal:
+        for tool_name, (images, audios, urls, file_ids) in pending_multimodal:
             self.add_user_message(
                 instruction=f"工具{tool_name}的结果",
                 image=images,
                 audio=audios,
                 url=urls,
+                file_id=file_ids,
             )
 
         self.limit_messages()
@@ -429,16 +432,18 @@ class MultimodalContextManager(ContextManager):
         if not values:
             return None
 
-        images, audios, urls = [], [], []
+        images, audios, urls, file_ids = [], [], [], []
         if multimodal_type == "image":
             images = values
         elif multimodal_type == "audio":
             audios = values
         elif multimodal_type == "url":
             urls = values
+        elif multimodal_type == "file_id":
+            file_ids = values
         else:
             return None
-        return images, audios, urls
+        return images, audios, urls, file_ids
 
     def add_tool_call_result(
         self, tool_result: str | None, tool_call_id: str, tool_call: dict[str, Any]

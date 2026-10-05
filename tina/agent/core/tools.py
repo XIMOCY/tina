@@ -11,11 +11,55 @@ from __future__ import annotations
 
 import inspect
 import re
-from typing import Callable, List, Dict
+from typing import Callable, List, Dict, get_type_hints
 from .executor import ToolsExecutor
 from ...utils.doc_parser import parse_docstring
 from ...core.error import ToolNotFound, ToolsAddError, ToolAlreadyExists, ToolsNotNamed
 from ...utils.type_mapper import convert_tools_for_llm
+
+
+# 常见内置类型的「字符串注解」兜底映射（get_type_hints 解析失败时用）
+_SIMPLE_TYPE_NAMES = {
+    "str": str,
+    "int": int,
+    "float": float,
+    "bool": bool,
+    "list": list,
+    "dict": dict,
+    "tuple": tuple,
+    "set": set,
+    "bytes": bytes,
+    "None": type(None),
+    "NoneType": type(None),
+}
+
+
+def _resolve_param_types(tool: Callable) -> Dict[str, object]:
+    """解析工具函数的参数类型。
+
+    兼容 PEP 563（`from __future__ import annotations`）：此时
+    `inspect.signature(tool).parameters[...].annotation` 是**字符串**，直接交给
+    TypeMapper 会被当成 object。这里优先用 `typing.get_type_hints` 还原真实类型；
+    解析失败时退回原始注解，并把仍为字符串的常见内置类型名映射回类型。
+    """
+    try:
+        hints = get_type_hints(tool)
+    except Exception:
+        hints = {}
+
+    resolved: Dict[str, object] = {}
+    for name, param in inspect.signature(tool).parameters.items():
+        if name in hints:
+            resolved[name] = hints[name]
+            continue
+        annotation = param.annotation
+        if annotation is inspect.Parameter.empty:
+            resolved[name] = str
+        elif isinstance(annotation, str):
+            resolved[name] = _SIMPLE_TYPE_NAMES.get(annotation.strip(), object)
+        else:
+            resolved[name] = annotation
+    return resolved
 
 
 class Tool:
@@ -30,8 +74,11 @@ class Tool:
     return_image: bool
     return_audio: bool
     return_url: bool
+    return_file_id: bool
     schema: dict
     belongs_to: str
+    original_name: str
+    timeout: int
 
     def __init__(
         self,
@@ -46,8 +93,11 @@ class Tool:
         return_image: bool = False,
         return_audio: bool = False,
         return_url: bool = False,
+        return_file_id: bool = False,
         schema: dict = {},
         belongs_to: str = None,
+        original_name: str = None,
+        timeout: int = 60,
     ):
         self.tool = tool
         self.name = name
@@ -59,8 +109,17 @@ class Tool:
         self.return_image = return_image
         self.return_audio = return_audio
         self.return_url = return_url
+        self.return_file_id = return_file_id
         self.schema = schema
         self.belongs_to = belongs_to
+        # 原始名（未加包名前缀）：优先显式传入，否则取函数名，最后回退到注册名
+        self.original_name = (
+            original_name
+            or (getattr(tool, "__name__", None) if tool is not None else None)
+            or name
+        )
+        # 单工具超时（秒）；-1 表示不限制
+        self.timeout = timeout
         self.metadata = metadata
 
     def get_tool(self):
@@ -88,6 +147,8 @@ class Tool:
             return "audio"
         if self.return_url:
             return "url"
+        if self.return_file_id:
+            return "file_id"
         return "text"
 
     def get_schema(self):
@@ -210,6 +271,8 @@ class Tools:
         return_image: bool = False,
         return_audio: bool = False,
         return_url: bool = False,
+        return_file_id: bool = False,
+        timeout: int = 60,
     ):
         """
         注册一个工具，只需要打上这个装饰器即可
@@ -222,6 +285,8 @@ class Tools:
             return_image (bool): 是否返回图片 多模态Agent适用 会自动地把工具的图片提交给模型
             return_audio (bool): 是否返回音频 多模态Agent适用 会自动地把工具的音频提交给模型
             return_url (bool): 是否返回 URL 多模态Agent适用 会自动地把URL提交给模型
+            return_file_id (bool): 是否返回 file_id（Files API）多模态Agent适用 会自动地把 file_id 提交给模型
+            timeout (int): 单工具执行超时时间（秒），默认 60，-1 表示不限制
         """
 
         def decorator(func):
@@ -233,6 +298,8 @@ class Tools:
                 return_image=return_image,
                 return_audio=return_audio,
                 return_url=return_url,
+                return_file_id=return_file_id,
+                timeout=timeout,
             )
             return func
 
@@ -247,6 +314,8 @@ class Tools:
         return_image: bool = False,
         return_audio: bool = False,
         return_url: bool = False,
+        return_file_id: bool = False,
+        timeout: int = 60,
     ) -> dict:
         """
         注册一个工具
@@ -259,6 +328,8 @@ class Tools:
             return_image (bool): 是否返回图片 多模态Agent适用 会自动地把工具的图片提交给模型
             return_audio (bool): 是否返回音频 多模态Agent适用 会自动地把工具的音频提交给模型
             return_url (bool): 是否返回 URL 多模态Agent适用 会自动地把URL提交给模型
+            return_file_id (bool): 是否返回 file_id（Files API）多模态Agent适用 会自动地把 file_id 提交给模型
+            timeout (int): 单工具执行超时时间（秒），默认 60，-1 表示不限制
         """
         original_name = tool.__name__
         logic_name = (
@@ -282,10 +353,9 @@ class Tools:
         properties = {}
         from ...utils.type_mapper import TypeMapper
 
+        param_types = _resolve_param_types(tool)
         for p_name, p in parameters_sig.items():
-            param_type = (
-                p.annotation if p.annotation != inspect.Parameter.empty else str
-            )
+            param_type = param_types.get(p_name, str)
             json_schema = TypeMapper.map_type(param_type)
             properties[p_name] = {
                 **json_schema,
@@ -318,6 +388,8 @@ class Tools:
             return_image=return_image,
             return_audio=return_audio,
             return_url=return_url,
+            return_file_id=return_file_id,
+            timeout=timeout,
             schema=schema,
             belongs_to=self.instance_name,
         )
@@ -325,7 +397,12 @@ class Tools:
         return schema
 
     def register_no_function(
-        self, name: str, description: str, required_parameters: list, parameters: dict
+        self,
+        name: str,
+        description: str,
+        required_parameters: list,
+        parameters: dict,
+        original_name: str = None,
     ):
         """
         注册工具，将工具信息添加到tools列表中
@@ -365,6 +442,7 @@ class Tools:
             name=_logic_name,
             schema=_shcema,
             belongs_to=self.instance_name,
+            original_name=original_name,
         )
         self._direct_tools.append(_tool)
 
@@ -388,23 +466,19 @@ class Tools:
         description_part = description_part.strip()
         return description if description is not None else description_part
 
-    def execute(self, _tool_calls, _mcp_client=None, timeout=60, events=None) -> any:
+    def execute(self, _tool_calls, _mcp_client=None, events=None) -> any:
         """
         执行工具 可以直接传递Tool_Calls列表
         Args:
             _tool_calls (list): 工具调用列表
             _mcp_client (MCPClient): MCP客户端
-            timeout (int): 超时时间（秒）, 默认60秒
+        超时时间由每个工具自身声明（见 Tool.timeout）
         """
-        return self.tools_executor.execute(
-            _tool_calls, self, _mcp_client, timeout, events
-        )
+        return self.tools_executor.execute(_tool_calls, self, _mcp_client, events)
 
-    async def aexecute(
-        self, _tool_calls, _mcp_client=None, timeout=60, events=None
-    ) -> any:
+    async def aexecute(self, _tool_calls, _mcp_client=None, events=None) -> any:
         return await self.tools_executor.aexecute(
-            _tool_calls, self, _mcp_client, timeout, events
+            _tool_calls, self, _mcp_client, events
         )
 
     def _get_tool_by_name(self, name: str) -> Tool:
@@ -413,11 +487,53 @@ class Tools:
                 return t
         raise ToolNotFound(name)
 
+    # --- 名称反查（应对命名空间前缀）---
+    def get_tool_name(self, original_name: str) -> str | None:
+        """按原始函数/工具名，返回当前带命名空间的注册名；找不到返回 None。
+
+        先查本包直属工具，再递归子包。例如 v_tools.get_tool_name("get_image")
+        可拿到实际注册名 "v_get_image"。
+        """
+        for t in self._direct_tools:
+            if t.original_name == original_name:
+                return t.name
+        for bundle in self._sub_bundles:
+            found = bundle.get_tool_name(original_name)
+            if found is not None:
+                return found
+        return None
+
+    def get_tool_by_original(self, original_name: str) -> Tool | None:
+        """按原始名返回 Tool 对象；找不到返回 None"""
+        for t in self._direct_tools:
+            if t.original_name == original_name:
+                return t
+        for bundle in self._sub_bundles:
+            found = bundle.get_tool_by_original(original_name)
+            if found is not None:
+                return found
+        return None
+
+    def get_original_name(self, name: str) -> str | None:
+        """按当前带命名空间的注册名，反查原始名；找不到返回 None"""
+        for t in self._direct_tools:
+            if t.name == name:
+                return t.original_name
+        for bundle in self._sub_bundles:
+            found = bundle.get_original_name(name)
+            if found is not None:
+                return found
+        return None
+
     def get_require_confirmations(self, name: str):
         return self._get_tool_by_name(name).require_confirmation
 
     def get_require_persistence(self, name: str):
         return self._get_tool_by_name(name).require_persistence
+
+    def get_timeout(self, name: str):
+        """返回该工具声明的执行超时（秒）；-1 表示不限制"""
+        return self._get_tool_by_name(name).timeout
 
     def get_multimodal_type(self, name: str):
         return self._get_tool_by_name(name).get_return_type()

@@ -1,0 +1,1358 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>tina-多Agent调试控制台</title>
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f4f6f9;
+    --surface: #ffffff;
+    --surface-2: #ffffff;
+    --surface-3: #f2f4f8;
+    --border: #e3e7ee;
+    --border-soft: #eef1f5;
+    --text: #1c2230;
+    --text-dim: #5b6474;
+    --muted: #8b94a5;
+    --accent: #3f6bff;
+    --accent-2: #8a5cff;
+    --accent-glow: rgba(63, 107, 255, 0.22);
+    --in: #f3f5f9;
+    --out: #edf8f1;
+    --user: #f4f0ff;
+    --danger: #d64545;
+    --ok: #16a34a;
+    --radius: 14px;
+    --mono: ui-monospace, "JetBrains Mono", "Cascadia Code", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    background:
+      radial-gradient(1100px 560px at 100% -12%, rgba(63, 107, 255, 0.08), transparent 60%),
+      radial-gradient(900px 520px at -8% 112%, rgba(138, 92, 255, 0.07), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font: 14px/1.6 -apple-system, "Segoe UI", Inter, "Microsoft YaHei", Roboto, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: rgba(63, 107, 255, 0.18); }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: #cfd6e2; border-radius: 999px;
+    border: 2px solid transparent; background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: #b6c0d0; background-clip: content-box; }
+
+  /* ---------- header ---------- */
+  header {
+    position: relative; z-index: 20;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 12px 22px;
+    border-bottom: 1px solid var(--border-soft);
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(14px);
+  }
+  header::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(63, 107, 255, 0.4), rgba(138, 92, 255, 0.32), transparent);
+    opacity: 0.6;
+  }
+  .brand { display: flex; align-items: baseline; gap: 10px; font-size: 16px; font-weight: 750; letter-spacing: 0.2px; }
+  .brand .sub { color: var(--text-dim); font-weight: 500; font-size: 13px; }
+  .header-right { display: flex; align-items: center; gap: 10px; }
+  .status {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12.5px; color: var(--text-dim);
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 6px 12px; border-radius: 999px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); transition: all 0.2s; }
+  .dot.on { background: var(--ok); box-shadow: 0 0 9px rgba(22, 163, 74, 0.6); }
+  .header-btn {
+    height: 32px; padding: 0 15px; font: inherit; font-size: 13px; cursor: pointer;
+    color: var(--text); background: var(--surface);
+    border: 1px solid var(--border); border-radius: 999px;
+    transition: border-color 0.15s, background 0.15s, transform 0.05s;
+  }
+  .header-btn:hover { border-color: rgba(63, 107, 255, 0.5); background: var(--surface-3); }
+  .header-btn:active { transform: translateY(1px); }
+  .error-banner {
+    flex: none; display: flex; align-items: center; gap: 8px;
+    padding: 9px 22px; font-size: 13px; color: #a3271f;
+    background: #fdecea; border-bottom: 1px solid #f3c5c0;
+  }
+  .error-banner::before { content: "⚠"; font-size: 14px; }
+  .error-banner.hidden { display: none; }
+
+  /* ---------- layout ---------- */
+  .layout { flex: 1; display: flex; min-height: 0; }
+  aside {
+    width: 236px; flex: none;
+    border-right: 1px solid var(--border-soft);
+    padding: 16px 12px; overflow-y: auto;
+    background: linear-gradient(180deg, #ffffff, #fbfcfe);
+  }
+  .aside-title {
+    font-size: 11px; letter-spacing: 1.4px; text-transform: uppercase;
+    color: var(--muted); margin: 0 10px 10px; font-weight: 700;
+  }
+  #agent-list { list-style: none; margin: 0; padding: 0; }
+  #agent-list li {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; margin-bottom: 4px;
+    border: 1px solid transparent; border-radius: 11px;
+    cursor: pointer; color: var(--text);
+    transition: background 0.15s, border-color 0.15s, transform 0.05s;
+  }
+  #agent-list li:hover { background: var(--surface-3); }
+  #agent-list li:active { transform: translateY(1px); }
+  #agent-list li.active {
+    background: linear-gradient(90deg, rgba(63, 107, 255, 0.12), rgba(138, 92, 255, 0.08));
+    border-color: rgba(63, 107, 255, 0.35);
+  }
+  #agent-list li .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; }
+  #agent-list li .mini { width: 8px; height: 8px; border-radius: 50%; background: #c3cad6; flex: none; transition: all 0.2s; }
+  #agent-list li.busy .mini { background: var(--ok); box-shadow: 0 0 8px rgba(22, 163, 74, 0.6); animation: pulse 1.1s infinite; }
+  @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.55); opacity: 0.5; } }
+
+  /* ---------- panels ---------- */
+  #panels {
+    flex: 1; display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    grid-auto-rows: minmax(240px, 1fr);
+    gap: 16px; padding: 16px; overflow: auto; min-height: 0;
+  }
+  #panels.single { grid-template-columns: 1fr; }
+  .panel {
+    position: relative;
+    display: flex; flex-direction: column; min-height: 0;
+    background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 10px 26px rgba(16, 24, 40, 0.06);
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .panel::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    opacity: 0; transition: opacity 0.25s;
+  }
+  .panel.busy { border-color: rgba(63, 107, 255, 0.45); box-shadow: 0 10px 30px rgba(63, 107, 255, 0.16); }
+  .panel.busy::before { opacity: 1; }
+  .panel.hidden { display: none; }
+  .panel-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 12px 15px;
+    border-bottom: 1px solid var(--border-soft);
+    background: #fafbfd;
+  }
+  .panel-head .name { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 13.5px; }
+  .panel-head .name::before {
+    content: ""; width: 7px; height: 7px; border-radius: 50%; flex: none;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 0 7px var(--accent-glow);
+  }
+  .panel-head .state {
+    font-size: 11.5px; color: var(--muted);
+    border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px;
+  }
+  .panel.busy .panel-head .state { color: var(--ok); border-color: rgba(22, 163, 74, 0.4); }
+  .panel-head .head-right { display: flex; align-items: center; gap: 8px; }
+  .panel-head .stop-btn {
+    display: none;
+    height: 24px; padding: 0 10px; font: inherit; font-size: 12px; cursor: pointer;
+    color: #b42318; background: #fef3f2;
+    border: 1px solid #f5c2bd; border-radius: 8px;
+  }
+  .panel.busy .panel-head .stop-btn { display: inline-flex; align-items: center; }
+  .panel-head .stop-btn:hover { background: #fee4e2; }
+  .log { flex: 1; overflow-y: auto; padding: 14px; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+
+  /* ---------- entries ---------- */
+  .entry { animation: fadein 0.18s ease both; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  .entry .meta { font-size: 11.5px; color: var(--text-dim); margin-bottom: 4px; letter-spacing: 0.2px; }
+  .entry .bubble {
+    white-space: normal; word-break: break-word;
+    padding: 10px 13px; border-radius: 11px;
+    background: var(--in); border: 1px solid var(--border);
+  }
+  .entry.in .bubble { border-left: 2px solid rgba(63, 107, 255, 0.75); }
+  .entry.out .bubble { background: var(--out); border-left: 2px solid rgba(22, 163, 74, 0.65); }
+  .entry.user .bubble { background: var(--user); border-color: rgba(138, 92, 255, 0.3); }
+
+  /* markdown */
+  .entry .bubble p { margin: 0 0 8px; }
+  .entry .bubble p:last-child { margin-bottom: 0; }
+  .entry .bubble pre { margin: 8px 0; padding: 11px 13px; overflow: auto; background: #f6f8fa; border: 1px solid var(--border); border-radius: 9px; }
+  .entry .bubble code { font-family: var(--mono); font-size: 12.5px; background: #eaedf3; padding: 1px 6px; border-radius: 5px; }
+  .entry .bubble pre code { background: transparent; padding: 0; }
+  .entry .bubble ul, .entry .bubble ol { margin: 6px 0; padding-left: 22px; }
+  .entry .bubble li { margin: 2px 0; }
+  .entry .bubble h1, .entry .bubble h2, .entry .bubble h3,
+  .entry .bubble h4, .entry .bubble h5, .entry .bubble h6 { margin: 12px 0 6px; line-height: 1.3; }
+  .entry .bubble h1:first-child, .entry .bubble h2:first-child, .entry .bubble h3:first-child { margin-top: 0; }
+  .entry .bubble a { color: var(--accent); text-decoration: none; }
+  .entry .bubble a:hover { text-decoration: underline; }
+  .entry .bubble strong { color: #101828; }
+
+  .entry.reasoning .bubble {
+    background: transparent; border: none; border-left: 2px solid var(--border);
+    border-radius: 0; color: var(--muted); font-size: 12.5px; padding: 2px 0 2px 12px;
+  }
+  .entry.error .bubble { background: #fdecea; border-color: #f3c5c0; color: #a3271f; }
+  .entry.note .bubble { background: #f6f8fa; border-style: dashed; color: var(--muted); font-size: 12.5px; }
+
+  /* tool card */
+  .entry.tool .tool-card {
+    border: 1px solid #d6e0ff;
+    background: linear-gradient(180deg, #f5f8ff, #eef3ff);
+    border-radius: 11px; padding: 9px 12px;
+  }
+  .tool-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--accent); font-weight: 600; margin-bottom: 6px; }
+  .tool-head .tool-status { font-weight: 400; font-size: 11px; color: var(--muted); border: 1px solid #d6e0ff; background: #fff; border-radius: 999px; padding: 0 9px; }
+  .bubble-time { display: inline-block; margin-top: 5px; font-size: 11px; color: var(--muted); background: #f2f5fa; border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; cursor: help; }
+  .entry[title] .bubble, .entry.tool[title] .tool-card { cursor: help; }
+  .tool-head .bubble-time { margin: 0 0 0 8px; }
+  .tool-head .tool-status.done { color: var(--ok); border-color: rgba(22, 163, 74, 0.4); }
+  .tool-line { display: flex; gap: 8px; margin-top: 4px; }
+  .tool-line .tlabel { flex: none; font-size: 11.5px; color: var(--muted); min-width: 34px; }
+  .tool-line .tval { flex: 1; min-width: 0; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+  .tool-res .tval { color: var(--text-dim); }
+
+  /* collapsible blocks */
+  .caret { flex: none; width: 12px; color: var(--muted); font-size: 10px; }
+  .meta.toggle, .tool-head { cursor: pointer; user-select: none; }
+  .meta.toggle .caret { margin-right: 4px; }
+  .entry.reasoning.collapsed .bubble { display: none; }
+  .entry.tool.collapsed .tool-body { display: none; }
+
+  /* queue viewer */
+  .queue-toggle {
+    height: 22px; padding: 0 10px; font: inherit; font-size: 11.5px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 5px;
+    color: var(--text-dim); background: #fff; border: 1px solid var(--border);
+    border-radius: 999px; transition: border-color 0.15s, color 0.15s;
+  }
+  .queue-toggle:hover { border-color: rgba(63, 107, 255, 0.5); color: var(--text); }
+  .queue-toggle.open { border-color: rgba(63, 107, 255, 0.55); color: var(--accent); }
+  .queue-toggle .queue-count {
+    min-width: 16px; padding: 0 5px; border-radius: 999px; text-align: center;
+    font-size: 10.5px; background: var(--surface-3); color: var(--muted);
+  }
+  .queue-toggle.has-items .queue-count { background: rgba(63, 107, 255, 0.14); color: var(--accent); }
+  .queue-panel {
+    flex: none; max-height: 0; overflow: hidden;
+    border-bottom: 1px solid var(--border-soft); background: #fafbfd;
+    transition: max-height 0.18s ease;
+  }
+  .queue-panel.open { max-height: 210px; overflow-y: auto; }
+  .queue-list { display: flex; flex-direction: column; gap: 6px; padding: 9px 13px; }
+  .queue-empty { color: var(--muted); font-size: 12px; padding: 4px 0; }
+  .queue-item { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+  .queue-item .q-index { flex: none; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .queue-item .q-from { flex: none; font-weight: 600; color: var(--accent); }
+  .queue-item .q-tag {
+    flex: none; font-size: 10.5px; color: var(--ok);
+    border: 1px solid rgba(22, 163, 74, 0.4); border-radius: 999px; padding: 0 6px;
+  }
+  .queue-item .q-text { min-width: 0; color: var(--text-dim); white-space: pre-wrap; word-break: break-word; }
+
+  /* ---------- composer ---------- */
+  footer {
+    display: flex; align-items: flex-end; gap: 10px;
+    padding: 12px 22px;
+    border-top: 1px solid var(--border-soft);
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(14px);
+  }
+  footer select, footer textarea, footer button { font: inherit; border-radius: 12px; border: 1px solid var(--border); outline: none; }
+  footer select {
+    height: 50px; padding: 0 14px; min-width: 170px;
+    color: var(--text); background: var(--surface);
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  footer textarea {
+    flex: 1; resize: none; height: 50px; padding: 14px 15px;
+    background: var(--surface); color: var(--text);
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  footer select:focus, footer textarea:focus { border-color: rgba(63, 107, 255, 0.55); box-shadow: 0 0 0 3px rgba(63, 107, 255, 0.12); }
+  footer button {
+    height: 50px; padding: 0 26px; font-weight: 650; color: #fff; cursor: pointer; border: none;
+    background: #1f2530;
+    box-shadow: 0 6px 16px rgba(31, 37, 48, 0.2);
+    transition: background 0.15s, transform 0.05s;
+  }
+  footer button:hover { background: #2b3340; }
+  footer button:active { transform: translateY(1px); }
+
+  /* ---------- overlays ---------- */
+  .overlay {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(17, 24, 39, 0.28);
+    backdrop-filter: blur(3px);
+    animation: fadein 0.15s ease both;
+  }
+  .overlay.hidden { display: none; }
+  .confirm-card, .perm-card {
+    background: #ffffff;
+    border: 1px solid var(--border); border-radius: 16px;
+    box-shadow: 0 24px 60px rgba(16, 24, 40, 0.18);
+    animation: pop 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  }
+  @keyframes pop { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
+  .confirm-card { width: min(580px, 92vw); padding: 20px 22px; }
+  .confirm-title { font-weight: 700; font-size: 15px; margin-bottom: 14px; }
+  .confirm-field { display: flex; gap: 10px; margin-bottom: 6px; font-size: 13px; }
+  .confirm-field .k { color: var(--muted); min-width: 48px; }
+  .confirm-field #cf-tool { font-family: var(--mono); color: var(--accent); }
+  .confirm-args {
+    margin: 12px 0 18px; padding: 11px 13px; max-height: 240px; overflow: auto;
+    background: #f6f8fa; border: 1px solid var(--border); border-radius: 10px;
+    font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word;
+  }
+  .confirm-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .confirm-count { font-size: 12.5px; color: var(--text-dim); }
+  .confirm-buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+  .confirm-actions button, .perm-close, .seg, .perm-all { font: inherit; cursor: pointer; transition: all 0.15s; }
+  .confirm-actions button { height: 38px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--border); }
+  .confirm-actions .ghost { background: #fff; color: var(--text); }
+  .confirm-actions .ghost:hover { border-color: #cfd6e2; background: var(--surface-3); }
+  .confirm-actions #cf-allow, .confirm-actions #cf-allow-all {
+    border: none; color: #fff; font-weight: 600;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  }
+  .confirm-actions #cf-allow:hover, .confirm-actions #cf-allow-all:hover { filter: brightness(1.05); }
+
+  .perm-card { width: min(780px, 94vw); max-height: 86vh; display: flex; flex-direction: column; }
+  .perm-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid var(--border-soft); }
+  .perm-close { height: 32px; padding: 0 15px; border-radius: 9px; color: var(--text); background: #fff; border: 1px solid var(--border); }
+  .perm-close:hover { border-color: rgba(63, 107, 255, 0.5); background: var(--surface-3); }
+  .perm-body { padding: 14px 22px 22px; overflow-y: auto; }
+  .perm-group { margin-top: 16px; }
+  .perm-agent { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--accent); font-weight: 700; margin-bottom: 9px; }
+  .perm-agent::before {
+    content: ""; width: 6px; height: 6px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  }
+  .perm-empty { color: var(--muted); font-size: 12.5px; }
+  .perm-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 9px 12px; margin-bottom: 6px;
+    background: #fafbfd; border: 1px solid var(--border); border-radius: 11px;
+  }
+  .perm-info { min-width: 0; }
+  .perm-name { font-size: 13px; font-family: var(--mono); }
+  .perm-desc { font-size: 11.5px; color: var(--text-dim); max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .perm-controls { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .seg { height: 30px; padding: 0 13px; font-size: 12.5px; color: var(--text-dim); background: #fff; border: 1px solid var(--border); border-radius: 999px; }
+  .seg:hover { color: var(--text); border-color: #cfd6e2; }
+  .seg.active { color: #fff; border-color: transparent; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+  .perm-all { height: 30px; padding: 0 13px; font-size: 12.5px; color: var(--text-dim); background: transparent; border: 1px dashed #cfd6e2; border-radius: 999px; }
+  .perm-all:hover { color: var(--text); border-color: rgba(63, 107, 255, 0.5); }
+
+  @media (max-width: 720px) {
+    aside { width: 168px; }
+    #panels { grid-template-columns: 1fr; }
+    .brand .sub { display: none; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><span>tina</span><span class="sub">多Agent调试控制台</span></div>
+  <div class="header-right">
+    <button id="perm-open" class="header-btn">权限</button>
+    <div class="status"><span id="dot" class="dot"></span><span id="status-text">连接中…</span></div>
+  </div>
+</header>
+<div id="error-banner" class="error-banner hidden"></div>
+
+<div class="layout">
+  <aside>
+    <div class="aside-title">Agents</div>
+    <ul id="agent-list"></ul>
+  </aside>
+  <main id="panels"></main>
+</div>
+
+<footer>
+  <select id="send-target" title="发送目标"></select>
+  <textarea id="input" placeholder="输入指令，Enter 发送，Shift+Enter 换行"></textarea>
+  <button id="send">发送</button>
+</footer>
+
+<div id="confirm-overlay" class="overlay hidden">
+  <div class="confirm-card">
+    <div class="confirm-title">工具执行确认</div>
+    <div class="confirm-field"><span class="k">Agent</span><span id="cf-agent"></span></div>
+    <div class="confirm-field"><span class="k">工具</span><span id="cf-tool"></span></div>
+    <pre id="cf-args" class="confirm-args"></pre>
+    <div class="confirm-actions">
+      <span class="confirm-count" id="cf-count"></span>
+      <div class="confirm-buttons">
+        <button id="cf-deny" class="ghost">拒绝</button>
+        <button id="cf-deny-always" class="ghost">始终拒绝</button>
+        <button id="cf-allow">允许</button>
+        <button id="cf-allow-always">始终允许</button>
+        <button id="cf-deny-all" class="ghost">全部拒绝</button>
+        <button id="cf-allow-all">全部允许</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="perm-overlay" class="overlay hidden">
+  <div class="perm-card">
+    <div class="perm-head">
+      <span class="confirm-title" style="margin:0">工具权限</span>
+      <button id="perm-close" class="ghost perm-close">关闭</button>
+    </div>
+    <div id="perm-body" class="perm-body"></div>
+  </div>
+</div>
+
+<script>
+  const listEl = document.getElementById("agent-list");
+  const panelsEl = document.getElementById("panels");
+  const inputEl = document.getElementById("input");
+  const sendTargetEl = document.getElementById("send-target");
+  const dotEl = document.getElementById("dot");
+  const statusTextEl = document.getElementById("status-text");
+
+  let agents = [];
+  let selected = "all";
+  const panels = {};
+  let permissions = {};
+  let confirmableTools = {};
+  let queues = {};
+
+  function connect() {
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    const ws = new WebSocket(proto + "://" + location.host + "/ws");
+    ws.onopen = () => setStatus(true);
+    ws.onclose = () => {
+      setStatus(false);
+      setTimeout(connect, 1500);
+    };
+    ws.onmessage = (event) => handle(JSON.parse(event.data));
+    window.ws = ws;
+  }
+
+  function setStatus(online) {
+    dotEl.className = "dot" + (online ? " on" : "");
+    statusTextEl.textContent = online ? "已连接" : "已断开，重连中…";
+  }
+
+  function handle(msg) {
+    switch (msg.type) {
+      case "init":
+        buildAgents(msg.agents || []);
+        permissions = msg.permissions || {};
+        confirmableTools = msg.confirmable_tools || {};
+        queues = msg.queues || {};
+        renderPermissions();
+        (msg.messages || []).forEach(routeMessage);
+        renderQueues();
+        if (msg.backend_error && msg.backend_error.fatal) {
+          showBanner("后端异常：" + (msg.backend_error.message || "") + " —— 团队可能处于暂停状态，恢复后自动继续。");
+        }
+        break;
+      case "permissions":
+        permissions = msg.permissions || {};
+        confirmableTools = msg.confirmable_tools || {};
+        renderPermissions();
+        break;
+      case "message":
+        routeMessage(msg.message);
+        break;
+      case "queues":
+        queues = msg.queues || {};
+        renderQueues();
+        break;
+      case "chunk":
+        appendChunk(msg.agent, msg.chunk || {});
+        break;
+      case "turn_end":
+        endTurn(msg.agent);
+        break;
+      case "error":
+        showError(msg);
+        break;
+      case "confirm":
+        enqueueConfirm(msg);
+        break;
+      case "interrupted":
+        markInterrupted(msg.agent, msg.ok);
+        break;
+      case "confirm_cancel":
+        cancelConfirms(msg.request_ids || []);
+        break;
+    }
+  }
+
+  function buildAgents(names) {
+    agents = names;
+    listEl.innerHTML = "";
+    panelsEl.innerHTML = "";
+    Object.keys(panels).forEach((key) => delete panels[key]);
+
+    listEl.appendChild(makeAgentItem("all", "全部"));
+    names.forEach((name) => {
+      listEl.appendChild(makeAgentItem(name, name));
+
+      const panel = document.createElement("section");
+      panel.className = "panel";
+      panel.dataset.agent = name;
+      panel.innerHTML =
+        '<div class="panel-head"><span class="name">' + escape(name) +
+        '</span><span class="head-right">' +
+        '<button class="queue-toggle" title="查看该 Agent 的消息队列">' +
+        '队列 <span class="queue-count">0</span></button>' +
+        '<span class="state">空闲</span>' +
+        '<button class="stop-btn" title="打断当前输出">■ 打断</button></span></div>' +
+        '<div class="queue-panel"><div class="queue-list"></div></div>' +
+        '<div class="log"></div>';
+      panel.querySelector(".stop-btn").addEventListener("click", (event) => {
+        event.stopPropagation();
+        interruptAgent(name);
+      });
+      const toggleBtn = panel.querySelector(".queue-toggle");
+      toggleBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        toggleQueue(name);
+      });
+      panelsEl.appendChild(panel);
+      const log = panel.querySelector(".log");
+      panels[name] = {
+        el: panel,
+        log,
+        state: panel.querySelector(".state"),
+        turn: null,
+        follow: true,
+        queueToggle: toggleBtn,
+        queueCount: toggleBtn.querySelector(".queue-count"),
+        queuePanel: panel.querySelector(".queue-panel"),
+        queueList: panel.querySelector(".queue-list"),
+        queueOpen: false,
+      };
+      // 用户上滚查看历史时暂停自动跟随；回到底部再恢复
+      log.addEventListener("scroll", () => {
+        panels[name].follow = isNearBottom(log);
+      });
+    });
+
+    selectAgent(selected);
+    renderSendTarget(names);
+  }
+
+  function makeAgentItem(value, label) {
+    const li = document.createElement("li");
+    li.dataset.agent = value;
+    li.innerHTML =
+      '<span class="mini"></span><span class="name">' + escape(label) + "</span>";
+    li.addEventListener("click", () => selectAgent(value));
+    return li;
+  }
+
+  function toggleQueue(name) {
+    const panel = panels[name];
+    if (!panel) return;
+    panel.queueOpen = !panel.queueOpen;
+    panel.queuePanel.classList.toggle("open", panel.queueOpen);
+    panel.queueToggle.classList.toggle("open", panel.queueOpen);
+    if (panel.queueOpen) {
+      renderQueue(name);
+      // 展开时顺带请求一次最新队列，防止错过推送
+      if (window.ws && window.ws.readyState === WebSocket.OPEN) {
+        window.ws.send(JSON.stringify({ type: "get_queues" }));
+      }
+    }
+  }
+
+  function renderQueues() {
+    agents.forEach(renderQueue);
+  }
+
+  function renderQueue(name) {
+    const panel = panels[name];
+    if (!panel) return;
+    const items = queues[name] || [];
+    panel.queueCount.textContent = items.length;
+    panel.queueToggle.classList.toggle("has-items", items.length > 0);
+    if (!panel.queueOpen) return;
+
+    const list = panel.queueList;
+    list.innerHTML = "";
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.className = "queue-empty";
+      empty.textContent = "消息队列为空";
+      list.appendChild(empty);
+      return;
+    }
+    items.forEach((m, i) => {
+      const row = document.createElement("div");
+      row.className = "queue-item";
+      const index = document.createElement("span");
+      index.className = "q-index";
+      index.textContent = "#" + (i + 1);
+      const from = document.createElement("span");
+      from.className = "q-from";
+      from.textContent = m.role === "user" ? "指令" : (m.sender || "?");
+      row.appendChild(index);
+      row.appendChild(from);
+      if (m.active) {
+        const tag = document.createElement("span");
+        tag.className = "q-tag";
+        tag.textContent = "处理中";
+        row.appendChild(tag);
+      }
+      const text = document.createElement("span");
+      text.className = "q-text";
+      const flat = (m.content == null ? "" : String(m.content)).replace(/\s+/g, " ").trim();
+      text.textContent = flat.length > 200 ? flat.slice(0, 200) + "…" : flat;
+      row.appendChild(text);
+      list.appendChild(row);
+    });
+  }
+
+  function selectAgent(value) {
+    selected = value;
+    listEl.querySelectorAll("li").forEach((li) =>
+      li.classList.toggle("active", li.dataset.agent === value)
+    );
+    agents.forEach((name) => {
+      panels[name].el.classList.toggle("hidden", value !== "all" && name !== value);
+    });
+    panelsEl.classList.toggle("single", value !== "all");
+  }
+
+  function renderSendTarget(names) {
+    const keep = sendTargetEl.value;
+    sendTargetEl.innerHTML = "";
+    const all = document.createElement("option");
+    all.value = "";
+    all.textContent = "广播 · 所有 Agent";
+    sendTargetEl.appendChild(all);
+    names.forEach((name) => {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = "发给 · " + name;
+      sendTargetEl.appendChild(opt);
+    });
+    if (keep && names.includes(keep)) sendTargetEl.value = keep;
+  }
+
+  function routeMessage(m) {
+    if (!m) return;
+    const isUser = m.role === "user";
+    if (m.recipient) {
+      addIncoming(m.recipient, m);
+      if (!isUser && panels[m.sender]) addOutgoing(m.sender, m.recipient, m.content);
+    } else {
+      agents.forEach((name) => {
+        if (!isUser && name === m.sender) addOutgoing(name, "广播", m.content);
+        else addIncoming(name, m);
+      });
+    }
+  }
+
+  function addIncoming(agent, m) {
+    if (!panels[agent]) return;
+    const meta = m.role === "user" ? "指令" : "◀ " + escape(m.sender);
+    addMessageEntry(agent, "in" + (m.role === "user" ? " user" : ""), meta, m.content);
+  }
+
+  function addOutgoing(agent, to, content) {
+    if (!panels[agent]) return;
+    addMessageEntry(agent, "out", "▶ " + escape(to), content);
+  }
+
+  function addMessageEntry(agent, kind, metaHtml, text) {
+    const panel = panels[agent];
+    const entry = document.createElement("div");
+    entry.className = "entry " + kind;
+    if (metaHtml) {
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.innerHTML = metaHtml;
+      entry.appendChild(meta);
+    }
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.innerHTML = renderMarkdown(text == null ? "" : text);
+    entry.appendChild(bubble);
+    panel.log.appendChild(entry);
+    scrollPanel(agent);
+  }
+
+  function appendChunk(agent, chunk) {
+    const panel = panels[agent];
+    if (!panel) return;
+    clearBanner();  // 有正常输出 = 后端已恢复
+    setBusy(agent, true);
+    if (!panel.turn) {
+      panel.turn = {
+        reasoning: null,
+        text: null,
+        tools: {},
+        recentBubble: null,
+        recentTool: null,
+      };
+    }
+    const turn = panel.turn;
+
+    if (chunk.role === "tool") {
+      const card =
+        resolveTool(panel, chunk) || createTool(panel, chunk);
+      appendToolResult(card, chunk.content, chunk.duration);
+      setCollapsed(card.entry, true);
+      turn.recentTool = card;
+      turn.text = null;
+      scrollPanel(agent);
+      return;
+    }
+
+    if (chunk.reasoning_content) {
+      if (!turn.reasoning) turn.reasoning = createReasoning(panel);
+      turn.reasoning.textContent += chunk.reasoning_content;
+      setCollapsed(turn.reasoning.closest(".entry"), false);
+      turn.text = null;  // 结束当前正文段，思考/正文交替出现
+    }
+
+    if (chunk.tool_name || chunk.tool_arguments) {
+      endReasoning(turn);
+      const card = resolveTool(panel, chunk) || createTool(panel, chunk);
+      updateTool(card, chunk);
+      turn.recentTool = card;
+      turn.text = null;
+    }
+
+    // 一轮可能同时产生多个工具调用：逐个映射到已有卡片（按 index），并登记 id
+    if (chunk.tool_calls) {
+      endReasoning(turn);
+      bindToolCalls(panel, chunk.tool_calls);
+      turn.text = null;
+    }
+
+    if (chunk.content) {
+      endReasoning(turn);  // 思考结束 → 下一段思考会新建一块
+      if (!turn.text) turn.text = createTextBubble(panel);
+      turn.text._raw = (turn.text._raw || "") + chunk.content;
+      turn.text.innerHTML = renderMarkdown(turn.text._raw);
+      turn.recentBubble = turn.text;
+    }
+
+    // 收尾块带 LLM 计时：贴到本轮最近的气泡；没有气泡（纯工具调用轮）就贴到工具卡片
+    if (chunk.timing) attachTiming(turn, chunk);
+    scrollPanel(agent);
+  }
+
+  function formatTiming(timing) {
+    const t = timing || {};
+    const latency = [];
+    if (t.duration != null) latency.push("耗时 " + t.duration + "s");
+    if (t.ttft != null) latency.push("首字 " + t.ttft + "s");
+    const phases = [];
+    if (t.thinking_duration != null) phases.push("思考 " + t.thinking_duration + "s");
+    if (t.answer_duration != null) phases.push("回答 " + t.answer_duration + "s");
+    const usage = [];
+    if (t.tokens != null) {
+      let tok = t.tokens + " tok";
+      if (t.reasoning_tokens != null || t.output_tokens != null) {
+        tok += "（思考 " + (t.reasoning_tokens || 0) + " / 正文 " +
+          (t.output_tokens || 0) + "）";
+      }
+      usage.push(tok);
+    }
+    if (t.tps != null) usage.push("tps " + t.tps);
+    if (t.output_tps != null) usage.push("正文 tps " + t.output_tps);
+
+    const lines = [];
+    if (latency.length) lines.push(latency.join(" · "));
+    if (phases.length) lines.push(phases.join(" · "));
+    if (usage.length) lines.push(usage.join(" · "));
+
+    const label = t.duration != null ? t.duration + "s"
+      : (t.tps != null ? t.tps + "tps" : "耗时");
+    return { label: label, title: lines.join("\n") };
+  }
+
+  function makeTimingBadge(timing) {
+    const info = formatTiming(timing);
+    const span = document.createElement("span");
+    span.className = "bubble-time";
+    span.textContent = info.label;
+    if (info.title) span.title = info.title;
+    return span;
+  }
+
+  function attachTiming(turn, chunk) {
+    const info = formatTiming(chunk.timing);
+    const badge = makeTimingBadge(chunk.timing);
+    if (turn.recentBubble) {
+      const entry = turn.recentBubble.closest(".entry");
+      (entry || turn.recentBubble).appendChild(badge);
+      // 悬浮整条消息也能看明细（不只那一小块徽标）
+      if (info.title) {
+        turn.recentBubble.title = info.title;
+        if (entry) entry.title = info.title;
+      }
+    } else if (turn.recentTool) {
+      const head = turn.recentTool.entry.querySelector(".tool-head");
+      (head || turn.recentTool.entry).appendChild(badge);
+      if (info.title) turn.recentTool.entry.title = info.title;
+    }
+    turn.recentBubble = null;
+    turn.recentTool = null;
+  }
+
+  function createReasoning(panel) {
+    const entry = document.createElement("div");
+    entry.className = "entry reasoning";
+    entry.innerHTML =
+      '<div class="meta toggle"><span class="caret">▾</span>思考</div>' +
+      '<div class="bubble"></div>';
+    entry.querySelector(".meta").addEventListener("click", () => toggleCollapse(entry));
+    panel.log.appendChild(entry);
+    return entry.querySelector(".bubble");
+  }
+
+  function toggleCollapse(entry) {
+    if (!entry) return;
+    entry.classList.toggle("collapsed");
+    updateCaret(entry);
+  }
+
+  function setCollapsed(entry, collapsed) {
+    if (!entry) return;
+    entry.classList.toggle("collapsed", collapsed);
+    updateCaret(entry);
+  }
+
+  function updateCaret(entry) {
+    const caret = entry.querySelector(".caret");
+    if (caret) caret.textContent = entry.classList.contains("collapsed") ? "▸" : "▾";
+  }
+
+  function collapseReasoning(turn) {
+    if (turn && turn.reasoning) setCollapsed(turn.reasoning.closest(".entry"), true);
+  }
+
+  function endReasoning(turn) {
+    // 结束当前思考段：收起并置空，下一段思考会另起一块（与 TUI 一致）
+    if (turn && turn.reasoning) setCollapsed(turn.reasoning.closest(".entry"), true);
+    if (turn) turn.reasoning = null;
+  }
+
+  function createTextBubble(panel) {
+    const entry = document.createElement("div");
+    entry.className = "entry";
+    entry.innerHTML =
+      '<div class="meta">' + escape(panel.el.dataset.agent) +
+      ' 输出</div><div class="bubble"></div>';
+    panel.log.appendChild(entry);
+    return entry.querySelector(".bubble");
+  }
+
+  function toolKey(chunk) {
+    if (chunk.tool_index != null) return "i:" + chunk.tool_index;
+    if (chunk.tool_call_id) return "c:" + chunk.tool_call_id;
+    if (chunk.tool_name) return "n:" + chunk.tool_name;
+    return null;
+  }
+
+  function resolveTool(panel, chunk) {
+    // 已完成的卡不复用：同一回合里每轮 LLM 的 tool_index 都从 0 重新开始，
+    // 若复用会跨轮串卡（TUI 也有同样的防护）
+    const tools = panel.turn.tools;
+    const key = toolKey(chunk);
+    if (key && tools[key] && !tools[key].done) return tools[key];
+    if (chunk.tool_call_id) {
+      const card = tools["c:" + chunk.tool_call_id];
+      if (card && !card.done) return card;
+    }
+    return null;
+  }
+
+  function bindToolCalls(panel, calls) {
+    const turn = panel.turn;
+    const tools = turn.tools;
+    calls.forEach((call, i) => {
+      const name = (call.function && call.function.name) || "tool";
+      const id = call.id;
+      let card = tools["i:" + i];
+      if (card && card.done) card = null;  // 已完成的卡不复用
+      if (!card && id) {
+        const byId = tools["c:" + id];
+        if (byId && !byId.done) card = byId;
+      }
+      if (!card) card = createTool(panel, { tool_index: i, tool_name: name });
+      if (name && card.name !== name) {
+        card.name = name;
+        card.nameEl.textContent = name;
+      }
+      if (id) tools["c:" + id] = card;
+      const args = call.function && call.function.arguments;
+      if (args && !card.args.textContent) {
+        card.args.textContent =
+          typeof args === "string" ? args : JSON.stringify(args);
+      }
+      setToolStatus(card, "调用中");
+      turn.recentTool = card;
+    });
+  }
+
+  function createTool(panel, chunk) {
+    const name = chunk.tool_name || "tool";
+    const entry = document.createElement("div");
+    entry.className = "entry tool";
+    entry.innerHTML =
+      '<div class="tool-card">' +
+        '<div class="tool-head"><span class="caret">▾</span>🔧 <span class="tname">' +
+        escape(name) + '</span><span class="tool-status">生成中</span></div>' +
+        '<div class="tool-body">' +
+          '<div class="tool-line tool-args"><span class="tlabel">参数</span><span class="tval"></span></div>' +
+          '<div class="tool-line tool-res" style="display:none"><span class="tlabel">结果</span><span class="tval"></span></div>' +
+        "</div>" +
+      "</div>";
+    panel.log.appendChild(entry);
+    const card = {
+      entry,
+      name,
+      done: false,
+      nameEl: entry.querySelector(".tname"),
+      status: entry.querySelector(".tool-status"),
+      args: entry.querySelector(".tool-args .tval"),
+      res: entry.querySelector(".tool-res"),
+      resVal: entry.querySelector(".tool-res .tval"),
+    };
+    entry.querySelector(".tool-head").addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleCollapse(entry);
+    });
+    const tools = panel.turn.tools;
+    const key = toolKey(chunk);
+    if (key) tools[key] = card;
+    if (chunk.tool_call_id) tools["c:" + chunk.tool_call_id] = card;
+    return card;
+  }
+
+  function updateTool(card, chunk) {
+    if (chunk.tool_name && card.name !== chunk.tool_name) {
+      card.name = chunk.tool_name;
+      card.nameEl.textContent = chunk.tool_name;
+    }
+    if (chunk.tool_arguments) {
+      card.args.textContent +=
+        typeof chunk.tool_arguments === "string"
+          ? chunk.tool_arguments
+          : JSON.stringify(chunk.tool_arguments);
+    }
+  }
+
+  function appendToolResult(card, content, duration) {
+    card.res.style.display = "";
+    card.resVal.textContent += content == null ? "" : content;
+    setToolStatus(card, duration != null ? "完成 · " + duration + "s" : "完成");
+    card.done = true;
+  }
+
+  function setToolStatus(card, text) {
+    card.status.textContent = text;
+    card.status.classList.toggle("done", text.indexOf("完成") === 0);
+  }
+
+  function endTurn(agent) {
+    const panel = panels[agent];
+    if (!panel) return;
+    collapseReasoning(panel.turn);
+    panel.turn = null;
+    setBusy(agent, false);
+    scrollPanel(agent);
+  }
+
+  function setBusy(agent, busy) {
+    const panel = panels[agent];
+    if (!panel) return;
+    panel.el.classList.toggle("busy", busy);
+    panel.state.textContent = busy ? "生成中" : "空闲";
+    const item = listEl.querySelector('li[data-agent="' + cssEscape(agent) + '"]');
+    if (item) item.classList.toggle("busy", busy);
+  }
+
+  function interruptAgent(name) {
+    if (window.ws && window.ws.readyState === WebSocket.OPEN) {
+      window.ws.send(JSON.stringify({ type: "interrupt", agent: name }));
+    }
+  }
+
+  function markInterrupted(agent, ok) {
+    if (!agent || !panels[agent] || !ok) return;
+    addSystemEntry(agent, "已打断本轮输出");
+    setBusy(agent, false);
+  }
+
+  function addSystemEntry(agent, text) {
+    const panel = panels[agent];
+    if (!panel) return;
+    const entry = document.createElement("div");
+    entry.className = "entry note";
+    entry.innerHTML = '<div class="bubble"></div>';
+    entry.querySelector(".bubble").textContent = text;
+    panel.log.appendChild(entry);
+    scrollPanel(agent);
+  }
+
+  function addErrorEntry(agent, text) {
+    const panel = panels[agent];
+    if (!panel) return;
+    const entry = document.createElement("div");
+    entry.className = "entry error";
+    entry.innerHTML = '<div class="bubble"></div>';
+    entry.querySelector(".bubble").textContent = text;
+    panel.log.appendChild(entry);
+    scrollPanel(agent);
+  }
+
+  function showBanner(text) {
+    const el = document.getElementById("error-banner");
+    if (!el) return;
+    el.textContent = text;
+    el.classList.remove("hidden");
+  }
+
+  function clearBanner() {
+    const el = document.getElementById("error-banner");
+    if (el) el.classList.add("hidden");
+  }
+
+  function showError(msg) {
+    // 兼容两种来源：字符串，或带 agent/kind/fatal 的对象（回合失败）
+    if (msg && typeof msg === "object") {
+      const text = (msg.message || "未知错误") +
+        (msg.kind ? "（" + msg.kind + "）" : "");
+      if (msg.agent && panels[msg.agent]) {
+        addErrorEntry(msg.agent, text);
+      } else {
+        agents.forEach((name) => addErrorEntry(name, text));
+      }
+      if (msg.fatal) {
+        showBanner("后端异常：" + (msg.message || "") +
+          " —— 团队可能处于暂停状态，恢复后自动继续。");
+      }
+      return;
+    }
+    agents.forEach((name) => addErrorEntry(name, msg));
+  }
+
+  function isNearBottom(el, threshold = 40) {
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= threshold;
+  }
+
+  function scrollPanel(agent) {
+    const panel = panels[agent];
+    if (!panel) return;
+    if (panel.follow === false) return;  // 用户手动上滚时不打断
+    panel.log.scrollTop = panel.log.scrollHeight;
+  }
+
+  const overlayEl = document.getElementById("confirm-overlay");
+  const cfAgentEl = document.getElementById("cf-agent");
+  const cfToolEl = document.getElementById("cf-tool");
+  const cfArgsEl = document.getElementById("cf-args");
+  const cfCountEl = document.getElementById("cf-count");
+  const confirmQueue = [];
+  let currentConfirm = null;
+
+  function enqueueConfirm(msg) {
+    confirmQueue.push(msg);
+    showNextConfirm();
+  }
+
+  function showNextConfirm() {
+    if (currentConfirm || confirmQueue.length === 0) return;
+    currentConfirm = confirmQueue.shift();
+    cfAgentEl.textContent = currentConfirm.agent || "";
+    cfToolEl.textContent = currentConfirm.tool_name || "";
+    cfArgsEl.textContent = JSON.stringify(currentConfirm.tool_arguments || {}, null, 2);
+    cfCountEl.textContent = "待确认 " + (confirmQueue.length + 1);
+    overlayEl.classList.remove("hidden");
+  }
+
+  function sendConfirm(requestId, allowed, remember) {
+    if (window.ws && window.ws.readyState === WebSocket.OPEN) {
+      window.ws.send(
+        JSON.stringify({
+          type: "confirm_result",
+          request_id: requestId,
+          allowed: allowed,
+          remember: remember || null,
+        })
+      );
+    }
+  }
+
+  function resolveConfirm(allowed, remember) {
+    if (!currentConfirm) return;
+    sendConfirm(currentConfirm.request_id, allowed, remember);
+    currentConfirm = null;
+    overlayEl.classList.add("hidden");
+    showNextConfirm();
+  }
+
+  function resolveAll(allowed) {
+    const pending = [];
+    if (currentConfirm) pending.push(currentConfirm);
+    while (confirmQueue.length) pending.push(confirmQueue.shift());
+    pending.forEach((item) => sendConfirm(item.request_id, allowed));
+    currentConfirm = null;
+    overlayEl.classList.add("hidden");
+  }
+
+  function cancelConfirms(ids) {
+    if (!ids.length) return;
+    for (let i = confirmQueue.length - 1; i >= 0; i--) {
+      if (ids.includes(confirmQueue[i].request_id)) confirmQueue.splice(i, 1);
+    }
+    if (currentConfirm && ids.includes(currentConfirm.request_id)) {
+      currentConfirm = null;
+      overlayEl.classList.add("hidden");
+      showNextConfirm();
+    }
+  }
+
+  const permOverlayEl = document.getElementById("perm-overlay");
+  const permBodyEl = document.getElementById("perm-body");
+
+  function permValue(agent, tool) {
+    return (permissions[agent] && permissions[agent][tool]) || "ask";
+  }
+
+  function renderPermissions() {
+    if (!permBodyEl) return;
+    permBodyEl.innerHTML = "";
+    agents.forEach((agent) => {
+      const tools = confirmableTools[agent] || [];
+      const group = document.createElement("div");
+      group.className = "perm-group";
+      const title = document.createElement("div");
+      title.className = "perm-agent";
+      title.textContent = agent;
+      group.appendChild(title);
+      if (!tools.length) {
+        const empty = document.createElement("div");
+        empty.className = "perm-empty";
+        empty.textContent = "无可确认工具";
+        group.appendChild(empty);
+      }
+      tools.forEach((tool) => group.appendChild(permRow(agent, tool)));
+      permBodyEl.appendChild(group);
+    });
+  }
+
+  function permRow(agent, tool) {
+    const value = permValue(agent, tool.name);
+    const row = document.createElement("div");
+    row.className = "perm-row";
+
+    const info = document.createElement("div");
+    info.className = "perm-info";
+    const nameEl = document.createElement("div");
+    nameEl.className = "perm-name";
+    nameEl.textContent = tool.name;
+    const descEl = document.createElement("div");
+    descEl.className = "perm-desc";
+    descEl.textContent = tool.description || "";
+    descEl.title = tool.description || "";
+    info.appendChild(nameEl);
+    info.appendChild(descEl);
+
+    const controls = document.createElement("div");
+    controls.className = "perm-controls";
+    [
+      ["ask", "每次询问"],
+      ["allow", "始终允许"],
+      ["deny", "始终拒绝"],
+    ].forEach(([v, label]) => {
+      const button = document.createElement("button");
+      button.className = "seg" + (value === v ? " active" : "");
+      button.textContent = label;
+      button.addEventListener("click", () =>
+        setPermission(agent, tool.name, v, "agent")
+      );
+      controls.appendChild(button);
+    });
+
+    const allButton = document.createElement("button");
+    allButton.className = "perm-all";
+    allButton.textContent = "应用到所有 Agent";
+    allButton.addEventListener("click", () =>
+      setPermission(agent, tool.name, permValue(agent, tool.name), "all")
+    );
+    controls.appendChild(allButton);
+
+    row.appendChild(info);
+    row.appendChild(controls);
+    return row;
+  }
+
+  function setPermission(agent, toolName, value, scope) {
+    if (!permissions[agent]) permissions[agent] = {};
+    if (value === "ask") delete permissions[agent][toolName];
+    else permissions[agent][toolName] = value;
+    renderPermissions();
+    if (window.ws && window.ws.readyState === WebSocket.OPEN) {
+      window.ws.send(
+        JSON.stringify({
+          type: "set_permission",
+          agent: agent,
+          tool: toolName,
+          value: value,
+          scope: scope,
+        })
+      );
+    }
+  }
+
+  function send() {
+    const content = inputEl.value.trim();
+    if (!content || !window.ws || window.ws.readyState !== WebSocket.OPEN) return;
+    window.ws.send(
+      JSON.stringify({
+        type: "instruction",
+        content: content,
+        main_agent: sendTargetEl.value || null,
+      })
+    );
+    inputEl.value = "";
+    // 发送后恢复自动跟随，方便看新输出
+    agents.forEach((name) => {
+      const panel = panels[name];
+      if (!panel) return;
+      panel.follow = true;
+      panel.log.scrollTop = panel.log.scrollHeight;
+    });
+  }
+
+  function escape(value) {
+    return String(value == null ? "" : value).replace(/[&<>"]/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])
+    );
+  }
+
+  function renderMarkdown(text) {
+    const lines = escape(text).split("\n");
+    let html = "";
+    let inCode = false;
+    let codeBuf = [];
+    let listType = null;
+    let listBuf = [];
+
+    const flushList = () => {
+      if (!listType) return;
+      html +=
+        "<" + listType + ">" +
+        listBuf.map((item) => "<li>" + item + "</li>").join("") +
+        "</" + listType + ">";
+      listType = null;
+      listBuf = [];
+    };
+
+    for (const line of lines) {
+      const fence = line.match(/^```(\w*)\s*$/);
+      if (fence) {
+        if (inCode) {
+          html += "<pre><code>" + codeBuf.join("\n") + "</code></pre>";
+          inCode = false;
+          codeBuf = [];
+        } else {
+          flushList();
+          inCode = true;
+          codeBuf = [];
+        }
+        continue;
+      }
+      if (inCode) {
+        codeBuf.push(line);
+        continue;
+      }
+      if (/^\s*$/.test(line)) {
+        flushList();
+        continue;
+      }
+
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (heading) {
+        flushList();
+        const level = heading[1].length;
+        html += "<h" + level + ">" + renderInline(heading[2]) + "</h" + level + ">";
+        continue;
+      }
+      const ul = line.match(/^\s*[-*]\s+(.*)$/);
+      if (ul) {
+        if (listType !== "ul") { flushList(); listType = "ul"; }
+        listBuf.push(renderInline(ul[1]));
+        continue;
+      }
+      const ol = line.match(/^\s*\d+\.\s+(.*)$/);
+      if (ol) {
+        if (listType !== "ol") { flushList(); listType = "ol"; }
+        listBuf.push(renderInline(ol[1]));
+        continue;
+      }
+      flushList();
+      html += "<p>" + renderInline(line) + "</p>";
+    }
+    flushList();
+    if (inCode) html += "<pre><code>" + codeBuf.join("\n") + "</code></pre>";
+    return html;
+  }
+
+  function renderInline(text) {
+    return text
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+      .replace(
+        /\[([^\]]+)\]\(([^)\s]+)\)/g,
+        '<a href="$2" target="_blank" rel="noopener">$1</a>'
+      );
+  }
+
+  function cssEscape(value) {
+    return String(value).replace(/"/g, '\\"');
+  }
+
+  document.getElementById("send").addEventListener("click", send);
+  document.getElementById("cf-allow").addEventListener("click", () => resolveConfirm(true, null));
+  document.getElementById("cf-allow-always").addEventListener("click", () => resolveConfirm(true, "allow"));
+  document.getElementById("cf-deny").addEventListener("click", () => resolveConfirm(false, null));
+  document.getElementById("cf-deny-always").addEventListener("click", () => resolveConfirm(false, "deny"));
+  document.getElementById("cf-allow-all").addEventListener("click", () => resolveAll(true));
+  document.getElementById("cf-deny-all").addEventListener("click", () => resolveAll(false));
+  document.getElementById("perm-open").addEventListener("click", () => permOverlayEl.classList.remove("hidden"));
+  document.getElementById("perm-close").addEventListener("click", () => permOverlayEl.classList.add("hidden"));
+  inputEl.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      send();
+    }
+  });
+
+  connect();
+</script>
+</body>
+</html>

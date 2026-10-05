@@ -1,16 +1,18 @@
 # 终端界面 TUI（可选扩展）
 
-tina 自带一个基于 [Textual](https://textual.textualize.io/) 的终端界面。它是**可选扩展**，不是核心能力，定位有两层：
+终端界面由配套包 **`tina-tui`**（基于 [Textual](https://textual.textualize.io/)）提供。它是**可选扩展**，不是 tina 核心能力，定位有两层：
 
 1. **测试你自己写的 Agent**：写工具、调提示词、看流式输出和工具调用，比在脚本里 `print` 方便得多；
 2. **当作你自己的 TUI 来用**：直接把它作为应用的交互界面，或参照它自建界面。
 
-> 核心不依赖它：不安装 `textual` 也能正常使用 tina；`run_agent_in_cli` 仍是零依赖的轻量方案。
+> 核心不依赖它：`tina-tui` 是独立发行包，不安装它也能正常使用 tina；`run_agent_in_cli` 仍是零依赖的轻量方案。
 
 ## 安装
 
 ```bash
-pip install tina-python[tui]
+pip install tina-python[tui]   # 等价于安装 tina-tui
+# 或直接安装
+pip install tina-tui
 ```
 
 ## 快速开始
@@ -18,7 +20,7 @@ pip install tina-python[tui]
 ```python
 from tina import Agent, Tools
 from tina.llm import BaseAPI
-from tina.utils.tui import run_agent_in_tui
+from tina_tui import run_agent_in_tui
 
 llm = BaseAPI()          # 读取 tina.env
 tools = Tools()
@@ -54,7 +56,7 @@ run_agent_in_tui(agent, unlimited_context=True)
 
 运行中也可以用 `app.install_context_manager(cm)` 随时替换（同样是委托 `agent.set_context_manager`）。
 
-也可以直接使用这些类（`from tina.utils.tui import ...`）：
+也可以直接使用这些类（`from tina_tui import ...`）：
 
 | 名称 | 说明 |
 | --- | --- |
@@ -106,7 +108,7 @@ run_agent_in_tui(agent, unlimited_context=True)
 界面层与数据层是分开的，`TuiMessageStore`（渲染块列表）和 `TokenCounter`（token 计数）**不依赖 textual**，可以单独导入：
 
 ```python
-from tina.utils.tui import TuiMessageStore, TokenCounter
+from tina_tui import TuiMessageStore, TokenCounter
 
 store = TuiMessageStore()
 counter = TokenCounter(max_tokens=32000)
@@ -126,7 +128,7 @@ for block in store.get_blocks():
 也可以继承 `TinaTUI` 自定义界面：
 
 ```python
-from tina.utils.tui.tui import TinaTUI, run_agent_in_tui
+from tina_tui.tui import TinaTUI, run_agent_in_tui
 
 class MyTUI(TinaTUI):
     CSS = TinaTUI.CSS + """

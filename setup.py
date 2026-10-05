@@ -2,10 +2,15 @@ from setuptools import setup, find_packages
 
 setup(
     name="tina-python",
-    version="0.6.6",
+    version="0.7.0rc0",
     packages=find_packages(),
     package_data={"tina": ["py.typed"]},
     install_requires=["httpx", "python-dotenv"],
+    extras_require={
+        "tui": ["tina-tui>=0.1.0"],
+        "multi-agent": ["tina-multi-agent>=0.1.0"],
+        "mcp": ["mcp>=2.0"],
+    },
     description="tina is in your computer!",
     long_description=open("README.md", encoding="utf-8").read(),
     long_description_content_type="text/markdown",

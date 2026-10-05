@@ -72,9 +72,63 @@ class NetworkNotConnected(TinaError):
 
 class APIRequestFailed(TinaError):
     def __init__(self, url: str, status_code: int, error_details: str = ""):
+        # 保留结构化字段，方便上层分类（余额不足 / 鉴权失败 / 限流 …）
+        self.url = url
+        self.status_code = status_code
+        self.error_details = error_details
         super().__init__(
             f"API request failed:request {url} failed,\n status code {status_code}.\n {error_details}\nAPI请求失败：请求{url}失败，\n状态码{status_code}。\n{error_details}"
         )
+
+
+def classify_api_error(error: BaseException) -> dict:
+    """把一次 LLM/HTTP 失败归一化为 ``{kind, fatal, message}``。
+
+    - ``kind``: balance / auth / rate_limit / server / transient / unknown
+    - ``fatal``: True 表示「不处理就可能一直失败、需要用户介入」（余额、鉴权）；
+      False 表示可通过重试/等待恢复。
+    - ``message``: 给用户看的中文简述。
+    """
+    status = getattr(error, "status_code", None)
+    details = getattr(error, "error_details", "") or ""
+    text = f"{error} {details}".lower()
+
+    if status == 402 or "insufficient balance" in text or "insufficient_quota" in text or "余额不足" in text:
+        return {
+            "kind": "balance",
+            "fatal": True,
+            "message": "账户余额不足 / 额度用尽（HTTP 402 Insufficient Balance）",
+        }
+    if status in (401, 403) or "unauthorized" in text or "invalid api key" in text or "authentication" in text:
+        return {
+            "kind": "auth",
+            "fatal": True,
+            "message": f"鉴权失败（HTTP {status or '?'}），请检查 API Key / 权限",
+        }
+    if status == 429 or "rate limit" in text or "too many requests" in text:
+        return {
+            "kind": "rate_limit",
+            "fatal": False,
+            "message": "触发限流（HTTP 429），稍后重试",
+        }
+    if status is not None and 500 <= status < 600:
+        return {
+            "kind": "server",
+            "fatal": False,
+            "message": f"服务端错误（HTTP {status}），可重试",
+        }
+    if status is not None and status >= 400:
+        # 其它 4xx：多半是请求本身有问题（参数/上下文长度等），不重试
+        return {
+            "kind": "request",
+            "fatal": False,
+            "message": f"请求被拒（HTTP {status}）：{details or error}",
+        }
+    return {
+        "kind": "unknown",
+        "fatal": False,
+        "message": str(error).strip() or type(error).__name__,
+    }
 
 
 class ModelPathNotGiven(TinaError):

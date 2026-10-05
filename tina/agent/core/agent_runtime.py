@@ -6,6 +6,7 @@ from .context_manager import BaseContextManager
 from typing import Generator
 from .state import AgentState
 from .events import AgentEvents
+from ...utils.usage import Usage
 
 
 class BaseAgentRuntime:
@@ -103,27 +104,56 @@ class BaseAgentRuntime:
             return ""
         return self.keyword_actions.flush_visible()
 
-    def _emit_visible_content_chunk(self, content: str = "", usage=None) -> dict | None:
+    def _emit_visible_content_chunk(
+        self, content: str = "", usage=None, source: dict = None
+    ) -> dict | None:
         """
         组装并触发可见 content chunk。content 应为已过滤文本。
-        无可见内容且无 usage 时不发射。
+
+        source 存在时就地复用它（保留 usage / timing 等字段），只覆盖 content；
+        无可见内容、无 usage、无 timing 时不发射。
         """
-        if not content and usage is None:
+        has_timing = bool(source) and source.get("timing") is not None
+        if not content and usage is None and not has_timing:
             return None
-        chunk = {"role": "assistant", "content": content or ""}
-        if usage is not None:
-            chunk["usage"] = usage
+        if source is not None:
+            chunk = source
+            chunk["role"] = chunk.get("role") or "assistant"
+            chunk["content"] = content or ""
+        else:
+            chunk = {"role": "assistant", "content": content or ""}
+            if usage is not None:
+                chunk["usage"] = usage
         self.events.trigger_on_stream_chunk(chunk)
         return chunk
 
-    async def _aemit_visible_content_chunk(self, content: str = "", usage=None) -> dict | None:
-        if not content and usage is None:
+    async def _aemit_visible_content_chunk(
+        self, content: str = "", usage=None, source: dict = None
+    ) -> dict | None:
+        has_timing = bool(source) and source.get("timing") is not None
+        if not content and usage is None and not has_timing:
             return None
-        chunk = {"role": "assistant", "content": content or ""}
-        if usage is not None:
-            chunk["usage"] = usage
+        if source is not None:
+            chunk = source
+            chunk["role"] = chunk.get("role") or "assistant"
+            chunk["content"] = content or ""
+        else:
+            chunk = {"role": "assistant", "content": content or ""}
+            if usage is not None:
+                chunk["usage"] = usage
         await self.events.atrigger_on_stream_chunk(chunk)
         return chunk
+
+    def _record_usage(self, usage_raw) -> None:
+        """把一次 LLM 返回的 usage 归一化后通过 on_usage 事件广播"""
+        usage = Usage.from_raw(usage_raw)
+        if usage is not None:
+            self.events.trigger_on_usage(usage)
+
+    async def _arecord_usage(self, usage_raw) -> None:
+        usage = Usage.from_raw(usage_raw)
+        if usage is not None:
+            await self.events.atrigger_on_usage(usage)
 
     def _check_keyword_actions(self, text: str):
         """assistant 正文凑齐后触发（含 tool_calls 前的中间段）；匹配用原文。"""
@@ -209,6 +239,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
         super().run_prediction_no_stream(instruction, temperature, top_p, top_k, min_p)
         counter = 0
         while counter < self.max_tool_loop:
+            self.events.trigger_before_llm_call()
             self.state = AgentState.THINKING
             llm_response = self.llm.predict_no_stream(
                 messages=self.context_manager.get_messages(),
@@ -216,6 +247,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                 tools=self.tools.get_tools_for_llm(),
                 top_p=top_p,
             )
+            self._record_usage(llm_response.get("usage"))
 
             if "tool_calls" in llm_response:
                 self.state = AgentState.TOOL_CALLING
@@ -253,6 +285,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
         super().run_prediction_stream(instruction, temperature, top_p, top_k, min_p)
         counter = 0
         while counter < self.max_tool_loop:
+            self.events.trigger_before_llm_call()
             tool_called = False
             llm_response = self.llm.predict_stream(
                 messages=self.context_manager.get_messages(),
@@ -270,6 +303,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
             for chunk in llm_response:
                 if chunk.get("content") is None:
                     chunk["content"] = ""
+                self._record_usage(chunk.get("usage"))
 
                 if "tool_name" in chunk or "tool_arguments" in chunk:
                     self.state = AgentState.TOOL_CALLING
@@ -315,15 +349,16 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                 else:
                     content = chunk.get("content", "")
                     usage = chunk.get("usage")
-                    if content or usage is not None:
-                        if content:
-                            content_parts.append(content)
-                        visible = (
-                            self._filter_stream_content(content) if content else ""
-                        )
-                        emitted = self._emit_visible_content_chunk(visible, usage)
-                        if emitted is not None:
-                            yield emitted
+                    if content:
+                        content_parts.append(content)
+                    visible = (
+                        self._filter_stream_content(content) if content else ""
+                    )
+                    emitted = self._emit_visible_content_chunk(
+                        visible, usage, source=chunk
+                    )
+                    if emitted is not None:
+                        yield emitted
 
             whole_content = "".join(content_parts)
             if whole_content:
@@ -357,6 +392,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
         )
         counter = 0
         while counter < self.max_tool_loop:
+            await self.events.atrigger_before_llm_call()
             self.state = AgentState.THINKING
             llm_result = await self.llm.apredict(
                 messages=self.context_manager.get_messages(),
@@ -364,6 +400,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                 tools=self.tools.get_tools_for_llm(),
                 top_p=top_p,
             )
+            await self._arecord_usage(llm_result.get("usage"))
             if "tool_calls" in llm_result:
                 self.state = AgentState.TOOL_CALLING
                 _content = llm_result.get("content") or ""
@@ -405,6 +442,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
         )
         counter = 0
         while counter < self.max_tool_loop:
+            await self.events.atrigger_before_llm_call()
             tool_called = False
             llm_response = await self.llm.apredict(
                 messages=self.context_manager.get_messages(),
@@ -421,6 +459,7 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
             async for chunk in llm_response:
                 if chunk.get("content") is None:
                     chunk["content"] = ""
+                await self._arecord_usage(chunk.get("usage"))
 
                 if "tool_name" in chunk or "tool_arguments" in chunk:
                     await self.events.atrigger_on_stream_chunk(chunk)
@@ -468,17 +507,16 @@ class ToolCallingAgentRuntime(BaseAgentRuntime):
                 else:
                     content = chunk.get("content", "")
                     usage = chunk.get("usage")
-                    if content or usage is not None:
-                        if content:
-                            content_parts.append(content)
-                        visible = (
-                            self._filter_stream_content(content) if content else ""
-                        )
-                        emitted = await self._aemit_visible_content_chunk(
-                            visible, usage
-                        )
-                        if emitted is not None:
-                            yield emitted
+                    if content:
+                        content_parts.append(content)
+                    visible = (
+                        self._filter_stream_content(content) if content else ""
+                    )
+                    emitted = await self._aemit_visible_content_chunk(
+                        visible, usage, source=chunk
+                    )
+                    if emitted is not None:
+                        yield emitted
 
             whole_content = "".join(content_parts)
             if whole_content:
@@ -542,6 +580,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
         )
         counter = 0
         while counter < self.max_tool_loop:
+            self.events.trigger_before_llm_call()
             self.state = AgentState.THINKING
             llm_response = self.llm.predict_no_stream(
                 messages=self.context_manager.get_messages(),
@@ -551,6 +590,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                 top_k=top_k,
                 min_p=min_p,
             )
+            self._record_usage(llm_response.get("usage"))
 
             if "tool_calls" in llm_response:
                 self.state = AgentState.TOOL_CALLING
@@ -599,6 +639,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
         )
         counter = 0
         while counter < self.max_tool_loop:
+            self.events.trigger_before_llm_call()
 
             tool_called = False
             llm_response = self.llm.predict_stream(
@@ -617,6 +658,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
             for chunk in llm_response:
                 if chunk.get("content") is None:
                     chunk["content"] = ""
+                self._record_usage(chunk.get("usage"))
 
                 if "tool_name" in chunk or "tool_arguments" in chunk:
                     self.events.trigger_on_stream_chunk(chunk)
@@ -665,15 +707,16 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                 else:
                     content = chunk.get("content", "")
                     usage = chunk.get("usage")
-                    if content or usage is not None:
-                        if content:
-                            content_parts.append(content)
-                        visible = (
-                            self._filter_stream_content(content) if content else ""
-                        )
-                        emitted = self._emit_visible_content_chunk(visible, usage)
-                        if emitted is not None:
-                            yield emitted
+                    if content:
+                        content_parts.append(content)
+                    visible = (
+                        self._filter_stream_content(content) if content else ""
+                    )
+                    emitted = self._emit_visible_content_chunk(
+                        visible, usage, source=chunk
+                    )
+                    if emitted is not None:
+                        yield emitted
 
             whole_content = "".join(content_parts)
             if whole_content:
@@ -719,6 +762,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
         )
         counter = 0
         while counter < self.max_tool_loop:
+            await self.events.atrigger_before_llm_call()
             self.state = AgentState.THINKING
             llm_result = await self.llm.apredict(
                 messages=self.context_manager.get_messages(),
@@ -728,6 +772,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                 top_k=top_k,
                 min_p=min_p,
             )
+            await self._arecord_usage(llm_result.get("usage"))
             if "tool_calls" in llm_result:
                 self.state = AgentState.TOOL_CALLING
                 _content = llm_result.get("content") or ""
@@ -777,6 +822,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
         )
         counter = 0
         while counter < self.max_tool_loop:
+            await self.events.atrigger_before_llm_call()
             tool_called = False
             llm_response = await self.llm.apredict(
                 messages=self.context_manager.get_messages(),
@@ -793,6 +839,7 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
             async for chunk in llm_response:
                 if chunk.get("content") is None:
                     chunk["content"] = ""
+                await self._arecord_usage(chunk.get("usage"))
 
                 if "tool_name" in chunk or "tool_arguments" in chunk:
                     await self.events.atrigger_on_stream_chunk(chunk)
@@ -840,17 +887,16 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
                 else:
                     content = chunk.get("content", "")
                     usage = chunk.get("usage")
-                    if content or usage is not None:
-                        if content:
-                            content_parts.append(content)
-                        visible = (
-                            self._filter_stream_content(content) if content else ""
-                        )
-                        emitted = await self._aemit_visible_content_chunk(
-                            visible, usage
-                        )
-                        if emitted is not None:
-                            yield emitted
+                    if content:
+                        content_parts.append(content)
+                    visible = (
+                        self._filter_stream_content(content) if content else ""
+                    )
+                    emitted = await self._aemit_visible_content_chunk(
+                        visible, usage, source=chunk
+                    )
+                    if emitted is not None:
+                        yield emitted
 
             whole_content = "".join(content_parts)
             if whole_content:

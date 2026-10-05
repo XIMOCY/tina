@@ -1,17 +1,25 @@
-from typing import TYPE_CHECKING
+"""兼容转发层：TUI 已迁移到独立包 ``tina-tui``。
 
-from .context_manager import (
-    TuiBlock,
-    TuiMessageStore,
-    UnlimitedContextManager,
-    UnlimitedMultimodalContextManager,
-    make_unlimited_context_manager,
-)
-from .token import TokenCounter
+保留旧的 ``tina.utils.tui`` 导入路径；未安装扩展包时给出明确提示。
+``TinaTUI`` / ``run_agent_in_tui`` 仍延迟导入，避免在未安装 textual 时失败。
+"""
 
-if TYPE_CHECKING:
-    # 仅给类型检查器/IDE 看，运行时由 __getattr__ 延迟导入（textual 是可选依赖）
-    from .tui import TinaTUI, run_agent_in_tui
+try:
+    from tina_tui import (  # noqa: F401
+        TuiBlock,
+        TuiMessageStore,
+        UnlimitedContextManager,
+        UnlimitedMultimodalContextManager,
+        make_unlimited_context_manager,
+        TokenCounter,
+    )
+except ModuleNotFoundError as exc:
+    if (exc.name or "").split(".")[0] == "tina_tui":
+        raise ImportError(
+            "TUI 已迁移到独立包：请先安装 tina-tui，"
+            "例如 `pip install tina-tui` 或 `pip install tina-python[tui]`。"
+        ) from exc
+    raise
 
 __all__ = [
     "TuiBlock",
@@ -26,9 +34,8 @@ __all__ = [
 
 
 def __getattr__(name):
-    # 延迟导入界面，保证未安装 textual 时仍可使用列表与计数组件
     if name in ("TinaTUI", "run_agent_in_tui"):
-        from . import tui
+        from tina_tui import TinaTUI, run_agent_in_tui
 
-        return getattr(tui, name)
+        return {"TinaTUI": TinaTUI, "run_agent_in_tui": run_agent_in_tui}[name]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

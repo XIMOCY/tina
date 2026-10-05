@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tina-python"
-version = "0.7.0rc0"
-description = "tina is in your computer!"
+name = "tina-tui"
+version = "0.1.0"
+description = "tina 的终端界面（Textual）扩展"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
 license = { text = "Apache Software License" }
@@ -18,8 +18,8 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "httpx",
-    "python-dotenv",
+    "tina-python>=0.7.0rc0",
+    "textual>=0.80",
 ]
 
 [project.urls]
@@ -28,38 +28,14 @@ Repository = "https://gitee.com/wang-churi/tina.git"
 GitHub = "https://github.com/XIMOCY/tina.git"
 
 [project.optional-dependencies]
-tui = [
-    "tina-tui>=0.1.0",
-]
-multi-agent = [
-    "tina-multi-agent>=0.1.0",
-]
-mcp = [
-    "mcp>=2.0",
-]
 test = [
     "pytest>=9.0",
     "pytest-asyncio>=1.4",
-    "pytest-cov>=7.0",
-]
-all = [
-    "tina-tui>=0.1.0",
-    "tina-multi-agent>=0.1.0",
-    "mcp>=2.0",
-]
-
-[tool.pytest.ini_options]
-testpaths = ["test"]
-pythonpath = ["packages/tina-tui", "packages/tina-multi-agent"]
-asyncio_mode = "auto"
-markers = [
-    "slow: 需要 LLM 实际调用的测试（默认跳过）",
-    "integration: 集成测试",
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["tina*"]
+include = ["tina_tui*"]
 
 [tool.setuptools.package-data]
-tina = ["py.typed"]
+tina_tui = ["py.typed"]

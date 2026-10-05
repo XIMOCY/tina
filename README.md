@@ -681,22 +681,30 @@ mcp = MCPClient()
 # 添加 stdio 类型 MCP 服务
 mcp.add_server(
     server_id="playwright",
-    config={
-        "type": "stdio",
-        "command": "npx",
-        "args": ["@playwright/mcp@latest"]
-    }
+    type="stdio",
+    command="npx",
+    args=["@playwright/mcp@latest"],
 )
 
-# 添加 SSE 类型 MCP 服务
+# 添加 Streamable HTTP 类型 MCP 服务（推荐，取代旧 SSE）
 mcp.add_server(
     server_id="my-service",
-    config={
-        "type": "sse",
-        "url": "http://localhost:8080/sse"
-    }
+    type="http",  # 也支持 streamable_http / streamableHttp
+    url="http://localhost:8080/mcp",
+    headers={"Authorization": "Bearer YOUR_API_KEY"},  # 可选
+)
+
+# 添加 SSE 类型 MCP 服务（旧传输，仍兼容）
+mcp.add_server(
+    server_id="my-legacy-service",
+    type="sse",
+    url="http://localhost:8080/sse",
+    headers={"Authorization": "Bearer YOUR_API_KEY"},  # 可选
 )
 ```
+
+> `type` 为必填项，用于区分传输类型；`command`/`args`/`env` 与 `url`/`headers`
+> 分别对应 stdio 与远程类型，编辑器会根据 `type` 给出对应的参数提示。
 
 ### 4.3 在 Agent 中使用 MCP
 
@@ -708,11 +716,9 @@ from tina.mcp import MCPClient
 mcp = MCPClient()
 mcp.add_server(
     server_id="playwright",
-    config={
-        "type": "stdio",
-        "command": "npx",
-        "args": ["@playwright/mcp@latest"]
-    }
+    type="stdio",
+    command="npx",
+    args=["@playwright/mcp@latest"],
 )
 
 llm = BaseAPI()
@@ -733,8 +739,8 @@ for chunk in result:
 ### 4.4 MCP 服务管理
 
 ```python
-# 添加服务
-agent.add_mcp_server("server_id", config)
+# 添加服务（参数与 MCPClient.add_server 一致）
+agent.add_mcp_server("server_id", type="http", url="http://localhost:8080/mcp")
 
 # 移除服务
 agent.remove_mcp_server("server_id")
@@ -989,16 +995,16 @@ print(message)
 
 ### 6.5 终端界面 TUI（可选扩展）
 
-`tina` 自带一个基于 [Textual](https://textual.textualize.io/) 的终端界面。它的定位是**可选扩展**：方便你测试自己写的 Agent，也可以直接当作自己的 TUI 来用。核心不依赖它，需要额外安装：
+终端界面由配套包 **`tina-tui`**（基于 [Textual](https://textual.textualize.io/)）提供，作为**可选扩展**单独发行：方便你测试自己写的 Agent，也可以直接当作自己的 TUI 来用。核心不依赖它，需要额外安装：
 
 ```bash
-pip install tina-python[tui]
+pip install tina-python[tui]   # 等价于安装 tina-tui
 ```
 
 ```python
 from tina import Agent, Tools
 from tina.llm import BaseAPI
-from tina.utils.tui import run_agent_in_tui
+from tina_tui import run_agent_in_tui
 
 agent = Agent(llm=BaseAPI(), tools=Tools())
 
@@ -1032,7 +1038,7 @@ run_agent_in_tui(agent, max_tokens=32000)
 
 快捷键：`Ctrl+↑/↓` 跳转消息、`Ctrl+Home/End` 首/末条、`Ctrl+R` 折叠思考、`Ctrl+T` 折叠工具与结果、`Ctrl+O` 查看完整工具参数、`Esc` 关闭弹窗/取消确认 / 打断本轮回复。
 
-> 界面是可选的：数据层 `TuiMessageStore`（渲染块列表）和 `TokenCounter`（token 计数）**不依赖 textual**，可以单独导入，用来接入你自己的界面。
+> 界面是可选的：数据层 `TuiMessageStore`（渲染块列表）和 `TokenCounter`（token 计数）在 `tina_tui` 里**不依赖 textual**，可以单独导入，用来接入你自己的界面。
 
 完整说明（安装、指令、快捷键、自建界面）见 [`docs/tui.md`](./docs/tui.md)。
 
