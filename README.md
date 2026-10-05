@@ -78,8 +78,7 @@ for chunk in result:
 - [四、MCP 支持 —— 模型上下文协议](#四mcp-支持--模型上下文协议)
 - [五、多模态支持](#五多模态支持)
 - [六、快速开发工具](#六快速开发工具)
-- [6.5 终端界面 TUI（可选扩展）](#65-终端界面-tui可选扩展)
-- [6.6 多 Agent 环境（可选扩展）](#66-多-agent-环境可选扩展)
+- [七、拓展包（可选）](#七拓展包可选)
 
 ---
 
@@ -674,7 +673,7 @@ tina 支持通过 MCP（Model Context Protocol）连接外部工具生态。
 pip install tina-python[mcp]
 ```
 
-> 想一次装齐所有可选功能（TUI + MCP）：`pip install tina-python[all]`
+> 想一次装齐所有可选功能（TUI + 多 Agent + MCP）：`pip install tina-python[all]`
 
 ### 4.2 使用 MCP 客户端
 
@@ -998,7 +997,13 @@ print(message)
 # {"role": "user", "content": [{"type": "text", "text": "..."}, {"type": "image_url", ...}]}
 ```
 
-### 6.5 终端界面 TUI（可选扩展）
+---
+
+## 七、拓展包（可选）
+
+tina 核心保持轻量：终端界面与多 Agent 环境这两块较大的功能，拆成**独立发行包**，按需安装、独立更新与发布。主包内不再包含它们的实现（仅保留 `tina.utils.*` 兼容转发壳）。
+
+### 7.1 终端界面 TUI（`tina-tui`）
 
 终端界面由配套包 **`tina-tui`**（基于 [Textual](https://textual.textualize.io/)）提供，作为**可选扩展**单独发行：方便你测试自己写的 Agent，也可以直接当作自己的 TUI 来用。核心不依赖它，需要额外安装：
 
@@ -1047,7 +1052,7 @@ run_agent_in_tui(agent, max_tokens=32000)
 
 完整说明（安装、指令、快捷键、自建界面）见 [`docs/tui.md`](./docs/tui.md)。
 
-### 6.6 多 Agent 环境（可选扩展）
+### 7.2 多 Agent 环境（`tina-multi-agent`）
 
 多 Agent 场景由独立发行包 **`tina-multi-agent`** 提供：把多个各自独立的 `Agent`（含 `MultimodalAgent`）注册进一个「环境」，通过消息总线互相通信，并带一个 Web 调试控制台用于观测与介入。
 
