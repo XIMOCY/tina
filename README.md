@@ -15,10 +15,13 @@ pip install tina-python
 # 如果需要使用 MCP（模型上下文协议）服务
 pip install tina-python[mcp]
 
-# 如果需要 TUI 终端界面
+# 如果需要 TUI 终端界面（独立发行包 tina-tui）
 pip install tina-python[tui]
 
-# 一次装齐所有可选功能（TUI + MCP）
+# 如果需要多 Agent 环境 + Web 调试控制台（独立发行包 tina-multi-agent）
+pip install tina-python[multi-agent]
+
+# 一次装齐所有可选功能（TUI + 多 Agent + MCP）
 pip install tina-python[all]
 
 # 如果需要运行测试
@@ -76,6 +79,7 @@ for chunk in result:
 - [五、多模态支持](#五多模态支持)
 - [六、快速开发工具](#六快速开发工具)
 - [6.5 终端界面 TUI（可选扩展）](#65-终端界面-tui可选扩展)
+- [6.6 多 Agent 环境（可选扩展）](#66-多-agent-环境可选扩展)
 
 ---
 
@@ -103,7 +107,8 @@ tina 是一个轻量、模块化的 AI 智能体框架，专注于让开发者�
 | **MCPClient** | MCP 集成 | 连接 MCP 服务器生态（stdio/SSE） |
 | **ContextManager** | 上下文管理 | 滚动窗口策略，自动截断 |
 | **AgentEvents** | 事件系统 | 贯穿 Agent 生命周期的回调钩子 |
-| **TUI（可选）** | 终端界面 | 测试你写的 Agent 的交互控制台，也可当作自己的 TUI 使用 |
+| **TUI（可选）** | 终端界面 | 独立包 `tina-tui`：测试 Agent 的交互控制台，也可当作自己的 TUI 使用 |
+| **多 Agent（可选）** | 多 Agent 环境 | 独立包 `tina-multi-agent`：消息总线 + Web 调试控制台 |
 
 ---
 
@@ -1042,6 +1047,35 @@ run_agent_in_tui(agent, max_tokens=32000)
 
 完整说明（安装、指令、快捷键、自建界面）见 [`docs/tui.md`](./docs/tui.md)。
 
+### 6.6 多 Agent 环境（可选扩展）
+
+多 Agent 场景由独立发行包 **`tina-multi-agent`** 提供：把多个各自独立的 `Agent`（含 `MultimodalAgent`）注册进一个「环境」，通过消息总线互相通信，并带一个 Web 调试控制台用于观测与介入。
+
+```bash
+pip install tina-python[multi-agent]   # 等价于安装 tina-multi-agent
+```
+
+```python
+from tina import Agent
+from tina.llm import BaseAPI
+from tina_multi_agent import MultiAgentEnvironment, MultiAgentWeb
+
+llm = BaseAPI()
+
+env = MultiAgentEnvironment(name="room")
+env.add_agent(Agent(llm=llm, name="alice", system_prompt="你是 alice"))
+env.add_agent(Agent(llm=llm, name="bob", system_prompt="你是 bob"))
+
+# 带 Web 控制台启动（自动启动环境）：打开 http://127.0.0.1:7077
+MultiAgentWeb(env, port=7077).run()
+```
+
+- 每个 Agent 一个收信队列；外部指令走 `add_user_message`，同伴消息作为带 `name` 的 assistant 消息注入。
+- 支持**回合中途注入**（`before_llm_call`）、打断（`env.interrupt`）、工具确认与权限表。
+- Web 控制台能力、消息总线、`POST /instruction`、`WS /ws` 事件等完整说明见 [`packages/tina-multi-agent/README.md`](./packages/tina-multi-agent/README.md)。
+
+> 兼容提示：旧路径 `tina.utils.multi_agent` 仍可用（主包内保留转发壳）；未安装 `tina-multi-agent` 时会提示安装。
+
 ---
 
 ## 附录
@@ -1063,7 +1097,8 @@ MAX_INPUT=8000
 |------|------|
 | 核心功能 | `httpx`, `python-dotenv` |
 | MCP 支持 | `mcp` |
-| TUI 界面（可选） | `textual` |
+| TUI 界面（可选，`tina-tui`） | `textual` |
+| 多 Agent（可选，`tina-multi-agent`） | `fastapi`, `uvicorn`, `websockets` |
 | 测试 | `pytest`, `pytest-asyncio`, `pytest-cov` |
 
 ### 许可证
