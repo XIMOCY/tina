@@ -1284,12 +1284,16 @@ class TinaTUI(App):
         self._stick = True
         await self._clear_messages()
         self.context.commit()
-        # 只挂载能盖住视口的尾部若干块，其余靠占位撑高度（滚上去再按需挂载）
+        # 窗口化时只挂载能盖住视口的尾部若干块（其余靠占位撑高度，滚上去再按需挂载）；
+        # 关掉窗口化时退回老做法：全部挂载（否则切换会话只会看到最后几条）
         blocks = self.context.get_blocks()
-        vh = max(1, self._messages_widget().size.height)
-        initial = self._window_size(len(blocks), vh)
-        tail = blocks[-initial:] if len(blocks) > initial else blocks
-        for block in tail:
+        if self.WINDOWED:
+            vh = max(1, self._messages_widget().size.height)
+            initial = self._window_size(len(blocks), vh)
+            mounted = blocks[-initial:] if len(blocks) > initial else blocks
+        else:
+            mounted = blocks
+        for block in mounted:
             await self._sync_block_async(block)
         self._window_update()
         # 此刻布局还没算完，max_scroll_y 还是旧值；等刷新后再确认一次到底
@@ -1971,6 +1975,9 @@ class TinaTUI(App):
         self._sticky.display = False
         self._spacer_top = Spacer(id="spacer-top")
         self._spacer_bottom = Spacer(id="spacer-bottom")
+        # 占位默认 0 高；关掉窗口化时不会有人再调 _set_spacers，避免留下空白行
+        self._spacer_top.styles.height = 0
+        self._spacer_bottom.styles.height = 0
         # 等占位真正挂载好，避免窗口更新时拿到没有父节点的旧占位
         await self._messages_widget().mount(self._sticky)
         await self._messages_widget().mount(self._spacer_top)
