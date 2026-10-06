@@ -45,6 +45,7 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 
 from tina.agent.core.state import AgentState
+from tina.core import logger
 from tina.utils.session_store import SessionStore, clean_title
 from .context_manager import (
     TuiBlock,
@@ -696,10 +697,17 @@ class TinaTUI(App):
     SESSION_LABEL_MAX = 32
 
     # 窗口化渲染：只把视口附近的块挂成 widget，其余用占位 spacer 撑高度。
-    # Textual 的布局开销随子 widget 数量线性增长（实测 400 个 Markdown 块全量重排
-    # 约 36ms/帧），故必须限制挂载数量。窗口变化后按「视口顶部所在块 + 块内偏移」
-    # 重新对齐滚动位置，保证内容高度变化时视口不跳动。
-    WINDOWED = True
+    #
+    # 实测（headless 基准 little_toy/bench_tui_window.py）：Textual 的整屏重排开销随
+    # 挂载 widget 数线性增长，300 条消息约 1200 个 widget 时一帧要 30ms，窗口化后
+    # DOM 降到几十个、重排降到 ~1ms。
+    #
+    # 但**默认关闭**：真实终端里代价的大头是「重绘」而不是「布局」，窗口化是靠不断
+    # 挂载/卸载 widget 换取少排几个块，DOM 增删会让 Textual 标记更大区域重绘；而
+    # agent 会话的常态是持续流式追加（每次追加都可能触发窗口移动 → churn），真正
+    # 擅长的「长历史里滚动」反而是少数时刻。实测在 Windows Terminal 下开启后比关闭
+    # 更卡，故默认 False，保留为可选。
+    WINDOWED = False
     WIN_BUFFER = 8    # 视口上下各多挂几个块（滚动缓冲，避免频繁重挂）
     WIN_MIN = 16      # 窗口至少挂多少个块（小视口时的下限）
     WIN_MAX = 120     # 窗口最多挂多少个块
@@ -839,6 +847,7 @@ class TinaTUI(App):
             yield Label("", id="session-status")
 
     def on_mount(self) -> None:
+        self._log_runtime_info()
         self._apply_theme()
         self.title = "tina"
         self.sub_title = getattr(self.agent, "name", "") or ""
@@ -861,6 +870,22 @@ class TinaTUI(App):
         self.query_one("#confirm-bar", Vertical).display = False
         self.query_one("#prompt", ChatInput).focus()
         self.set_interval(self.PUMP_INTERVAL, self._render_pump)
+
+    def _log_runtime_info(self) -> None:
+        """启动时记一行：本进程加载的是哪一版 tui.py、窗口化开没开
+
+        Python 不会热重载——改了源码但没重启进程，跑的还是老代码。之前就是吃了
+        这个亏（拿一个没重启的旧进程和新进程比性能），所以留一条可追溯的记录。
+        """
+        try:
+            mtime = Path(__file__).stat().st_mtime
+            stamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(mtime))
+            logger.info(
+                f"TUI 已加载：tui.py mtime={stamp} "
+                f"WINDOWED={self.WINDOWED} pid={os.getpid()}"
+            )
+        except Exception:  # noqa: BLE001 只是日志，失败不影响运行
+            pass
 
     def _apply_theme(self) -> None:
         try:
@@ -2369,6 +2394,10 @@ class TinaTUI(App):
         # 窗口维护（量高度 + 按视口重算窗口）放在泵里做，避免额外的刷新回调
         self._record_win_heights()
         self._window_update()
+        if self._stick and self._messages is not None:
+            # 跟随底部时每拍确认一次：内容刚变过时 max_scroll_y 还是旧值，等布局
+            # 算完这一拍会把它补上（同步设置，不产生会在用户滚动后才执行的延迟回调）
+            self._scroll_to_bottom(self._messages)
         if not self._dirty:
             return
         self.context.commit()
