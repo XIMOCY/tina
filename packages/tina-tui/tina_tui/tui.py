@@ -1655,7 +1655,8 @@ class TinaTUI(App):
         if rate is not None:
             lines.append(
                 f"缓存命中         {counter.cache_hit_tokens} "
-                f"/ {counter.cache_hit_tokens + counter.cache_miss_tokens} ({rate:.1%})"
+                f"/ {counter.cache_hit_tokens + counter.cache_miss_tokens} "
+                f"({rate:.2%})"
             )
         self._result("Token 统计", "\n".join(lines))
 
@@ -2560,10 +2561,11 @@ class TinaTUI(App):
             bar.display = False
             text = f"{counter.total_tokens} tokens"
 
-        # 上下文越长、命中率越高（前缀被服务端缓存），直接决定实际费用
+        # 上下文越长、命中率越高（前缀被服务端缓存），直接决定实际费用。
+        # 用两位小数：99.97% 若只保留一位会显示成 100.0%，容易误导
         rate = counter.cache_hit_rate
         if rate is not None:
-            text += f" · 缓存 {rate:.1%}"
+            text += f" · 缓存 {rate:.2%}"
         label.update(text)
 
         if counter.is_exceeded:
