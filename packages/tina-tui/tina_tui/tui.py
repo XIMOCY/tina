@@ -1651,6 +1651,12 @@ class TinaTUI(App):
         if counter.remaining is not None:
             lines.append(f"剩余             {counter.remaining}")
             lines.append(f"占用比例         {counter.ratio:.1%}")
+        rate = counter.cache_hit_rate
+        if rate is not None:
+            lines.append(
+                f"缓存命中         {counter.cache_hit_tokens} "
+                f"/ {counter.cache_hit_tokens + counter.cache_miss_tokens} ({rate:.1%})"
+            )
         self._result("Token 统计", "\n".join(lines))
 
     def _export_session(self, target: str = "") -> None:
@@ -2549,12 +2555,16 @@ class TinaTUI(App):
         if counter.max_tokens:
             bar.display = True
             bar.update(total=counter.max_tokens, progress=counter.total_tokens)
-            label.update(
-                f"{counter.total_tokens}/{counter.max_tokens} ({counter.ratio:.1%})"
-            )
+            text = f"{counter.total_tokens}/{counter.max_tokens} ({counter.ratio:.1%})"
         else:
             bar.display = False
-            label.update(f"{counter.total_tokens} tokens")
+            text = f"{counter.total_tokens} tokens"
+
+        # 上下文越长、命中率越高（前缀被服务端缓存），直接决定实际费用
+        rate = counter.cache_hit_rate
+        if rate is not None:
+            text += f" · 缓存 {rate:.1%}"
+        label.update(text)
 
         if counter.is_exceeded:
             bar.add_class("exceeded")
