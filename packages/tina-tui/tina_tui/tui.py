@@ -47,6 +47,7 @@ from textual.widgets.option_list import Option
 from tina.agent.core.state import AgentState
 from tina.core import logger
 from tina.utils.session_store import SessionStore, clean_title
+from .balance import Balance, format_cost, parse_balance
 from .context_manager import (
     TuiBlock,
     TuiMessageStore,
@@ -494,6 +495,10 @@ class TinaTUI(App):
         color: $text-muted;
         margin-right: 1;
     }
+    #balance-text {
+        color: $text-muted;
+        margin-right: 1;
+    }
     #token-text.exceeded {
         color: $error;
         text-style: bold;
@@ -678,6 +683,7 @@ class TinaTUI(App):
         "#context": "查看当前上下文",
         "#model": "查看当前模型信息",
         "#tokens": "查看 token 统计",
+        "#balance": "开关余额显示（每轮结束显示本轮花费）",
         "#compact": "压缩上下文（总结并写入 system）",
         "#export": "导出本次会话为 Markdown 文件",
         "#sessions": "列出已保存的会话（可跟关键字过滤）",
@@ -819,6 +825,11 @@ class TinaTUI(App):
         self._last_stats: Label | None = None
         # 底部「最近一条消息」的耗时文案（切换会话时要恢复）
         self._last_stats_text = ""
+        self._balance_text: Label | None = None
+        # 余额显示（#balance 开关）：记录上一次的余额用来算本轮花费
+        self._balance_on = False
+        self._balance: Balance | None = None
+        self._balance_mark: float | None = None
         self._session_status: Label | None = None
 
         if auto_confirm:
@@ -833,6 +844,7 @@ class TinaTUI(App):
             yield Label("就绪", id="status-text")
             yield LoadingIndicator(id="loading")
             yield Label("", id="token-text")
+            yield Label("", id="balance-text")
             yield ProgressBar(
                 total=100, show_percentage=False, show_eta=False, id="token-bar"
             )
@@ -860,6 +872,8 @@ class TinaTUI(App):
         self._loading = self.query_one("#loading", LoadingIndicator)
         self._loading.display = False
         self._last_stats = self.query_one("#last-stats", Label)
+        self._balance_text = self.query_one("#balance-text", Label)
+        self._balance_text.display = False
         self._sticky = self.query_one("#sticky-header", StickyHeader)
         self._sticky.display = False
         self._spacer_top = self.query_one("#spacer-top", Static)
@@ -1122,6 +1136,8 @@ class TinaTUI(App):
             self._show_model()
         elif cmd == "#tokens":
             self._show_tokens()
+        elif cmd == "#balance":
+            await self._toggle_balance()
         elif cmd == "#clear":
             await self.action_clear_view()
             self._result("提示", "已清空上下文与界面")
@@ -1683,6 +1699,93 @@ class TinaTUI(App):
             )
         self._result("Token 统计", "\n".join(lines))
 
+    # ------------------------------------------------------------------ 余额 / 花费
+
+    async def _toggle_balance(self) -> None:
+        """#balance：开关余额显示
+
+        打开时先查一次余额，并把它记成基准；之后每轮对话结束都会再查一次，
+        用两次余额的差值当作本轮花费——这样不需要维护单价表。
+        """
+        if self._balance_on:
+            self._balance_on = False
+            self._refresh_balance_text()
+            self._result("余额", "已关闭余额显示")
+            return
+
+        balance = await self._query_balance()
+        if balance is None:
+            self._result(
+                "余额",
+                "当前服务端没有余额接口（GET /user/balance），无法显示。\n"
+                "DeepSeek 支持；OpenAI 官方接口不支持。",
+            )
+            return
+
+        self._balance_on = True
+        self._balance = balance
+        self._balance_mark = balance.total
+        self._refresh_balance_text()
+        self._result(
+            "余额",
+            f"当前余额 {balance.format()}\n"
+            "已开启余额显示：每轮对话结束会刷新余额，并在底部那行末尾显示本轮花费。",
+        )
+
+    async def _query_balance(self) -> Balance | None:
+        """向 LLM 层要一次余额（api key 不经过界面层）"""
+        llm = getattr(self.agent, "llm", None)
+        fetch = getattr(llm, "fetch_balance", None)
+        if fetch is None:
+            return None
+        try:
+            return parse_balance(await fetch())
+        except Exception as error:  # noqa: BLE001 查余额失败不该影响聊天
+            try:
+                self.log.error(f"余额查询失败: {error}")
+            except Exception:  # noqa: BLE001
+                pass
+            return None
+
+    def _refresh_balance_text(self) -> None:
+        """把余额写到底栏（关闭时整块隐藏）"""
+        label = self._balance_text
+        if label is None:
+            return
+        if not self._balance_on or self._balance is None:
+            label.update("")
+            label.display = False
+            return
+        label.update(f"余额 {self._balance.format()}")
+        label.display = True
+
+    def _refresh_balance_after_turn(self) -> None:
+        """一轮结束后异步刷新余额，并显示本轮花费"""
+        if not self._balance_on:
+            return
+        self.run_worker(
+            self._update_balance_after_turn(), group="balance", exclusive=True
+        )
+
+    async def _update_balance_after_turn(self) -> None:
+        balance = await self._query_balance()
+        if balance is None:
+            return
+        spent = None
+        if self._balance_mark is not None:
+            spent = self._balance_mark - balance.total
+        self._balance_mark = balance.total
+        self._balance = balance
+        self._refresh_balance_text()
+        if spent is not None and spent > 0:
+            self._append_cost(spent)
+
+    def _append_cost(self, spent: float) -> None:
+        """把本轮花费追加到底部统计行末尾（先去掉上一次追加的那段）"""
+        base = self._last_stats_text.split(" · ¥")[0].rstrip(" ·")
+        cost = format_cost(spent)
+        self._set_last_stats(f"{base} · {cost}" if base else cost)
+
     def _export_session(self, target: str = "") -> None:
         """把当前会话导出为 Markdown 文件"""
         path = self._resolve_export_path(target)
@@ -1905,6 +2008,8 @@ class TinaTUI(App):
                     turn_duration, turn_tokens, turn_gen, has_tokens
                 )
             )
+            # 开了余额显示的话，异步查一次余额并把本轮花费追加到底部
+            self._refresh_balance_after_turn()
             # 每轮结束落盘一次，避免退出时丢历史
             self._persist_session()
             self._schedule_session_title()

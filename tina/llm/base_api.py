@@ -140,6 +140,34 @@ class BaseAPI:
             self.logger.debug(f"BaseAPI - 异步客户端已在当前 Loop 中创建")
         return self._async_client
 
+    async def fetch_balance(self) -> dict | None:
+        """查询账户余额，返回服务端的原始 JSON；不支持或失败时返回 None
+
+        这是 DeepSeek 风格的 ``GET /user/balance``，不属于 OpenAI 标准接口——
+        其它服务端多半返回 404，此时返回 None，调用方据此优雅降级。
+        key 只在本层使用，不对外暴露（``self.api_key`` 一直是掩码）。
+        """
+        root = derive_api_root(self.base_url)
+        key = super().__getattribute__("_BaseAPI__api_key")
+        if not root or not key:
+            return None
+        try:
+            response = await self.aclient.get(
+                f"{root}/user/balance",
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=10,
+            )
+            if response.status_code != 200:
+                self.logger.debug(
+                    f"BaseAPI - 余额查询不可用：HTTP {response.status_code}"
+                )
+                return None
+            data = response.json()
+        except Exception as error:  # noqa: BLE001 查余额失败不该影响聊天
+            self.logger.debug(f"BaseAPI - 余额查询失败: {error}")
+            return None
+        return data if isinstance(data, dict) else None
+
     def __repr__(self):
         return f"<BaseAPI model={self.model} base url={self.base_url}>"
 
