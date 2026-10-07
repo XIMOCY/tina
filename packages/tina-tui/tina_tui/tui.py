@@ -673,6 +673,7 @@ class TinaTUI(App):
         Binding("ctrl+t", "toggle_tools", "折叠工具/结果", priority=True),
         Binding("ctrl+l", "clear_view", "清空界面", priority=True, show=False),
         Binding("ctrl+o", "show_tool_args", "查看工具参数", priority=True, show=False),
+        Binding("alt+v", "attach_image", "粘贴图片", priority=True, show=False),
         Binding("escape", "escape", "打断", priority=True),
     ]
 
@@ -681,6 +682,7 @@ class TinaTUI(App):
         "#help": "查看可用命令",
         "#tools": "查看工具包；#tools 包名 看某包工具",
         "#context": "查看当前上下文",
+        "#paste": "附加图片（剪贴板，或 #paste 图片路径）",
         "#model": "查看当前模型信息",
         "#tokens": "查看 token 统计",
         "#balance": "开关余额显示（每轮结束显示本轮花费）",
@@ -1096,18 +1098,40 @@ class TinaTUI(App):
         head = parts[0].lower()
         return head in self.TUI_COMMANDS or head in self.COMMAND_ALIASES
 
-    def attach_clipboard_image(self) -> bool:
-        """把系统剪贴板里的图片附加到下一条消息；成功返回 True"""
-        path = _grab_clipboard_image()
-        if not path:
-            self.notify("剪贴板里没有图片（或未安装 Pillow）", severity="warning")
-            return False
+    def attach_image(self, path: str | None = None) -> bool:
+        """把一张图片附加到下一条消息；``path`` 为空时取系统剪贴板
+
+        ``path`` 也接受带引号的写法（``#paste "C:\\a b\\x.png"``），方便拖拽文件
+        进终端后直接粘路径。成功返回 True。
+        """
+        if path:
+            path = path.strip().strip('"').strip("'")
+            if not os.path.isfile(path):
+                self.notify(f"找不到文件：{path}", severity="warning")
+                return False
+        else:
+            path = _grab_clipboard_image()
+            if not path:
+                self.notify(
+                    "剪贴板里没有图片（或未安装 Pillow）。"
+                    "也可以用 #paste 图片路径",
+                    severity="warning",
+                )
+                return False
         self._pending_images.append(path)
         self.notify(
             f"已附加图片：{os.path.basename(path)}"
             f"（待发送 {len(self._pending_images)} 张）"
         )
         return True
+
+    def attach_clipboard_image(self) -> bool:
+        """把系统剪贴板里的图片附加到下一条消息；成功返回 True"""
+        return self.attach_image()
+
+    def action_attach_image(self) -> None:
+        """快捷键入口（Alt+V）：终端吞掉 Ctrl+V 时的替代方案"""
+        self.attach_image()
 
     def _agent_stream(self, instruction: str, images: list[str] | None):
         """按是否带图片选择预测入口：多模态 Agent 用 image=，普通 Agent 忽略"""
@@ -1143,6 +1167,8 @@ class TinaTUI(App):
             self._result("提示", "已清空上下文与界面")
         elif cmd == "#context":
             self._show_context()
+        elif head == "#paste":
+            self.attach_image(arg)
         elif head == "#sessions":
             self._show_sessions(arg)
         elif head == "#switch":
@@ -1178,7 +1204,7 @@ class TinaTUI(App):
 
     def _show_help(self) -> None:
         lines = [
-            "[bold]可用命令[/]   [dim]Enter 发送 · Tab 补全 · Ctrl+V 粘贴图片[/]",
+            "[bold]可用命令[/]   [dim]Enter 发送 · Tab 补全 · #paste / Alt+V 粘贴图片[/]",
             "",
         ]
         for name, desc in self.TUI_COMMANDS.items():
