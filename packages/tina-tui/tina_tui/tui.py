@@ -817,6 +817,8 @@ class TinaTUI(App):
         self._loading: LoadingIndicator | None = None
         self._sticky: StickyHeader | None = None
         self._last_stats: Label | None = None
+        # 底部「最近一条消息」的耗时文案（切换会话时要恢复）
+        self._last_stats_text = ""
         self._session_status: Label | None = None
 
         if auto_confirm:
@@ -1324,9 +1326,30 @@ class TinaTUI(App):
         # 此刻布局还没算完，max_scroll_y 还是旧值；等刷新后再确认一次到底
         self._scroll_pending = False
         self._request_scroll()
+        # 底部 token 占用 / 整轮统计恢复成该会话最后的状态（快照里存着）
+        self._restore_bottom_stats()
         self._refresh_tokens()
-        # 底部统计属于上一轮，切换 / 新建会话后先清空
+
+    def _restore_bottom_stats(self) -> None:
+        """把底部的 token 占用与整轮统计恢复成该会话最后的状态
+
+        这两项都随渲染块快照一起存了（`usage` / `timing`），切换会话后不该是空的。
+        注意 `timing` 是单次 LLM 请求的计时，而实时运行时底部显示的是「整轮」统计，
+        所以恢复出来的数字可能和切走前略有出入——但比空白好，也更贴近这条消息本身。
+        """
+        self.counter.reset()
         self._set_last_stats("")
+        for block in reversed(self.context.get_blocks()):
+            if self.counter.calls == 0:
+                usage = block.get("usage")
+                if usage:
+                    self.counter.add_usage(usage)
+            if not self._last_stats_text:
+                timing = block.get("timing")
+                if timing:
+                    self._set_last_stats(_format_timing(timing))
+            if self.counter.calls and self._last_stats_text:
+                break
 
     def _show_sessions(self, keyword: str = "") -> None:
         metas = self.session_store.find(keyword)
@@ -2354,6 +2377,7 @@ class TinaTUI(App):
 
     def _set_last_stats(self, text: str) -> None:
         """更新底部「最近一条消息」的耗时/tok/tps"""
+        self._last_stats_text = text
         label = self._last_stats
         if label is None:
             return
