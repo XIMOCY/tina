@@ -2359,11 +2359,18 @@ class TinaTUI(App):
 
     @staticmethod
     def _scroll_to_bottom(scroll: Any) -> None:
-        """同步滚到底部（不走 scroll_end 的延迟回调）"""
+        """同步滚到底部（不走 scroll_end 的延迟回调）
+
+        必须用 ``scroll_to(animate=False)`` 而不是直接写 ``scroll_y``：Textual 的
+        滚轮/方向键实现是 ``scroll_to(y=scroll_target_y ± 1)``，只写 ``scroll_y``
+        会把 ``scroll_target_y`` 留在陈旧值上，用户一滚动就被拽回那个旧位置
+        （表现为「从上次的位置跳过去」）。``scroll_to(animate=False)`` 在
+        ``Widget._scroll_to`` 里同步地把两者一起赋值，且不产生延迟回调。
+        """
         try:
             end = scroll.max_scroll_y
             if abs(scroll.scroll_offset.y - end) >= 0.5:
-                scroll.scroll_y = end
+                scroll.scroll_to(y=end, animate=False)
         except Exception:  # noqa: BLE001 未挂载/未布局时忽略
             pass
 
