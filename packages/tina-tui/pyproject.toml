@@ -27,6 +27,9 @@ Homepage = "https://gitee.com/wang-churi/tina"
 Repository = "https://gitee.com/wang-churi/tina.git"
 GitHub = "https://github.com/XIMOCY/tina.git"
 
+[project.scripts]
+tinacode = "tina_tui.tinacode:main"
+
 [project.optional-dependencies]
 test = [
     "pytest>=9.0",
