@@ -26,6 +26,7 @@ from tina import MultimodalAgent
 from tina.llm import BaseMultimodalAPI
 from tina.utils.coding_context import CodingContextManager
 from tina.utils.coding_tools import CodingTools
+from tina.utils.deepseek import enable_deepseek_reasoning_tools
 
 from .tui import run_agent_in_tui
 
@@ -60,18 +61,34 @@ def find_env_file(root: str) -> str | None:
     return None
 
 
+def is_deepseek(llm) -> bool:
+    """判断当前后端是不是 DeepSeek（思考模式需要回传 reasoning_content）
+
+    先看环境变量 ``TINACODE_REASONING``（``1``/``0`` 强制开关），
+    否则按 base_url / model 里有没有 ``deepseek`` 判断。
+    """
+    override = os.environ.get("TINACODE_REASONING", "").strip().lower()
+    if override in ("1", "true", "yes", "on"):
+        return True
+    if override in ("0", "false", "no", "off"):
+        return False
+    haystack = f"{getattr(llm, 'base_url', '') or ''} {getattr(llm, 'model', '') or ''}"
+    return "deepseek" in haystack.lower()
+
+
 def build_agent(root: str, env_path: str) -> MultimodalAgent:
     """在 ``root`` 目录里组装一个编码 agent"""
     tools = CodingTools(root=root).get_tools()
-    agent = MultimodalAgent(
-        llm=BaseMultimodalAPI(env_path=env_path),
-        tools=tools,
-        name="tinacode",
-    )
+    llm = BaseMultimodalAPI(env_path=env_path)
+    agent = MultimodalAgent(llm=llm, tools=tools, name="tinacode")
     # 必须在构造之后设置：Agent 构造时会给自己填默认系统提示，
     # 直接传 context_manager 之外的路径会把 CodingContextManager 注入的
     # 项目上下文（AGENTS.md / 目录树）盖掉。
     agent.set_context_manager(CodingContextManager(root=root, tools=tools))
+    # DeepSeek 思考模式要求把 reasoning_content 回传，否则多轮之后报 400。
+    # 这是 DeepSeek 专有的，别给别的后端塞这个字段。
+    if is_deepseek(llm):
+        enable_deepseek_reasoning_tools(agent)
     return agent
 
 
