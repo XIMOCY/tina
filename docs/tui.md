@@ -15,6 +15,36 @@ pip install tina-python[tui]   # 等价于安装 tina-tui
 pip install tina-tui
 ```
 
+## 命令行入口 `tinacode`
+
+装好 `tina-tui` 后会多一个 `tinacode` 命令，用来**在任意目录直接起一个编码 agent**，不用写任何 Python：
+
+```bash
+cd <你的项目>
+tinacode
+```
+
+行为：
+
+| 项目 | 说明 |
+| --- | --- |
+| 工作目录 | **你敲命令时所在的目录**，`code_*` 工具的相对路径都以它为准 |
+| 会话历史 | 存到 `<cwd>/.tina/chat_sessions/`，**按目录隔离**（换个目录就是另一份历史） |
+| 模型配置 | 优先 `<cwd>/tina.env` 或 `<cwd>/.env`；没有就用全局 `~/.tina/tina.env` |
+| 工具集 | `CodingTools`（`code_read` / `code_glob` / `code_grep` / `code_write` / `code_edit` / `code_patch` / `code_bash`） |
+| 目录级定制 | 目录里的 `.tinacode.md` / `AGENTS.md` / `.tina.md` 会被自动注入系统提示，**不用改代码** |
+
+全局配置放一份，任何目录都能直接跑：
+
+```bash
+mkdir -p ~/.tina
+# 把 tina.env 复制进去（LLM_API_KEY / BASE_URL / MODEL_NAME）
+```
+
+> `tinacode` 会在启动时按 `base_url` / `model` 判断是不是 DeepSeek，是的话自动开启
+> 「思考 + 工具调用」的 `reasoning_content` 回传（否则多轮后会报 400）。
+> 用兼容思考模式但 URL 里没有 `deepseek` 字样的代理时，设 `TINACODE_REASONING=1` 强制开启。
+
 ## 快速开始
 
 ```python
@@ -75,10 +105,10 @@ run_agent_in_tui(agent, unlimited_context=True)
 - **余额 / 花费**：`#balance` 打开后，状态栏显示账户余额，每轮结束再查一次余额、把两次的差值当作本轮花费追加到底部统计末尾。用差值估算就不必维护单价表；代价是精度受服务端小数点限制（小于一分钱显示 `¥<0.01`），且同一账号下的其它会话也会算进来。依赖服务端的 `GET /user/balance`（DeepSeek 有，OpenAI 官方没有），拿不到时 `#balance` 会直接说明并保持关闭
 - **多行输入**：支持粘贴多行；`Enter` 发送、`Shift+Enter` / `Alt+Enter` 换行
 - **命令补全**：输入 `#` 显示候选，`Tab` 循环补全；`#switch` / `#delete` 后可直接 `Tab` 补全会话 id
-- **图片粘贴**：`Ctrl+V` 把系统剪贴板里的图片附加到下一条消息（需安装 `Pillow`；仅多模态 Agent 生效，普通 Agent 会提示忽略）
+- **图片粘贴**：`#paste` 或 `Alt+V` 把系统剪贴板里的图片附加到下一条消息，`#paste 路径.png` 也可按路径指定文件（需安装 `Pillow`；仅多模态 Agent 生效，普通 Agent 会提示忽略）。终端常把 `Ctrl+V` 当成「粘贴文本」吃掉（Windows Terminal / VS Code 默认如此），此时按键根本到不了程序，所以 `Ctrl+V` 只在终端愿意透传时可用，**`#paste` 才是可靠入口**
 - **会话归档**：每轮对话结束自动存到 `<项目>/.tina/chat_sessions/`，支持切换 / 重命名 / 删除，首轮结束后自动起名（也可自定义）
 - **粘性滚动**：在底部时自动跟随输出；向上滚动查看历史时不打扰；滚回底部自动恢复
-- **窗口化渲染**：只把视口附近的块挂成 widget，其余用占位块撑高度。Textual 的整屏重排开销随 widget 数线性增长（300 条消息约 1200 个 widget 时一帧要 30ms+），窗口化后 DOM 降到几十个 widget、重排降到 ~1ms，长会话滚动才不卡。滚回来时按「视口顶部所在块 + 块内偏移」重新对齐，内容高度变化不会让视口跳动
+- **窗口化渲染（默认关闭，可选）**：`TinaTUI.WINDOWED = True` 时只把视口附近的块挂成 widget，其余用占位块撑高度。Textual 的整屏重排开销随 widget 数线性增长（300 条消息约 1200 个 widget 时一帧要 30ms+），窗口化后 DOM 降到几十个 widget、重排降到 ~1ms。**但默认是关的**：真实终端里代价大头是「重绘」而非「布局」，窗口化靠不断挂载/卸载 widget 换少排几个块，而 agent 会话的常态是持续流式追加（每次追加都可能触发窗口移动）；实测 Windows Terminal 下开启反而更卡。适合「长历史里频繁滚动」的场景，长会话滚动时才划算
 
 ## 指令
 
@@ -87,6 +117,7 @@ run_agent_in_tui(agent, unlimited_context=True)
 | `#help` | `#?` `#h` | 查看可用命令 |
 | `#tools` | | 查看工具包列表（名称 / metadata / 工具数）；`#tools 包名` 查看该包的工具（名称/描述/参数），包名可 Tab 补全 |
 | `#context` | | 查看当前上下文（消息块摘要） |
+| `#paste` | | 附加图片到下一条消息：`#paste` 取系统剪贴板，`#paste 路径.png` 按路径指定 |
 | `#model` | | 查看当前模型信息（model / base_url） |
 | `#tokens` | | 查看当前上下文 token 占用（total / prompt / completion / 占比 / 缓存命中） |
 | `#balance` | | 开关余额显示：状态栏显示账户余额，每轮结束在底部统计末尾显示本轮花费 |

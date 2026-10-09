@@ -31,3 +31,9 @@ Thumbs.db
 .coverage.*
 coverage/
 htmlcov/
+
+# tina 工作目录（会话归档等本地状态）
+.tina/
+
+# `#export` 的默认输出文件名（会在项目根反复生成）
+tina_session.md

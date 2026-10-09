@@ -13,6 +13,8 @@
 from __future__ import annotations
 
 import json
+import re
+import time
 from copy import deepcopy
 from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Iterator
 
@@ -25,6 +27,70 @@ from tina.core import logger
 
 if TYPE_CHECKING:
     from tina.agent import Agent, MultimodalAgent, Tools
+
+
+# 会话持久化时要保留的渲染块字段（含耗时/timing/usage，恢复后视图与实时一致）
+_SNAPSHOT_FIELDS = (
+    "role",
+    "content",
+    "title",
+    "status",
+    "tool_name",
+    "tool_arguments",
+    "tool_calls",
+    "tool_result",
+    "usage",
+    "timing",
+    "duration",
+    "metadata",
+)
+
+
+def _code_fence(text: str, lang: str = "") -> str:
+    """用足够长的围栏包裹文本，避免内容里的反引号破坏代码块"""
+    runs = [len(match) for match in re.findall(r"`+", text)]
+    fence = "`" * max(3, (max(runs) + 1) if runs else 3)
+    return f"{fence}{lang}\n{text}\n{fence}"
+
+
+def _content_text(content: Any) -> str:
+    """把消息 content 归一成文本（多模态 content 只取文本部分）"""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+                elif item.get("type") == "image_url":
+                    parts.append("[图片]")
+        return "\n".join(parts)
+    return str(content)
+
+
+def _pretty_arguments(arguments: Any) -> str:
+    """把工具参数（dict / JSON 字符串 / 原始字符串）整理成可读文本"""
+    if isinstance(arguments, str):
+        stripped = arguments.strip()
+        if stripped[:1] in ("{", "["):
+            try:
+                arguments = json.loads(stripped)
+            except (ValueError, TypeError):
+                return arguments
+        else:
+            return arguments
+    if isinstance(arguments, (dict, list)):
+        try:
+            return json.dumps(arguments, ensure_ascii=False, indent=2)
+        except (TypeError, ValueError):
+            return str(arguments)
+    return str(arguments)
 
 
 class TuiBlock(dict):
@@ -127,8 +193,10 @@ class TuiMessageStore:
     blocks: list[TuiBlock]
 
     def __init__(
-        self, max_length: int = 100000, max_tool_result_length: int = 6000
+        self, max_length: int = 0, max_tool_result_length: int = 6000
     ) -> None:
+        # max_length<=0 表示不裁剪（默认）：界面靠「窗口化渲染」控制挂载量，
+        # 仓库保留全部块，避免旧消息被静默丢弃（那会同时留下孤儿 widget）。
         self.max_length = max_length
         self.max_tool_result_length = max_tool_result_length
         self.blocks = []
@@ -136,6 +204,9 @@ class TuiMessageStore:
         self._listeners: list[Callable[[str, TuiBlock | None], None]] = []
         self._current_assistant: TuiBlock | None = None
         self._current_reasoning: TuiBlock | None = None
+        # 本轮（一次 LLM 请求）最近一个思考块，用于把收尾 timing 的
+        # thinking_duration 归到对应的「思考」块上
+        self._round_reasoning: TuiBlock | None = None
         self._active_tools: dict[str, list[TuiBlock]] = {}
         # 并发工具调用的归属：按流式 index 与最终 tool_call_id 定位卡片
         self._tool_by_index: dict[int, TuiBlock] = {}
@@ -202,16 +273,139 @@ class TuiMessageStore:
     def __iter__(self) -> Iterator[TuiBlock]:
         return iter(self.blocks)
 
+    # ------------------------------------------------------------------ 导出
+
+    def to_markdown(self, include_system: bool = True) -> str:
+        """把整段会话导出为 Markdown 文本（严格按块出现的先后顺序）
+
+        - 用户 / 助手各自成节，带小标题，一眼能分清
+        - 思考过程用 <details> 折叠，不喧宾夺主
+        - 工具调用含名称、参数、返回
+        - 系统提示、错误、命令结果一并保留
+
+        Args:
+            include_system: 是否包含系统提示块（默认包含）
+        """
+        self.commit()
+        lines = [
+            "# tina 会话导出",
+            "",
+            f"> 导出时间：{time.strftime('%Y-%m-%d %H:%M:%S')}",
+            f"> 消息块：{len(self.blocks)}",
+        ]
+        for block in self.blocks:
+            section = self._block_to_markdown(block, include_system=include_system)
+            if not section:
+                continue
+            lines += ["", "---", "", section]
+        return "\n".join(lines).rstrip() + "\n"
+
+    def _block_to_markdown(self, block: TuiBlock, include_system: bool = True) -> str:
+        role = block.role
+        if role == "system":
+            return self._text_section("⚙️ 系统提示", block.content) if include_system else ""
+        if role == "user":
+            return self._text_section("🧑 用户", block.content)
+        if role == "assistant":
+            return self._assistant_section(block)
+        if role == "reasoning":
+            return self._reasoning_section(block)
+        if role == "tool":
+            return self._tool_section(block)
+        if role == "error":
+            return self._text_section("⚠️ 错误", block.content)
+        if role == "result":
+            return self._text_section(f"📋 {block.title or '命令结果'}", block.content)
+        return self._text_section(role or "未知", block.content)
+
+    @staticmethod
+    def _text_section(title: str, content: str) -> str:
+        content = (content or "").strip("\n")
+        if not content.strip():
+            return ""
+        return f"## {title}\n\n{content}"
+
+    def _assistant_section(self, block: TuiBlock) -> str:
+        content = (block.content or "").strip("\n")
+        meta = self._block_meta(block)
+        if not content.strip() and not meta:
+            return ""
+        body = f"## 🤖 助手\n\n{content}".rstrip()
+        if meta:
+            body += f"\n\n<sub>{meta}</sub>"
+        return body
+
+    def _reasoning_section(self, block: TuiBlock) -> str:
+        content = (block.content or "").strip("\n")
+        if not content.strip():
+            return ""
+        meta = self._block_meta(block)
+        summary = "💭 思考过程" + (f"（{meta}）" if meta else "")
+        return (
+            "<details>\n"
+            f"<summary>{summary}</summary>\n\n"
+            f"{content}\n\n"
+            "</details>"
+        )
+
+    def _tool_section(self, block: TuiBlock) -> str:
+        name = block.tool_name or "unknown"
+        lines = [f"## 🔧 工具调用：{name}", ""]
+
+        arguments = block.tool_arguments
+        if arguments in (None, "", {}, []):
+            arguments = block.tool_calls
+        if arguments not in (None, "", {}, []):
+            pretty = _pretty_arguments(arguments)
+            lang = "json" if pretty.lstrip()[:1] in ("{", "[") else ""
+            lines += ["**参数**", "", _code_fence(pretty, lang), ""]
+
+        result = block.tool_result if block.tool_result is not None else block.content
+        if result:
+            lines += ["**返回**", "", _code_fence(str(result)), ""]
+
+        if block.duration is not None:
+            lines.append(f"<sub>耗时 {block.duration}s</sub>")
+
+        return "\n".join(lines).rstrip()
+
+    @staticmethod
+    def _block_meta(block: TuiBlock) -> str:
+        parts: list[str] = []
+        timing = block.timing
+        if timing:
+            if timing.get("duration") is not None:
+                parts.append(f"耗时 {timing['duration']}s")
+            if timing.get("tokens") is not None:
+                parts.append(f"{timing['tokens']} tok")
+            if timing.get("tps") is not None:
+                parts.append(f"tps {timing['tps']}")
+        usage = block.usage
+        if isinstance(usage, dict) and usage.get("total_tokens") is not None:
+            parts.append(f"共 {usage['total_tokens']} tokens")
+        return " · ".join(parts)
+
     # ------------------------------------------------------------------ 写入
 
     def add_system(self, content: str, **metadata: Any) -> TuiBlock:
         """追加系统提示块"""
         return self._new_block("system", content=content, metadata=metadata)
 
-    def add_user(self, content: str, **metadata: Any) -> TuiBlock:
-        """追加用户输入块，并结算上一轮仍在进行的流式块"""
-        self._close_streaming()
-        return self._new_block("user", content=content, metadata=metadata)
+    def add_user(self, content: str, queued: bool = False, **metadata: Any) -> TuiBlock:
+        """追加用户输入块，并结算上一轮仍在进行的流式块
+
+        ``queued=True``：这条消息只是在排队（当前轮次还在输出），因此**不能**
+        结算流式块，否则正在流式的回复会被提前标记为完成、后续 chunk 会另起一块。
+        块状态标为 ``queued``，由 UI 显示成「排队中」。
+        """
+        if not queued:
+            self._close_streaming()
+        return self._new_block(
+            "user",
+            status="queued" if queued else "done",
+            content=content,
+            metadata=metadata,
+        )
 
     def add_error(self, message: Any, **metadata: Any) -> TuiBlock:
         """追加错误块"""
@@ -231,6 +425,98 @@ class TuiMessageStore:
             "result", content=content, title=title, metadata=meta
         )
 
+    def load_messages(
+        self, messages: list[dict[str, Any]], include_system: bool = False
+    ) -> None:
+        """用模型消息历史重建渲染块（切换会话时恢复界面）
+
+        与 ``handle_chunk`` 不同，这里按消息的最终形态直接建块，不走流式状态机。
+        消息结构同 ``agent.context_manager.get_messages()``。默认跳过 system
+        消息（实时渲染时系统提示也不会出现在消息区）。
+        """
+        self.clear()
+        for message in messages or []:
+            if not isinstance(message, dict):
+                continue
+            role = message.get("role")
+            if role == "system":
+                content = _content_text(message.get("content"))
+                if content and include_system:
+                    self.add_system(content)
+            elif role == "user":
+                content = _content_text(message.get("content"))
+                if content:
+                    self.add_user(content)
+            elif role == "assistant":
+                reasoning = message.get("reasoning_content")
+                if reasoning:
+                    self._new_block("reasoning", content=str(reasoning))
+                content = _content_text(message.get("content"))
+                if content:
+                    self._new_block("assistant", content=content)
+                for call in message.get("tool_calls") or []:
+                    if isinstance(call, dict):
+                        self._restore_tool_call(call)
+            elif role == "tool":
+                self._restore_tool_result(message)
+
+    def _restore_tool_call(self, call: dict[str, Any]) -> TuiBlock:
+        """按已完成的 tool_call 建一张工具卡片（等待结果回填）"""
+        function = call.get("function") or {}
+        name = function.get("name") or call.get("name") or "unknown"
+        arguments = function.get("arguments")
+        if arguments is None:
+            arguments = call.get("arguments")
+        block = self._start_tool(name, tool_id=call.get("id"))
+        block["tool_calls"] = [call]
+        block["status"] = "calling"
+        block["tool_arguments"] = self._parse_arguments(arguments)
+        self._notify("update", block)
+        return block
+
+    def _restore_tool_result(self, message: dict[str, Any]) -> TuiBlock:
+        """把 tool 消息回填到对应的工具卡片上"""
+        name = message.get("name")
+        call_id = message.get("tool_call_id")
+        result = _content_text(message.get("content"))
+        block = self._tool_by_id.get(call_id) if call_id else None
+        if block is None:
+            block = self._find_tool(name) if name else None
+        if block is None:
+            block = self._new_block("tool", status="done", tool_name=name or "unknown")
+        block["tool_result"] = result
+        block["content"] = self._truncate(result)
+        block["status"] = "done"
+        self._release_tool(name, block)
+        self._notify("update", block)
+        return block
+
+    def dump_snapshot(self) -> list[dict[str, Any]]:
+        """导出所有渲染块（含耗时/timing/usage），供会话持久化
+
+        与 ``load_messages``（从模型消息重建）不同，dump_snapshot / load_snapshot
+        保留实时的界面状态：思考与工具卡的耗时、助手 timing 小字等，恢复后与切走前一致。
+
+        注意：不要和 ``snapshot()`` 混淆 —— 那个是**深拷贝**，供界面安全遍历用；
+        这个产出的是可直接 JSON 序列化的扁平字段字典。
+        """
+        self.commit()
+        out: list[dict[str, Any]] = []
+        for block in self.blocks:
+            out.append({key: block.get(key) for key in _SNAPSHOT_FIELDS})
+        return out
+
+    def load_snapshot(self, blocks: list[dict[str, Any]]) -> None:
+        """从 ``dump_snapshot()`` 的结果恢复渲染块（原样重放，不经过消息解析）"""
+        self.clear()
+        for item in blocks or []:
+            if not isinstance(item, dict):
+                continue
+            role = item.get("role") or "assistant"
+            fields = {k: v for k, v in item.items() if k not in ("role", "status")}
+            block = self._new_block(role, status=item.get("status") or "done", **fields)
+            self._notify("update", block)
+
     def clear(self, keep_system: bool = False) -> None:
         """清空渲染上下文，可选保留系统提示块"""
         if keep_system:
@@ -241,6 +527,7 @@ class TuiMessageStore:
         self._pending_ids = {b["id"] for b in self.blocks if b.get("_pending")}
         self._current_assistant = None
         self._current_reasoning = None
+        self._round_reasoning = None
         self._active_tools.clear()
         self._tool_by_index.clear()
         self._tool_by_id.clear()
@@ -295,6 +582,7 @@ class TuiMessageStore:
         self._active_tools.clear()
         self._tool_by_index.clear()
         self._tool_by_id.clear()
+        self._round_reasoning = None
 
     # ------------------------------------------------------------------ 内部实现
 
@@ -371,8 +659,19 @@ class TuiMessageStore:
             self._current_assistant["usage"] = usage
         if timing is not None:
             self._current_assistant["timing"] = timing
+            self._attach_thinking_duration(timing)
         self._notify("update", self._current_assistant)
         return self._current_assistant
+
+    def _attach_thinking_duration(self, timing: dict[str, Any]) -> None:
+        """把本轮思考耗时归到对应的「思考」块（收尾 timing 里的 thinking_duration）"""
+        block = self._round_reasoning
+        thinking = timing.get("thinking_duration")
+        if block is None or thinking is None:
+            return
+        block["duration"] = thinking
+        self._round_reasoning = None
+        self._notify("update", block)
 
     def _handle_reasoning(self, chunk: dict[str, Any]) -> TuiBlock:
         text = chunk.get("reasoning_content", "") or ""
@@ -384,6 +683,8 @@ class TuiMessageStore:
             self._current_reasoning = self._new_block("reasoning", status="streaming")
         self._current_reasoning["status"] = "streaming"
         self._append_field(self._current_reasoning, "content", text)
+        # 记录本轮的思考块，收尾 timing 到达时把 thinking_duration 归到它
+        self._round_reasoning = self._current_reasoning
         self._notify("update", self._current_reasoning)
         return self._current_reasoning
 
@@ -550,7 +851,10 @@ class TuiMessageStore:
         return active
 
     def _trim(self) -> None:
-        """超过 max_length 时从最旧的块开始裁剪，保留 system、进行中的块与最新块"""
+        """超过 max_length 时从最旧的块开始裁剪，保留 system、进行中的块与最新块
+
+        `max_length<=0`（默认）表示不裁剪。
+        """
         if self.max_length <= 0:
             return
         total = sum(self._block_length(block) for block in self.blocks)

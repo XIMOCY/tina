@@ -101,7 +101,9 @@ class MultimodalAgent(Agent):
         self.events = AgentEvents() if events is None else events
         if system_prompt is not None:
             self.context_manager.set_system_message(system_prompt)
-        else:
+        elif not self.context_manager.get_system_message():
+            # 未显式给 system_prompt 时，保留传入的 context_manager 自带的系统提示；
+            # 只有它没有系统提示时才填默认。
             self.context_manager.set_system_message(Prompt("tina").prompt)
         self._inject_keyword_actions_prompt()
         # 初始化消息，可以直接使用context_manager来修改messages

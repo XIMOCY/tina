@@ -28,11 +28,8 @@ import httpx
 from ..core import logger
 from ..core.error import APIRequestFailed
 from ..utils.env_reader import EnvReader
-from ..utils.url import derive_api_root
 
 
-# file_id 前缀（DeepSeek 形如 file-api-0a1b2c...）
-FILE_ID_PREFIX = "file-api-"
 
 # 支持的图片扩展名 -> MIME（官方仅支持 JPEG / PNG / GIF / WebP）
 SUPPORTED_EXTENSIONS = {
@@ -53,9 +50,19 @@ DEFAULT_CACHE_FILENAME = "files_cache.json"
 CACHE_EXPIRY_MARGIN_SECONDS = 60  # 快过期时提前重传
 
 
-def is_file_id(value: Any) -> bool:
-    """判断是否为 Files API 的 file_id（``file-api-...``）"""
-    return isinstance(value, str) and value.startswith(FILE_ID_PREFIX)
+
+
+
+def _derive_root(base_url: str) -> str:
+    """从 base_url 推导 Files API 的根地址
+    """
+    if not base_url or not isinstance(base_url, str):
+        raise ValueError("base_url 不能为空")
+    root = base_url.rstrip("/")
+    suffix = "/chat/completions"
+    if root.endswith(suffix):
+        root = root[: -len(suffix)]
+    return root.rstrip("/")
 
 
 def _default_cache_path() -> str:
@@ -172,7 +179,7 @@ class FilesAPI:
                 "FilesAPI - 未找到 Base URL，请通过参数 base_url 传入或创建 .env 文件并设置 base_url"
             )
 
-        self.root = derive_api_root(self.base_url)
+        self.root = _derive_root(self.base_url)
         self.files_url = f"{self.root}/files"
 
         self.use_cache = use_cache

@@ -1,6 +1,6 @@
 from .base_api import BaseAPI
 from .base_multimodal_api import BaseMultimodalAPI
-from .files_api import FilesAPI, is_file_id
+from .files_api import FilesAPI
 
 __all__ = [
     # 基础类
@@ -8,5 +8,4 @@ __all__ = [
     "BaseMultimodalAPI",
     # 文件接口
     "FilesAPI",
-    "is_file_id",
 ]

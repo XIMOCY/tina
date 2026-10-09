@@ -21,6 +21,7 @@ import os
 import tempfile
 import time
 from bisect import bisect_right
+from collections import deque
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -217,11 +218,29 @@ def _param_type(info: Any) -> str:
 
 
 class UserMessage(Static):
-    """用户消息块"""
+    """用户消息块
 
-    def __init__(self, content: str, **kwargs: Any) -> None:
-        super().__init__(f"[bold #e0a45e]❯[/] {_escape_markup(content)}", **kwargs)
+    ``queued=True`` 时显示成「排队中」：这条消息是在 Agent 输出期间提交的，
+    已入队，等当前轮次结束后才会真正发出。
+    """
+
+    def __init__(self, content: str, queued: bool = False, **kwargs: Any) -> None:
+        self._content = content
+        super().__init__("", **kwargs)
         self.add_class("user-message")
+        self.set_queued(queued)
+
+    def set_queued(self, queued: bool) -> None:
+        """切换「排队中」显示（轮次真正开始时由 _apply_block 调回来）"""
+        if queued:
+            self.update(
+                "[dim]⏳ 排队中[/] "
+                f"[bold #e0a45e]❯[/] {_escape_markup(self._content)}"
+            )
+            self.add_class("user-message-queued")
+        else:
+            self.update(f"[bold #e0a45e]❯[/] {_escape_markup(self._content)}")
+            self.remove_class("user-message-queued")
 
 
 class ErrorMessage(Static):
@@ -577,6 +596,11 @@ class TinaTUI(App):
         text-style: italic;
     }
 
+    /* 输出期间提交、正在排队等待的消息 */
+    .user-message-queued {
+        text-opacity: 0.55;
+    }
+
     ToolBlock {
         margin: 0 0 1 2;
         padding: 0;
@@ -797,6 +821,9 @@ class TinaTUI(App):
         self._always_allow: set[str] = set()
         # 已粘贴、待随下一条消息发送的图片路径
         self._pending_images: list[str] = []
+        # 输出期间提交的消息：入队等当前轮次结束后自动发送
+        # 每项为 (用户块 id, 文本, 图片路径列表)
+        self._queued_turns: deque[tuple[int, str, list[str]]] = deque()
         self._completion_matches: list[str] = []
         self._completion_index = 0
         self._last_render: dict[int, float] = {}
@@ -1080,11 +1107,20 @@ class TinaTUI(App):
         if text.startswith("#") and self._looks_like_command(text):
             await self._handle_command(text)
             return
-        if self._busy:
-            self.notify("正在回复中，Esc 可打断，请稍候。", severity="warning")
-            return
         images = self._pending_images
         self._pending_images = []
+        if self._busy:
+            # 输出期间提交：入队，先渲染成「排队中」，当前轮次结束后自动发送
+            block = self.context.add_user(text, queued=True)
+            self._mark_dirty(block)
+            self._request_scroll()
+            self._queued_turns.append((block.id, text, images))
+            self.notify(
+                f"已入队（第 {len(self._queued_turns)} 条），"
+                "当前回复结束后自动发送；Esc 可打断当前回复",
+                severity="information",
+            )
+            return
         self._turn_worker = self._run_turn(text, images)
 
     def _looks_like_command(self, text: str) -> bool:
@@ -1282,7 +1318,7 @@ class TinaTUI(App):
             self.session_store.save(
                 session_id,
                 self._agent_messages(),
-                blocks=self.context.snapshot(),
+                blocks=self.context.dump_snapshot(),
             )
             self._refresh_session_status()
         except (OSError, ValueError) as error:
@@ -1347,6 +1383,7 @@ class TinaTUI(App):
         self._dirty.clear()
         self._turn_refs.clear()
         self._jump_index = -1
+        self._queued_turns.clear()
         self._active_assistant = None
         # 切换 / 新建后默认跟随底部（否则首拍窗口会按 scroll_y=0 算成「开头」，
         # 表现为先跳到顶部、再被拉回底部，中间还闪过一段空白）
@@ -1967,7 +2004,10 @@ class TinaTUI(App):
 
     @work(exclusive=True)
     async def _run_turn(
-        self, instruction: str, images: list[str] | None = None
+        self,
+        instruction: str,
+        images: list[str] | None = None,
+        queued_block: TuiBlock | None = None,
     ) -> None:
         self._busy = True
         self._interrupted = False
@@ -1982,7 +2022,12 @@ class TinaTUI(App):
         self._start_loading()
         self._set_status("思考中…")
 
-        user_block = self.context.add_user(instruction)
+        if queued_block is None:
+            user_block = self.context.add_user(instruction)
+        else:
+            # 复用入队时已经渲染出来的块，把「排队中」摘掉即可
+            user_block = queued_block
+            user_block["status"] = "done"
         self._mark_dirty(user_block, turn=True)
 
         try:
@@ -2039,6 +2084,20 @@ class TinaTUI(App):
             # 每轮结束落盘一次，避免退出时丢历史
             self._persist_session()
             self._schedule_session_title()
+            # 有排队消息就接着跑（用 call_next 等本 worker 退出后再起，
+            # 否则 @work(exclusive=True) 会取消正在收尾的自己）
+            if self._queued_turns:
+                self.call_next(self._start_next_queued_turn)
+
+    def _start_next_queued_turn(self) -> None:
+        """当前轮次结束后，自动发送队列里的下一条"""
+        if self._busy or not self._queued_turns:
+            return
+        block_id, text, images = self._queued_turns.popleft()
+        self._stick = True
+        self._turn_worker = self._run_turn(
+            text, images, queued_block=self.context.get_block(block_id)
+        )
 
     def _partial_assistant_text(self) -> str:
         """本轮仍在流式的助手正文（尚未写入 Agent 上下文）"""
@@ -2180,6 +2239,7 @@ class TinaTUI(App):
         self._last_render.clear()
         self._dirty.clear()
         self._turn_refs.clear()
+        self._queued_turns.clear()
         self._jump_index = -1
         await self._clear_messages()
 
@@ -2188,7 +2248,7 @@ class TinaTUI(App):
     def _create_widget(self, block: TuiBlock) -> Any:
         role = block.role
         if role == "user":
-            return UserMessage(block.content)
+            return UserMessage(block.content, queued=block.status == "queued")
         if role == "reasoning":
             return ReasoningBlock(collapsed=self.reasoning_collapsed)
         if role == "tool":
@@ -2507,7 +2567,10 @@ class TinaTUI(App):
             return self._render_markdown(widget, block.content)
         if isinstance(widget, (ReasoningBlock, ToolBlock, ResultBlock)):
             widget.set_block(block)
-        elif block.role in ("user", "error", "system"):
+        elif block.role == "user":
+            # 入队的消息在轮次真正开始时要把「排队中」摘掉
+            widget.set_queued(block.status == "queued")
+        elif block.role in ("error", "system"):
             pass
         else:
             widget.update(block.content)
@@ -2807,6 +2870,7 @@ class TinaTUI(App):
         self._last_render.clear()
         self._dirty.clear()
         self._turn_refs.clear()
+        self._queued_turns.clear()
         self._jump_index = -1
         await self._clear_messages()
         self._refresh_tokens()

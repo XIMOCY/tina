@@ -864,55 +864,7 @@ message = build_multimodal_message(
 
 tina 提供了一些开箱即用的工具函数和工具包，帮助你快速搭建应用。
 
-### 6.1 系统工具包 `system_tools`
-
-tina 自带一套系统工具包，包含文件操作、代码执行等常用功能：
-
-```python
-from tina import Agent, Tools
-from tina.llm import BaseAPI
-from tina.utils.system_tools import system_tools
-
-tools = Tools(name="my_tools")
-tools += system_tools  # 添加 tina 自带的系统工具包（工具集需命名）
-
-agent = Agent(
-    llm=BaseAPI(),
-    tools=tools,
-    system_prompt="你是一个系统助手，可以帮助我管理文件和执行代码"
-)
-
-result = agent.predict(instruction="帮我看看当前目录下有哪些文件", stream=True)
-for chunk in result:
-    print(chunk.content, end="")
-```
-
-**内置工具一览：**
-
-| 工具名称 | 需要确认 | 功能说明 |
-|---------|---------|---------|
-| `get_time` | ❌ | 获取当前系统时间 |
-| `list_dir` | ❌ | 列出目录下的文件和子目录 |
-| `project_tree` | ❌ | 获取项目目录结构（类似 tree 命令） |
-| `get_path` | ❌ | 获取文件/文件夹的绝对路径 |
-| `read_code` | ❌ | 按字符范围读取文件内容片段 |
-| `read_code_by_line` | ❌ | 按行读取代码片段（带行号） |
-| `search_in_files` | ❌ | 在项目中按正则搜索文本（自动忽略 `.git`/`.venv` 等） |
-| `delay` | ❌ | 延时函数 |
-| `make_dir` | ✅ | 创建目录（自动创建父目录） |
-| `write_code` | ✅ | 写入文件内容（覆盖，自动创建父目录） |
-| `append_code` | ✅ | 追加写入文件内容（自动创建父目录） |
-| `delete_path` | ✅ | 删除文件或目录（`recursive=True` 可递归） |
-| `replace_code_by_lines` | ✅ | 按行范围替换代码块 |
-| `terminal` | ✅ | 在终端运行指令（带超时） |
-| `run_python` | ✅ | 执行一小段 Python 代码 |
-| `shot_down_system` | ✅ | 关机 |
-
-> `需要确认` 的工具在执行时会触发 `on_tool_confirmation` 事件，适合接入人工审批流程。
->
-> 由于系统工具包使用了命名空间，工具在模型侧的实际名称为 `tina_sys_tools_{名称}`，例如 `tina_sys_tools_read_code`。
-
-### 6.2 后台工作器 `AgentWorker`
+### 6.1 后台工作器 `AgentWorker`
 
 `AgentWorker` 将 Agent 包装为异步后台服务，通过消息队列接收外部指令并持续处理：
 
@@ -952,7 +904,7 @@ asyncio.run(main())
 
 `AgentWorker` 还会将自身的 `put` 方法自动注册为 Agent 的工具，方便多 Agent 场景下互相调用。
 
-### 6.3 终端交互控制台 `run_agent_in_cli`
+### 6.2 终端交互控制台 `run_agent_in_cli`
 
 快速启动一个 Agent 交互式终端，适合调试和测试：
 
@@ -978,7 +930,7 @@ run_agent_in_cli(agent)
 | `#clear` | 清屏 |
 | `exit` / `quit` | 退出对话（`#exit` 不支持，会被当作普通输入） |
 
-### 6.4 多模态消息构建器 `build_multimodal_message`
+### 6.3 多模态消息构建器 `build_multimodal_message`
 
 用于灵活构建包含多模态内容的消息：
 
@@ -1001,7 +953,7 @@ print(message)
 
 ## 七、拓展包（可选）
 
-tina 核心保持轻量：终端界面与多 Agent 环境这两块较大的功能，拆成**独立发行包**，按需安装、独立更新与发布。主包内不再包含它们的实现（仅保留 `tina.utils.*` 兼容转发壳）。
+除核心之外的可选能力：有**随主包提供**的（编码工具），也有拆成**独立发行包**的（终端界面、多 Agent 环境），按需安装、可独立更新与发布。主包内不再包含后者的实现（仅保留 `tina.utils.*` 兼容转发壳）。
 
 ### 7.1 终端界面 TUI（`tina-tui`）
 
@@ -1010,6 +962,21 @@ tina 核心保持轻量：终端界面与多 Agent 环境这两块较大的功�
 ```bash
 pip install tina-python[tui]   # 等价于安装 tina-tui
 ```
+
+**开箱即用的 `tinacode` 命令**：装好后可以在任意目录直接起一个编码 agent，不用写 Python：
+
+```bash
+cd <你的项目>
+tinacode
+```
+
+- 工作目录 = 你敲命令时所在的目录（`code_*` 工具的相对路径以它为准）
+- 会话历史存到 `<cwd>/.tina/chat_sessions/`，**按目录隔离**
+- 模型配置读 `<cwd>/tina.env` 或 `.env`，没有则回退全局 `~/.tina/tina.env`
+- 目录里的 `.tinacode.md` / `AGENTS.md` / `.tina.md` 自动注入系统提示（目录级定制不用改代码）
+- 工具集是 `CodingTools`（见 [7.3](#73-编码工具codingtools)）
+
+自己组装 Agent 再交给 TUI：
 
 ```python
 from tina import Agent, Tools
@@ -1031,8 +998,9 @@ run_agent_in_tui(agent, max_tokens=32000)
 - 自动为 Agent 注册工具确认事件（`require_confirmation=True` 的工具会弹出选择条）
 - 上下文 token 占用与上限进度（显示百分比，≥80% 变黄、超限变红警告），运行时显示动画
 - `Esc` 可打断本轮回复；已生成的部分正文写回上下文，进行中的工具调用记为「该次调用被打断」
-- 输入框支持多行与粘贴；`Enter` 发送、`Shift+Enter` 换行、`Tab` 补全命令
+- 输入框支持多行与粘贴；`Enter` 发送、`Shift+Enter` 换行、`Tab` 补全命令与会话 id
 - 底部粘性滚动：在底部时自动跟随输出，向上滚动查看历史时不会被打扰，滚回底部自动恢复
+- 会话自动归档到 `<项目>/.tina/chat_sessions/`：可切换 / 重命名 / 删除，首轮结束后自动起名
 - 可选 `unlimited_context=True`：用 tina 提供的无限制上下文管理器替换 Agent 的（不裁剪历史、不截断工具结果）
 
 | 指令 | 功能 |
@@ -1042,6 +1010,11 @@ run_agent_in_tui(agent, max_tokens=32000)
 | `#context` | 查看当前上下文 |
 | `#model` | 查看当前模型信息 |
 | `#tokens` | 查看当前上下文 token 占用 |
+| `#sessions` | 列出已保存的会话（可跟关键字过滤） |
+| `#switch` | 切换会话（按 id / id 前缀 / 标题） |
+| `#new` | 新建会话（当前会话自动保存） |
+| `#rename` | 重命名当前会话 |
+| `#delete` | 删除会话 |
 | `#compact` | 压缩上下文（让 Agent 自我总结并并入 system） |
 | `#clear` | 清空上下文与界面 |
 | `#exit` | 退出 |
@@ -1080,6 +1053,42 @@ MultiAgentWeb(env, port=7077).run()
 - Web 控制台能力、消息总线、`POST /instruction`、`WS /ws` 事件等完整说明见 [`packages/tina-multi-agent/README.md`](./packages/tina-multi-agent/README.md)。
 
 > 兼容提示：旧路径 `tina.utils.multi_agent` 仍可用（主包内保留转发壳）；未安装 `tina-multi-agent` 时会提示安装。
+
+### 7.3 编码工具（`CodingTools`）
+
+面向「写代码」的**主包内置**能力（命名空间 `code`），像普通工具包一样按需搭配到任意 Agent：一个编码工具包 + 一个项目感知的上下文管理器。提供可靠的**局部编辑**（精确文本匹配 + 唯一性校验 + 原子写）、搜索增强与命令输出截断。
+
+```python
+from tina import Agent
+from tina.utils.coding_tools import CodingTools
+
+tools = CodingTools(root=".").get_tools()   # code_read / code_glob / code_grep / code_write / code_edit / code_patch / code_bash
+agent = Agent(llm=llm, tools=tools)
+```
+
+| 工具 | 说明 | 需确认 |
+|------|------|--------|
+| `code_read` | 按行读取（offset/limit、行号、总行数与截断提示） | 否 |
+| `code_glob` | 按 glob 查找文件（如 `**/*.py`） | 否 |
+| `code_grep` | 正则搜索（`include` / 上下文行 / 忽略大小写） | 否 |
+| `code_write` | 整文件写入（`.py` 写前语法校验） | ✅ |
+| `code_edit` | 精确文本替换（命中多次需 `replace_all`，返回 diff） | ✅ |
+| `code_patch` | 应用 unified diff 补丁（一次多处/跨行改动，行号可偏差、上下文对不上则整体中止） | ✅ |
+| `code_bash` | 执行命令（首尾截断、带 exit code） | ✅ |
+
+配套的项目感知上下文管理器（自动注入 `AGENTS.md` / `.tinacode.md` / `.tina.md`、工作目录与目录结构摘要，可用 `refresh_project_context()` 刷新）：
+
+既可在构造时传入，也可之后替换：
+
+```python
+from tina import Agent
+from tina.utils.coding_context import CodingContextManager
+
+agent = Agent(llm=llm, tools=tools, context_manager=CodingContextManager(root="."))
+# 或：agent.set_context_manager(CodingContextManager(root="."))
+```
+
+> 未显式传 `system_prompt` 时，Agent 会**保留** `context_manager` 自带的系统提示（不再用默认提示覆盖）；显式传 `system_prompt` 才会覆盖它。
 
 ---
 

@@ -106,7 +106,9 @@ class Agent:
         self.events = AgentEvents() if events is None else events
         if system_prompt is not None:
             self.context_manager.set_system_message(system_prompt)
-        else:
+        elif not self.context_manager.get_system_message():
+            # 未显式给 system_prompt 时，保留传入的 context_manager 自带的系统提示；
+            # 只有它没有系统提示时才填默认。
             self.context_manager.set_system_message(Prompt("tina").prompt)
         self._inject_keyword_actions_prompt()
 
@@ -362,6 +364,26 @@ class Agent:
         except Exception as e:
             raise e
 
+    def refresh_mcp_tools(self) -> None:
+        """按当前 MCP 连接重新合并工具（新增 / 移除 server 后调用）
+
+        ``add_mcp_server`` / ``remove_mcp_server`` 会调用它；这样动态增删的 MCP
+        服务其工具才会真正进入工具集（既可被模型调用，也能在 TUI 的 `#tools` 看到）。
+        """
+        if self.mcp_client is None:
+            return
+        try:
+            new_tools = self.mcp_client.to_tina_tools()
+        except Exception:  # noqa: BLE001 连接异常时不打断
+            return
+        subs = getattr(self.tools, "_sub_bundles", None)
+        if subs is not None:
+            subs[:] = [b for b in subs if b.instance_name != "mcp"]
+        try:
+            self.tools.add_tools(new_tools)
+        except Exception:  # noqa: BLE001 工具集未命名等情况下静默跳过
+            pass
+
     def get_messages(self) -> list:
         """
         获取当前Agent的完整消息列表（包含 system 系统提示词）
@@ -541,7 +563,7 @@ class Agent:
             timeout:超时时间
         """
         if self.mcp_client is not None:
-            return self.mcp_client.add_server(
+            ok = self.mcp_client.add_server(
                 server_id,
                 type=type,
                 command=command,
@@ -552,6 +574,8 @@ class Agent:
                 max_retries=max_retries,
                 timeout=timeout,
             )
+            self.refresh_mcp_tools()
+            return ok
         else:
             raise ValueError("MCP客户端未初始化，请先初始化MCP客户端")
 
@@ -562,7 +586,9 @@ class Agent:
             server_id:服务器ID
         """
         if self.mcp_client is not None:
-            return self.mcp_client.remove_server(server_id)
+            ok = self.mcp_client.remove_server(server_id)
+            self.refresh_mcp_tools()
+            return ok
         else:
             raise ValueError("MCP客户端未初始化，请先初始化MCP客户端")
 

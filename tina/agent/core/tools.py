@@ -162,7 +162,7 @@ class Tools:
 
     def __init__(
         self,
-        tools_executor: ToolsExecutor = ToolsExecutor(),
+        tools_executor: ToolsExecutor|None = None,
         name: str = None,
         metadata: dict = None,
     ):
@@ -176,7 +176,10 @@ class Tools:
         self._direct_tools = []
         self._sub_bundles = []
         self.disable_tools = {}
-        self.tools_executor = tools_executor
+        if tools_executor is None:
+            self.tools_executor = ToolsExecutor()
+        else:
+            self.tools_executor = tools_executor
         self.instance_name = name
         self.metadata = metadata
 
