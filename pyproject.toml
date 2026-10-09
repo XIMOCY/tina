@@ -29,7 +29,9 @@ GitHub = "https://github.com/XIMOCY/tina.git"
 
 [project.optional-dependencies]
 tui = [
-    "tina-tui>=0.1.0",
+    # 0.2.0 起提供 tinacode 命令；不收紧的话，已装 tina-tui 0.1.0 的环境
+    # pip 不会升级它，用户拿不到 tinacode
+    "tina-tui>=0.2.0",
 ]
 multi-agent = [
     "tina-multi-agent>=0.1.0",
@@ -43,7 +45,7 @@ test = [
     "pytest-cov>=7.0",
 ]
 all = [
-    "tina-tui>=0.1.0",
+    "tina-tui>=0.2.0",
     "tina-multi-agent>=0.1.0",
     "mcp>=2.0",
 ]

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tina-tui"
-version = "0.1.0"
+version = "0.2.0"
 description = "tina 的终端界面（Textual）扩展"
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.10"
@@ -18,7 +18,8 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "tina-python>=0.7.0",
+    # tinacode 依赖 tina.utils.coding_tools / coding_context，这两个是 0.7.2 才有的
+    "tina-python>=0.7.2",
     "textual>=0.80",
 ]
 
