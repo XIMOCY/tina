@@ -151,6 +151,7 @@ class MultimodalAgent(Agent):
         top_p: float = 0.9,
         top_k: int = 1,
         min_p: float = 0.0,
+        file_id: str | list[str] = None,
         stream: Literal[True] = True,
     ) -> Generator[AgentResponse, None, None]: ...
 
@@ -165,6 +166,7 @@ class MultimodalAgent(Agent):
         top_p: float = 0.9,
         top_k: int = 1,
         min_p: float = 0.0,
+        file_id: str | list[str] = None,
         stream: Literal[False] = False,
     ) -> AgentResponse: ...
     def predict(
@@ -177,6 +179,7 @@ class MultimodalAgent(Agent):
         top_p: float = 0.9,
         top_k: int = 1,
         min_p: float = 0.0,
+        file_id: str | list[str] = None,
         stream: bool = True,
     ):
         """
@@ -192,6 +195,7 @@ class MultimodalAgent(Agent):
                 top_p,
                 top_k,
                 min_p,
+                file_id,
             )
         else:
 
@@ -204,6 +208,7 @@ class MultimodalAgent(Agent):
                 top_p,
                 top_k,
                 min_p,
+                file_id,
             )
 
     async def apredict(
@@ -216,6 +221,7 @@ class MultimodalAgent(Agent):
         top_p: float = 0.9,
         top_k: int = 1,
         min_p: float = 0.0,
+        file_id: str | list[str] = None,
     ) -> AsyncGenerator[AgentResponse, None]:
         """
         异步版本的 predict，默认流式输出
@@ -229,6 +235,7 @@ class MultimodalAgent(Agent):
             top_p,
             top_k,
             min_p,
+            file_id,
         ):
             yield AgentResponse(**chunk)
 
@@ -242,6 +249,7 @@ class MultimodalAgent(Agent):
         top_p: float = 0.9,
         top_k: int = 1,
         min_p: float = 0.0,
+        file_id: str | list[str] = None,
     ) -> AgentResponse:
         result = await self.runtime.arun_prediction_no_stream(
             instruction,
@@ -252,5 +260,6 @@ class MultimodalAgent(Agent):
             top_p,
             top_k,
             min_p,
+            file_id,
         )
         return AgentResponse(**result)

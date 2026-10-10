@@ -6,6 +6,31 @@
 
 ---
 
+## [0.7.3] - 2026-10-10
+
+### 修复
+
+- **`MultimodalAgent` 用不了 `file_id`（Files API）**：这是「下游全支持、上游没贯通」的遗漏 ——
+  `build_multimodal_message` 和 `MultimodalContextManager.add_user_message` 一直都有
+  `input_file_id` / `file_id` 参数，但 `MultimodalAgent` 与
+  `ToolCallingMutilemodalAgentRuntime` 只暴露了 `image` / `audio` / `url`，
+  参数传到中间层就断了，用户无法通过 `agent.apredict(file_id=...)` 使用 Files API 引用。
+  - 现在 `predict` / `apredict` / `apredict_no_stream` 以及 runtime 的四个 prediction
+    方法都接受 `file_id`。
+  - 新参数**追加在参数表末尾**（`min_p` 之后），老的按位置传参不受影响。
+  - 用法：`agent.apredict(instruction="看看这张图", file_id=[fid])`，
+    其中 `fid = FilesAPI().upload_cached("a.png")`。
+  - 相比内联 base64，`file_id` 在多轮长会话里不必每轮重传图片数据。
+
+### 测试
+
+- 新增 `test/test_multimodal_file_id.py`（14 例）：签名防回归、端到端贯通、多图顺序、
+  与 `image` 混用、`_content_length` 对 `file` 块的开销、超长上下文裁剪不崩。
+- `test/conftest.py` 的 `MockLLM.apredict` 补上非流式分支（对齐 `BaseAPI.apredict`
+  的 `stream=False` 默认值），此前它总是返回 AsyncGenerator。
+
+---
+
 ## [0.7.2] - 2026-10-09
 
 ### ⚠️ 破坏性变更

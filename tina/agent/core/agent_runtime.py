@@ -573,10 +573,15 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
         top_p: float = 0.9,
         top_k: int = 1,
         min_p: float = 0.0,
+        file_id: str | list[str] = None,
     ) -> dict:
         self._reset_keyword_buffer()
         self.context_manager.add_user_message(
-            instruction=instruction, image=image, audio=audio, url=url
+            instruction=instruction,
+            image=image,
+            audio=audio,
+            url=url,
+            file_id=file_id,
         )
         counter = 0
         while counter < self.max_tool_loop:
@@ -632,10 +637,15 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
         top_p: float = 0.9,
         top_k: int = 1,
         min_p: float = 0,
+        file_id: str | list[str] = None,
     ) -> Generator[dict, None, None]:
         self._reset_keyword_buffer()
         self.context_manager.add_user_message(
-            instruction=instruction, image=image, audio=audio, url=url
+            instruction=instruction,
+            image=image,
+            audio=audio,
+            url=url,
+            file_id=file_id,
         )
         counter = 0
         while counter < self.max_tool_loop:
@@ -755,10 +765,15 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
         top_p=0.9,
         top_k=1,
         min_p=0,
+        file_id: str | list[str] = None,
     ):
         self._reset_keyword_buffer()
         self.context_manager.add_user_message(
-            instruction=instruction, image=image, audio=audio, url=url
+            instruction=instruction,
+            image=image,
+            audio=audio,
+            url=url,
+            file_id=file_id,
         )
         counter = 0
         while counter < self.max_tool_loop:
@@ -815,10 +830,15 @@ class ToolCallingMutilemodalAgentRuntime(BaseAgentRuntime):
         top_p=0.9,
         top_k=1,
         min_p=0,
+        file_id: str | list[str] = None,
     ):
         self._reset_keyword_buffer()
         self.context_manager.add_user_message(
-            instruction=instruction, image=image, audio=audio, url=url
+            instruction=instruction,
+            image=image,
+            audio=audio,
+            url=url,
+            file_id=file_id,
         )
         counter = 0
         while counter < self.max_tool_loop:
