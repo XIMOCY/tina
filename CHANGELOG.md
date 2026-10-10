@@ -28,11 +28,19 @@
   `delete()` 之后紧跟 `exists()` 就复现。
   - 现在 404、以及「400 + 不存在类文案」都返回 `False`；其他状态码（含**无关的 400**）
     仍然抛异常，不会被吞掉。
+- **`BaseMultimodalAPI` 同样没暴露 `file_id`**：这是上一条的另一半 —— 直接调 LLM
+  （不走 agent）的入口 `predict` / `predict_no_stream` / `predict_stream` /
+  `apredict` / `apredict_no_stream` / `apredict_stream` /
+  `_prepare_multimodal_messages` 都只认 `input_image` / `input_audio` / `input_url`，
+  而 `build_multimodal_message` 一直支持 `input_file_id`。
+  - 现在 7 个方法统一加上 `input_file_id`。
+  - `_prepare_multimodal_messages` 的新参数追加在末尾，**老的 8 个位置参数调用不受影响**。
 
 ### 测试
 
-- 新增 `test/test_multimodal_file_id.py`（14 例）：签名防回归、端到端贯通、多图顺序、
-  与 `image` 混用、`_content_length` 对 `file` 块的开销、超长上下文裁剪不崩。
+- 新增 `test/test_multimodal_file_id.py`（18 例）：签名防回归、端到端贯通、多图顺序、
+  与 `image` 混用、`_content_length` 对 `file` 块的开销、超长上下文裁剪不崩，
+  以及 `BaseMultimodalAPI` 的 `input_file_id`（含老位置传参兼容）。
 - `test/conftest.py` 的 `MockLLM.apredict` 补上非流式分支（对齐 `BaseAPI.apredict`
   的 `stream=False` 默认值），此前它总是返回 AsyncGenerator。
 - `test/test_files_api.py` 新增 3 例：DeepSeek 式 400 not-found 返回 `False`、

@@ -49,15 +49,23 @@ class BaseMultimodalAPI(BaseAPI):
         role: str = "user",
         sys_prompt: str = "你的工作非常出色！",
         messages: list = None,
+        input_file_id: Union[str, list[str]] = None,
     ) -> list:
-        """准备多模态消息列表，支持单/多文本、图片、音频"""
+        """准备多模态消息列表，支持单/多文本、图片、音频、file_id"""
         if messages is None:
             messages = [{"role": "system", "content": sys_prompt}]
         if input_text is not None or any(
-            _input is not None for _input in [input_image, input_audio, input_url]
+            _input is not None
+            for _input in [input_image, input_audio, input_url, input_file_id]
         ):
             user_message = build_multimodal_message(
-                input_text, input_image, input_audio, input_url, image_detail, role
+                input_text,
+                input_image,
+                input_audio,
+                input_url,
+                image_detail,
+                role,
+                input_file_id=input_file_id,
             )
             if user_message is not None:
                 messages.append(user_message)
@@ -86,6 +94,7 @@ class BaseMultimodalAPI(BaseAPI):
         json_format: str = "{}",
         tools: list = None,
         timeout: int = 180,
+        input_file_id: Union[str, list[str]] = None,
         **kwargs,
     ):
         """
@@ -141,6 +150,7 @@ class BaseMultimodalAPI(BaseAPI):
                 json_format=json_format,
                 tools=tools,
                 timeout=timeout,
+                input_file_id=input_file_id,
                 **kwargs,
             )
         else:
@@ -164,6 +174,7 @@ class BaseMultimodalAPI(BaseAPI):
                 json_format=json_format,
                 tools=tools,
                 timeout=timeout,
+                input_file_id=input_file_id,
                 **kwargs,
             )
 
@@ -188,6 +199,7 @@ class BaseMultimodalAPI(BaseAPI):
         json_format: str = "{}",
         tools: list = None,
         timeout: int = 180,
+        input_file_id: Union[str, list[str]] = None,
         **kwargs,
     ) -> dict:
         """
@@ -230,6 +242,7 @@ class BaseMultimodalAPI(BaseAPI):
             role,
             sys_prompt,
             messages,
+            input_file_id,
         )
         payload = self._prepare_payload(
             messages=prepared_messages,
@@ -288,6 +301,7 @@ class BaseMultimodalAPI(BaseAPI):
         json_format: str = "{}",
         tools: list = None,
         timeout: int = 180,
+        input_file_id: Union[str, list[str]] = None,
         **kwargs,
     ) -> Generator[dict, None, None]:
         """
@@ -330,6 +344,7 @@ class BaseMultimodalAPI(BaseAPI):
             role,
             sys_prompt,
             messages,
+            input_file_id,
         )
         payload = self._prepare_payload(
             messages=prepared_messages,
@@ -373,6 +388,7 @@ class BaseMultimodalAPI(BaseAPI):
         json_format: str = "{}",
         tools: list = None,
         timeout: int = 180,
+        input_file_id: Union[str, list[str]] = None,
         **kwargs,
     ):
         """
@@ -428,6 +444,7 @@ class BaseMultimodalAPI(BaseAPI):
                 json_format=json_format,
                 tools=tools,
                 timeout=timeout,
+                input_file_id=input_file_id,
                 **kwargs,
             )
         else:
@@ -451,6 +468,7 @@ class BaseMultimodalAPI(BaseAPI):
                 json_format=json_format,
                 tools=tools,
                 timeout=timeout,
+                input_file_id=input_file_id,
                 **kwargs,
             )
 
@@ -475,6 +493,7 @@ class BaseMultimodalAPI(BaseAPI):
         json_format: str = "{}",
         tools: list = None,
         timeout: int = 180,
+        input_file_id: Union[str, list[str]] = None,
         **kwargs,
     ) -> dict:
         """
@@ -517,6 +536,7 @@ class BaseMultimodalAPI(BaseAPI):
             role,
             sys_prompt,
             messages,
+            input_file_id,
         )
         payload = self._prepare_payload(
             messages=prepared_messages,
@@ -578,6 +598,7 @@ class BaseMultimodalAPI(BaseAPI):
         json_format: str = "{}",
         tools: list = None,
         timeout: int = 180,
+        input_file_id: Union[str, list[str]] = None,
         **kwargs,
     ) -> AsyncGenerator[dict, None]:
         """
@@ -622,6 +643,7 @@ class BaseMultimodalAPI(BaseAPI):
             role,
             sys_prompt,
             messages,
+            input_file_id,
         )
         payload = self._prepare_payload(
             messages=prepared_messages,
