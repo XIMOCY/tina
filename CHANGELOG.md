@@ -21,6 +21,13 @@
   - 用法：`agent.apredict(instruction="看看这张图", file_id=[fid])`，
     其中 `fid = FilesAPI().upload_cached("a.png")`。
   - 相比内联 base64，`file_id` 在多轮长会话里不必每轮重传图片数据。
+- **`FilesAPI.exists()` 对已删除的文件会抛异常**：OpenAI 对不存在的 `file_id` 返回 404，
+  但 **DeepSeek 返回 400**（`invalid_request_error: file_id does not exist or is not
+  created under your account`，实测）。原实现只认 404，其余一律
+  `raise APIRequestFailed` —— 于是「查一下这个文件还在不在」这种最正常的用法会直接炸，
+  `delete()` 之后紧跟 `exists()` 就复现。
+  - 现在 404、以及「400 + 不存在类文案」都返回 `False`；其他状态码（含**无关的 400**）
+    仍然抛异常，不会被吞掉。
 
 ### 测试
 
@@ -28,6 +35,8 @@
   与 `image` 混用、`_content_length` 对 `file` 块的开销、超长上下文裁剪不崩。
 - `test/conftest.py` 的 `MockLLM.apredict` 补上非流式分支（对齐 `BaseAPI.apredict`
   的 `stream=False` 默认值），此前它总是返回 AsyncGenerator。
+- `test/test_files_api.py` 新增 3 例：DeepSeek 式 400 not-found 返回 `False`、
+  无关 400 仍然抛异常、`_is_missing` 的状态码矩阵。
 
 ---
 

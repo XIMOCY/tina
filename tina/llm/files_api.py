@@ -312,12 +312,25 @@ class FilesAPI:
         resp = await self.aclient.get(self._file_url(file_id), headers=self._headers())
         return self._handle(resp, self._file_url(file_id))
 
+    # 「文件不存在」的判定：OpenAI 返回 404，但 DeepSeek 对不存在的 file_id
+    # 返回 400 + invalid_request_error（"file_id does not exist..."）。
+    _NOT_FOUND_HINTS = ("does not exist", "not found", "not_found")
+
+    def _is_missing(self, resp: "httpx.Response") -> bool:
+        """该响应是否表示「文件不存在」"""
+        if resp.status_code == 404:
+            return True
+        if resp.status_code == 400:
+            body = (resp.text or "").lower()
+            return any(hint in body for hint in self._NOT_FOUND_HINTS)
+        return False
+
     def exists(self, file_id: str) -> bool:
         url = self._file_url(file_id)
         resp = self.client.get(url, headers=self._headers())
         if resp.status_code == 200:
             return True
-        if resp.status_code == 404:
+        if self._is_missing(resp):
             return False
         raise APIRequestFailed(url, resp.status_code, resp.text)
 
@@ -326,7 +339,7 @@ class FilesAPI:
         resp = await self.aclient.get(url, headers=self._headers())
         if resp.status_code == 200:
             return True
-        if resp.status_code == 404:
+        if self._is_missing(resp):
             return False
         raise APIRequestFailed(url, resp.status_code, resp.text)
 
